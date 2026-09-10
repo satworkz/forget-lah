@@ -1,0 +1,94 @@
+name: forget-lah
+
+x-runtime: &runtime
+  build: {context: ., target: runtime}
+  image: forget-lah-local:0.1.0
+  init: true
+  restart: unless-stopped
+  security_opt: [no-new-privileges:true]
+  cap_drop: [ALL]
+  read_only: true
+  tmpfs: [/tmp]
+
+x-app-env: &app-env
+  APP_ENV: local
+  DATABASE_URL: postgresql+psycopg://forget_lah_app:${POSTGRES_APP_PASSWORD:?Run scripts/dev.ps1 setup}@db:5432/forget_lah
+  MOCK_CLINIC_URL: http://mock-clinic:8001
+  PUBLIC_ORIGIN: http://localhost:${WEB_PORT:-8080}
+
+services:
+  db:
+    image: postgres:17-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: forget_lah
+      POSTGRES_USER: forget_lah_owner
+      POSTGRES_PASSWORD: ${POSTGRES_OWNER_PASSWORD:?Run scripts/dev.ps1 setup}
+      POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:?Run scripts/dev.ps1 setup}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./deploy/init-db.sh:/docker-entrypoint-initdb.d/10-forget-lah.sh:ro
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U forget_lah_owner -d forget_lah']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  bootstrap:
+    <<: *runtime
+    restart: 'no'
+    read_only: false
+    command: [python, -m, forget_lah.bootstrap]
+    environment:
+      <<: *app-env
+      DATABASE_URL: postgresql+psycopg://forget_lah_owner:${POSTGRES_OWNER_PASSWORD}@db:5432/forget_lah
+      DEMO_STAFF_EMAIL: ${DEMO_STAFF_EMAIL:-staff@forget-lah.example}
+      DEMO_STAFF_PASSWORD: ${DEMO_STAFF_PASSWORD:?Run scripts/dev.ps1 setup}
+    depends_on:
+      db: {condition: service_healthy}
+
+  mock-clinic:
+    <<: *runtime
+    command: [uvicorn, services.mock_clinic.app:app, --host, 0.0.0.0, --port, '8001', --no-access-log]
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health/live')"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    <<: *runtime
+    environment: *app-env
+    depends_on:
+      bootstrap: {condition: service_completed_successfully}
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready')"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  worker:
+    <<: *runtime
+    command: [python, -m, forget_lah.worker]
+    environment: *app-env
+    depends_on:
+      bootstrap: {condition: service_completed_successfully}
+      mock-clinic: {condition: service_healthy}
+
+  web:
+    build: ./apps/web
+    restart: unless-stopped
+    ports: ['127.0.0.1:${WEB_PORT:-8080}:8080']
+    depends_on:
+      api: {condition: service_healthy}
+
+  tests:
+    profiles: [test]
+    build: {context: ., target: test}
+    environment:
+      TEST_DATABASE_URL: postgresql+psycopg://forget_lah_app:${POSTGRES_APP_PASSWORD}@db:5432/forget_lah_test
+    depends_on:
+      db: {condition: service_healthy}
+
+volumes:
+  pgdata:

@@ -1,0 +1,1 @@
+{"python.defaultInterpreterPath":"${workspaceFolder}/.venv/Scripts/python.exe","files.exclude":{"**/__pycache__":true},"editor.formatOnSave":true,"[python]":{"editor.defaultFormatter":"charliermarsh.ruff"}}
