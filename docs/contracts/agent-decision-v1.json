@@ -1,0 +1,304 @@
+{
+  "$defs": {
+    "CompleteDecision": {
+      "additionalProperties": false,
+      "properties": {
+        "request_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Request Id",
+          "type": "string"
+        },
+        "expected_case_version": {
+          "minimum": 1,
+          "title": "Expected Case Version",
+          "type": "integer"
+        },
+        "reason_code": {
+          "const": "STAFF_HANDOFF_ACCEPTED",
+          "title": "Reason Code",
+          "type": "string"
+        },
+        "step_type": {
+          "const": "COMPLETE",
+          "title": "Step Type",
+          "type": "string"
+        },
+        "handoff_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Handoff Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "request_id",
+        "expected_case_version",
+        "reason_code",
+        "step_type",
+        "handoff_id"
+      ],
+      "title": "CompleteDecision",
+      "type": "object"
+    },
+    "DelegateDecision": {
+      "additionalProperties": false,
+      "properties": {
+        "request_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Request Id",
+          "type": "string"
+        },
+        "expected_case_version": {
+          "minimum": 1,
+          "title": "Expected Case Version",
+          "type": "integer"
+        },
+        "reason_code": {
+          "enum": [
+            "FOLLOWUP_REVIEW_REQUIRED",
+            "PREPARATION_REVIEW_REQUIRED"
+          ],
+          "title": "Reason Code",
+          "type": "string"
+        },
+        "step_type": {
+          "const": "DELEGATE",
+          "title": "Step Type",
+          "type": "string"
+        },
+        "target": {
+          "enum": [
+            "engagement",
+            "preparation"
+          ],
+          "title": "Target",
+          "type": "string"
+        },
+        "goal": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Goal",
+          "type": "string"
+        }
+      },
+      "required": [
+        "request_id",
+        "expected_case_version",
+        "reason_code",
+        "step_type",
+        "target",
+        "goal"
+      ],
+      "title": "DelegateDecision",
+      "type": "object"
+    },
+    "EscalateDecision": {
+      "additionalProperties": false,
+      "properties": {
+        "request_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Request Id",
+          "type": "string"
+        },
+        "expected_case_version": {
+          "minimum": 1,
+          "title": "Expected Case Version",
+          "type": "integer"
+        },
+        "reason_code": {
+          "enum": [
+            "AMBIGUOUS_REPLY",
+            "CLINICAL_REVIEW_REQUIRED",
+            "CAPABILITY_UNAVAILABLE"
+          ],
+          "title": "Reason Code",
+          "type": "string"
+        },
+        "step_type": {
+          "const": "ESCALATE",
+          "title": "Step Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "request_id",
+        "expected_case_version",
+        "reason_code",
+        "step_type"
+      ],
+      "title": "EscalateDecision",
+      "type": "object"
+    },
+    "ReturnDecision": {
+      "additionalProperties": false,
+      "properties": {
+        "request_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Request Id",
+          "type": "string"
+        },
+        "expected_case_version": {
+          "minimum": 1,
+          "title": "Expected Case Version",
+          "type": "integer"
+        },
+        "reason_code": {
+          "enum": [
+            "SPECIALIST_REVIEW_FINISHED",
+            "PATIENT_CONFIRMED_ATTENDANCE",
+            "PATIENT_REQUESTED_ALTERNATIVE_DATE",
+            "AMBIGUOUS_REPLY"
+          ],
+          "title": "Reason Code",
+          "type": "string"
+        },
+        "step_type": {
+          "const": "RETURN",
+          "title": "Step Type",
+          "type": "string"
+        },
+        "evidence_ids": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 4,
+          "minItems": 1,
+          "title": "Evidence Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "request_id",
+        "expected_case_version",
+        "reason_code",
+        "step_type",
+        "evidence_ids"
+      ],
+      "title": "ReturnDecision",
+      "type": "object"
+    },
+    "ToolDecision": {
+      "additionalProperties": false,
+      "properties": {
+        "request_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Request Id",
+          "type": "string"
+        },
+        "expected_case_version": {
+          "minimum": 1,
+          "title": "Expected Case Version",
+          "type": "integer"
+        },
+        "reason_code": {
+          "const": "READ_SOURCE",
+          "title": "Reason Code",
+          "type": "string"
+        },
+        "step_type": {
+          "const": "TOOL",
+          "title": "Step Type",
+          "type": "string"
+        },
+        "tool_name": {
+          "enum": [
+            "read_followup_context",
+            "get_approved_instructions",
+            "check_prerequisites"
+          ],
+          "title": "Tool Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "request_id",
+        "expected_case_version",
+        "reason_code",
+        "step_type",
+        "tool_name"
+      ],
+      "title": "ToolDecision",
+      "type": "object"
+    },
+    "WaitDecision": {
+      "additionalProperties": false,
+      "properties": {
+        "request_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Request Id",
+          "type": "string"
+        },
+        "expected_case_version": {
+          "minimum": 1,
+          "title": "Expected Case Version",
+          "type": "integer"
+        },
+        "reason_code": {
+          "enum": [
+            "AWAITING_PATIENT_REPLY",
+            "SOURCE_TEMPORARILY_UNAVAILABLE"
+          ],
+          "title": "Reason Code",
+          "type": "string"
+        },
+        "step_type": {
+          "const": "WAIT",
+          "title": "Step Type",
+          "type": "string"
+        },
+        "wake_after_seconds": {
+          "maximum": 300,
+          "minimum": 0,
+          "title": "Wake After Seconds",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "request_id",
+        "expected_case_version",
+        "reason_code",
+        "step_type",
+        "wake_after_seconds"
+      ],
+      "title": "WaitDecision",
+      "type": "object"
+    }
+  },
+  "discriminator": {
+    "mapping": {
+      "COMPLETE": "#/$defs/CompleteDecision",
+      "DELEGATE": "#/$defs/DelegateDecision",
+      "ESCALATE": "#/$defs/EscalateDecision",
+      "RETURN": "#/$defs/ReturnDecision",
+      "TOOL": "#/$defs/ToolDecision",
+      "WAIT": "#/$defs/WaitDecision"
+    },
+    "propertyName": "step_type"
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/ToolDecision"
+    },
+    {
+      "$ref": "#/$defs/DelegateDecision"
+    },
+    {
+      "$ref": "#/$defs/ReturnDecision"
+    },
+    {
+      "$ref": "#/$defs/WaitDecision"
+    },
+    {
+      "$ref": "#/$defs/EscalateDecision"
+    },
+    {
+      "$ref": "#/$defs/CompleteDecision"
+    }
+  ]
+}

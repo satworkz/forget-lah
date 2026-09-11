@@ -7,7 +7,6 @@ from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
-from forget_lah.agents import validate_decision
 from forget_lah.db import (
     AuditEvent,
     Clinic,
@@ -20,6 +19,7 @@ from forget_lah.db import (
     utcnow,
 )
 from forget_lah.detector import detect, trigger_for
+from forget_lah.runtime.contracts import parse_decision
 from forget_lah.seed import seed
 from forget_lah.source import DEMO_CLINIC_ID, candidates_from_payload
 from forget_lah.worker import claim_job, finish_job
@@ -183,20 +183,23 @@ def test_seed_is_idempotent_and_does_not_reset_password(store):
         assert db.scalar(select(Principal.password_hash)) == before
 
 
-def test_specialists_cannot_delegate_or_accept_stale_case_version():
+def test_live_contract_binds_request_and_case_version():
+    request_id = uid()
     proposal = json.dumps(
         {
             "step_type": "DELEGATE",
+            "request_id": request_id,
+            "reason_code": "FOLLOWUP_REVIEW_REQUIRED",
             "expected_case_version": 1,
             "target": "engagement",
             "goal": "Establish attendance intent",
         }
     )
-    assert validate_decision(proposal, trusted_role="coordinator", current_case_version=1)
+    assert parse_decision(proposal, request_id, 1)
     with pytest.raises(ValueError):
-        validate_decision(proposal, trusted_role="engagement", current_case_version=1)
+        parse_decision(proposal, uid(), 1)
     with pytest.raises(ValueError):
-        validate_decision(proposal, trusted_role="coordinator", current_case_version=2)
+        parse_decision(proposal, request_id, 2)
 
 
 def test_model_cannot_add_permission_claim_or_unknown_reason():
@@ -210,14 +213,14 @@ def test_model_cannot_add_permission_claim_or_unknown_reason():
         {"step_type": "ESCALATE", "expected_case_version": 1, "reason_code": "INVENTED_REASON"},
     ]:
         with pytest.raises(ValidationError):
-            validate_decision(
-                json.dumps(payload), trusted_role="engagement", current_case_version=1
-            )
+            request_id = uid()
+            parse_decision(json.dumps({**payload, "request_id": request_id}), request_id, 1)
 
 
 def test_model_status_and_outreach_are_honest(signed_client):
     status = signed_client.get("/api/system").json()
-    assert status["model_mode"] == "not_connected"
+    assert status["model_mode"] == "mock"
+    assert status["milestone"] == "M2a agent runtime"
     assert status["outreach_enabled"] is False
 
 

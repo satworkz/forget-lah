@@ -1,6 +1,8 @@
 from datetime import UTC, datetime, timedelta
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+
+from forget_lah.source import DEMO_CLINIC_ID
 
 app = FastAPI(title="Synthetic clinic source", docs_url=None, redoc_url=None, openapi_url=None)
 
@@ -44,3 +46,41 @@ def candidates():
             "scheduled_at": (now - timedelta(days=1)).isoformat(),
         },
     ]
+
+
+@app.get("/internal/followup-context/{episode}")
+def followup_context(episode: str):
+    row = next((item for item in candidates() if item["source_episode_ref"] == episode), None)
+    if row is None:
+        raise HTTPException(404, "Synthetic episode not found")
+    # Administrative demo text only; not clinically validated or sent to a patient.
+    notes = {
+        "dental": "Demo clinic note: bring your appointment confirmation.",
+        "myopia": "Demo clinic note: bring your existing spectacles if you have them.",
+        "antenatal": "Demo clinic note: bring your maternity appointment booklet if you have one.",
+    }
+    return {
+        "clinic_id": DEMO_CLINIC_ID,
+        "patient_id": row["patient_id"],
+        "source_episode_ref": episode,
+        "source_version": "synthetic-v1",
+        "synthetic": True,
+        "context": {
+            "specialty": row["specialty"],
+            "source_status": row["source_status"],
+            "scheduled_at": row.get("scheduled_at"),
+            "due_at": row.get("due_at"),
+            "can_contact_patient": False,
+            "can_write_appointments": False,
+        },
+        "instructions": [
+            {
+                "instruction_id": f"DEMO-{row['specialty'].upper()}-NOTE",
+                "version": "1",
+                "locale": "en-SG",
+                "approved_text": notes[row["specialty"]],
+                "synthetic": True,
+            }
+        ],
+        "prerequisites": ["NOT_APPLICABLE"],
+    }

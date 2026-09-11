@@ -1,4 +1,4 @@
-# re-mind design guides
+# forget-lah design guides
 
 Read 00 Requirements, 04 Worked patient journeys, 01 Architecture, 05 Platform alignment, then 03 Setup/playbook. Use 02 Database as a field reference.
 

@@ -20,6 +20,8 @@ from forget_lah.db import (
     make_engine,
     session_factory,
 )
+from forget_lah.runtime.models import AgentRun
+from forget_lah.runtime.routes import install_routes, latest_run
 from forget_lah.settings import Settings
 
 
@@ -73,7 +75,7 @@ def create_app(settings: Settings | None = None, engine=None) -> FastAPI:
 
     app = FastAPI(
         title="forget-lah",
-        version="0.1.0",
+        version="0.2.0",
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
@@ -114,14 +116,16 @@ def create_app(settings: Settings | None = None, engine=None) -> FastAPI:
 
     @app.get("/health/live")
     def live():
-        return {"status": "ok", "version": "0.1.0"}
+        return {"status": "ok", "version": "0.2.0"}
 
     @app.get("/health/ready")
     def ready():
         try:
             with factory() as db:
-                db.execute(text("SELECT version_num FROM alembic_version"))
+                if db.scalar(text("SELECT version_num FROM alembic_version")) != "0003":
+                    raise ValueError("Agent migration is required")
                 db.execute(select(Clinic.id).limit(1))
+                db.execute(select(AgentRun.id).limit(1))
             return {"status": "ready"}
         except Exception as exc:
             raise HTTPException(503, "Database or migrations unavailable") from exc
@@ -176,11 +180,12 @@ def create_app(settings: Settings | None = None, engine=None) -> FastAPI:
         with factory() as db:
             authorise(db, request)
         return {
-            "milestone": "M1 foundation",
+            "milestone": "M2a agent runtime",
             "data_mode": "synthetic",
-            "model_mode": "not_connected",
+            "model_mode": settings.agent_model_mode,
+            "model_configured": settings.model_configured,
             "outreach_enabled": False,
-            "agents": AGENT_CATALOG,
+            "agents": [{**agent, "status": settings.agent_model_mode} for agent in AGENT_CATALOG],
         }
 
     @app.get("/api/cases")
@@ -207,6 +212,7 @@ def create_app(settings: Settings | None = None, engine=None) -> FastAPI:
                     "state": case.state,
                     "source_episode_ref": case.source_episode_ref,
                     "case_version": case.case_version,
+                    "agent_status": (run.status if (run := latest_run(db, case.id)) else None),
                 }
                 for case, alias in rows
             ]
@@ -246,4 +252,5 @@ def create_app(settings: Settings | None = None, engine=None) -> FastAPI:
                 for e in events
             ]
 
+    install_routes(app, factory, settings, authorise)
     return app

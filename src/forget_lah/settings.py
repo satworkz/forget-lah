@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import SecretStr
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -13,3 +13,29 @@ class Settings(BaseSettings):
     session_hours: int = 4
     demo_staff_email: str = "staff@forget-lah.example"
     demo_staff_password: SecretStr | None = None
+    agent_model_mode: Literal["mock", "organiser", "anthropic"] = "mock"
+    anthropic_api_key: SecretStr | None = None
+    anthropic_model: str = "claude-sonnet-4-5-20250929"
+    anthropic_workspace_id: str = ""
+    llm_gateway_url: str = ""
+    llm_gateway_api_key: SecretStr | None = None
+    llm_model: str = "global.anthropic.claude-sonnet-4-5-20250929-v1:0"
+    agent_max_steps: int = Field(default=24, ge=4, le=40)
+    agent_daily_call_limit: int = Field(default=40, ge=1, le=200)
+    agent_request_max_bytes: int = Field(default=8000, ge=2000, le=64000)
+    agent_min_interval_seconds: int = Field(default=2, ge=0, le=30)
+
+    @property
+    def model_configured(self) -> bool:
+        if self.agent_model_mode == "mock":
+            return True
+        key = (
+            self.anthropic_api_key
+            if self.agent_model_mode == "anthropic"
+            else self.llm_gateway_api_key
+        )
+        return bool(
+            key
+            and key.get_secret_value().strip()
+            and (self.agent_model_mode == "anthropic" or self.llm_gateway_url.strip())
+        )

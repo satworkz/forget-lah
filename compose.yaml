@@ -2,7 +2,7 @@ name: forget-lah
 
 x-runtime: &runtime
   build: {context: ., target: runtime}
-  image: forget-lah-local:0.1.0
+  image: forget-lah-local:0.2.0
   init: true
   restart: unless-stopped
   security_opt: [no-new-privileges:true]
@@ -15,6 +15,16 @@ x-app-env: &app-env
   DATABASE_URL: postgresql+psycopg://forget_lah_app:${POSTGRES_APP_PASSWORD:?Run scripts/dev.ps1 setup}@db:5432/forget_lah
   MOCK_CLINIC_URL: http://mock-clinic:8001
   PUBLIC_ORIGIN: http://localhost:${WEB_PORT:-8080}
+  AGENT_MODEL_MODE: ${AGENT_MODEL_MODE:-mock}
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-4-5-20250929}
+  ANTHROPIC_WORKSPACE_ID: ${ANTHROPIC_WORKSPACE_ID:-}
+  LLM_GATEWAY_URL: ${LLM_GATEWAY_URL:-}
+  LLM_GATEWAY_API_KEY: ${LLM_GATEWAY_API_KEY:-}
+  LLM_MODEL: ${LLM_MODEL:-global.anthropic.claude-sonnet-4-5-20250929-v1:0}
+  AGENT_DAILY_CALL_LIMIT: ${AGENT_DAILY_CALL_LIMIT:-40}
+  AGENT_REQUEST_MAX_BYTES: ${AGENT_REQUEST_MAX_BYTES:-8000}
+  AGENT_MIN_INTERVAL_SECONDS: ${AGENT_MIN_INTERVAL_SECONDS:-2}
 
 services:
   db:

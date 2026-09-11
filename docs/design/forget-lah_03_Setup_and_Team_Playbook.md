@@ -1,10 +1,10 @@
-# re-mind: setup, automation and team delivery
+# forget-lah: setup, automation and team delivery
 
 10 September 2026 | v2.1 | Implementation roadmap; commands labelled planned are not yet delivered
 
 ## 1. How we will start
 
-Use VS Code as the shared editor, Codex as the coding assistant, GitHub as the private code repository, Docker Compose as the reproducible local runtime, and the organiser's Claude endpoint as the model inside re-mind. These are separate responsibilities. The user has selected Astra Extra High for development; that does not change the product's runtime-model requirement.
+Use VS Code as the shared editor, Codex as the coding assistant, GitHub as the private code repository, Docker Compose as the reproducible local runtime, and the organiser's Claude endpoint as the model inside forget-lah. These are separate responsibilities. The user has selected Astra Extra High for development; that does not change the product's runtime-model requirement.
 
 Keep one repository and one documented Windows/PowerShell path for beginners. Docker Desktop runs Linux containers; do not mix Windows and WSL Python dependency environments in one checkout. A teammate on another OS can use the same containerised app and equivalent native Git/editor steps.
 
@@ -12,12 +12,12 @@ No infrastructure, accounts, secrets, code or integrations were created by this 
 
 ## 2. Setup checkpoints, in order
 
-Run the [Guide 05 early compatibility checks](re-mind_05_Platform_Alignment.md) alongside bootstrap. The first live model/tool round trip and a minimal organiser-hosted HTTPS deployment belong in the first 48 hours once access is available. They must not wait for a polished dental journey or the final DevOps week. If access is delayed, document that dependency and continue local mocks without claiming platform compatibility is proven.
+Run the [Guide 05 early compatibility checks](forget-lah_05_Platform_Alignment.md) alongside bootstrap. The first live model/tool round trip and a minimal organiser-hosted HTTPS deployment belong in the first 48 hours once access is available. They must not wait for a polished dental journey or the final DevOps week. If access is delayed, document that dependency and continue local mocks without claiming platform compatibility is proven.
 
 | Step | Action | Evidence before continuing |
 |---|---|---|
 | 1 | Install VS Code, Git for Windows, uv and Docker Desktop Linux-container support; install Python/Pylance/Ruff extensions | git, uv and docker version checks work in a new terminal; Docker's hello-world works |
-| 2 | Each member creates/uses their own GitHub identity with MFA; lead creates private re-mind repository and invites team | Every member can clone and propose a small reviewed PR without shared credentials |
+| 2 | Each member creates/uses their own GitHub identity with MFA; lead creates private forget-lah repository and invites team | Every member can clone and propose a small reviewed PR without shared credentials |
 | 3 | Freeze Python 3.12, PostgreSQL 17 and supported Node LTS; lock dependencies | One reviewed set of lockfiles and pinned base images, with same versions in CI and containers |
 | 4 | Bootstrap backend/web/mock source, .env.example, Compose and health endpoints | One local command starts empty infrastructure; readiness waits for migrations |
 | 5 | Add Alembic migrations and deterministic synthetic seed profiles | An empty database migrates and seeds; running seed twice creates no duplicates |
@@ -34,7 +34,7 @@ Official setup references: [VS Code Python](https://code.visualstudio.com/docs/p
 ## 3. Proposed repository layout
 
 ```text
-re-mind/
+forget-lah/
   README.md
   AGENTS.md                     # product boundaries and commands for coding assistants
   pyproject.toml / uv.lock / .python-version
@@ -84,7 +84,7 @@ Keep business rules out of UI components and provider adapters. Agent tool handl
 The following are intended user-facing commands. They will only become runnable when the implementation supplies these scripts. Use one documented entry point per operation; scripts print progress, validate prerequisites, propagate non-zero exits and never echo secrets.
 
 ```powershell
-# Planned commands in the future re-mind checkout
+# Planned commands in the future forget-lah checkout
 ./scripts/dev.ps1 doctor
 ./scripts/dev.ps1 setup
 ./scripts/dev.ps1 up

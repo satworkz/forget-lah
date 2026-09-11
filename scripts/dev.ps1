@@ -1,4 +1,4 @@
-param([ValidateSet('doctor','setup','up','down','logs','test','status')][string]$Action = 'doctor')
+param([ValidateSet('doctor','setup','up','down','logs','test','status','model-check')][string]$Action = 'doctor')
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location -LiteralPath $projectRoot
@@ -50,4 +50,5 @@ switch ($Action) {
     'down' { Invoke-Docker compose down; Write-Host 'Stopped services. Database volume preserved.' }
     'logs' { Invoke-Docker compose logs --tail 100 api worker bootstrap }
     'status' { Invoke-Docker compose ps -a }
+    'model-check' { Invoke-Docker compose run --rm --no-deps worker python -m forget_lah.runtime.check_model }
 }

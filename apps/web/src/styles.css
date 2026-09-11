@@ -310,6 +310,7 @@ p {
   white-space: nowrap;
 }
 .table-scroll {
+  position: relative;
   overflow-x: auto;
 }
 table {
@@ -453,6 +454,88 @@ footer {
   .login-intro h1 {
     font-size: 38px;
   }
+}
+.agent-workspace {
+  padding: 24px;
+  margin-top: 24px;
+}
+.agent-workspace .section-heading {
+  padding: 0 0 16px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.run-summary,
+.agent-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.run-summary {
+  margin: 16px 0 8px;
+}
+.agent-prompt,
+.handoff,
+.completion {
+  padding: 20px;
+  border-radius: 12px;
+  background: #edf5f1;
+  margin: 16px 0;
+}
+.handoff {
+  background: #fff3d8;
+  border-left: 4px solid #ae7420;
+}
+.handoff-red {
+  background: #fff0ed;
+  border-left-color: #ad3328;
+}
+.agent-prompt form {
+  display: grid;
+  gap: 12px;
+  margin: 16px 0;
+}
+.agent-prompt textarea {
+  width: 100%;
+  min-height: 90px;
+  resize: vertical;
+  font: inherit;
+  padding: 12px;
+  border: 1px solid #879d96;
+  border-radius: 8px;
+}
+.agent-prompt button {
+  justify-self: start;
+}
+.agent-workspace details {
+  margin: 12px 0;
+}
+.agent-workspace summary {
+  cursor: pointer;
+  color: #24584c;
+  font-size: 14px;
+}
+.agent-workspace pre {
+  overflow-x: auto;
+  padding: 16px;
+  background: #f3f5f4;
+  font-size: 12px;
+  border-radius: 8px;
+  max-height: 360px;
+}
+.agent-workspace .timeline {
+  padding: 0;
+  list-style: none;
+}
+.tool-evidence {
+  padding: 12px 16px;
+  background: #f5f8f7;
+  border-radius: 8px;
+}
+textarea:focus-visible,
+summary:focus-visible {
+  outline: 3px solid #2a7765;
+  outline-offset: 3px;
 }
 @media (max-width: 700px) {
   .login-shell {

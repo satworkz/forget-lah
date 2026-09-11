@@ -1,5 +1,7 @@
 import { StrictMode, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { AgentPanel } from "./AgentPanel";
+import { api, modelLabel } from "./client";
 import "./styles.css";
 
 type FollowupCase = {
@@ -10,6 +12,7 @@ type FollowupCase = {
   state: string;
   source_episode_ref: string;
   case_version: number;
+  agent_status: string | null;
 };
 type AuditEvent = {
   id: string;
@@ -25,23 +28,6 @@ const triggerLabels: Record<string, string> = {
   RECALL_OVERDUE: "Overdue recall",
 };
 
-async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, {
-    ...init,
-    credentials: "same-origin",
-    headers: { "Content-Type": "application/json", ...init?.headers },
-  });
-  if (!response.ok) {
-    const body = await response.json().catch(() => ({}));
-    throw new Error(
-      typeof body.detail === "string"
-        ? body.detail
-        : `Request failed (${response.status})`,
-    );
-  }
-  return response.status === 204 ? (undefined as T) : response.json();
-}
-
 function App() {
   const [signedIn, setSignedIn] = useState(false);
   const [checking, setChecking] = useState(true);
@@ -52,6 +38,7 @@ function App() {
   const sessionEpoch = useRef(0);
   const [cases, setCases] = useState<FollowupCase[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
+  const [modelMode, setModelMode] = useState("mock");
   const [selected, setSelected] = useState<FollowupCase | null>(null);
   const [events, setEvents] = useState<AuditEvent[]>([]);
   const [loadingEvents, setLoadingEvents] = useState(false);
@@ -63,11 +50,12 @@ function App() {
     try {
       const [rows, system] = await Promise.all([
         api<FollowupCase[]>("/api/cases"),
-        api<{ agents: Agent[] }>("/api/system"),
+        api<{ agents: Agent[]; model_mode: string }>("/api/system"),
       ]);
       if (epoch !== sessionEpoch.current) return;
       setCases(rows);
       setAgents(system.agents);
+      setModelMode(system.model_mode);
     } catch (e) {
       if (epoch === sessionEpoch.current) {
         setCases([]);
@@ -184,7 +172,7 @@ function App() {
           <div className="intro-note">
             NUS-ISS · Show Me Your Agents
             <br />
-            Local development foundation
+            Local agent demonstration
           </div>
         </div>
         <section className="login-card" aria-labelledby="sign-in">
@@ -236,8 +224,8 @@ function App() {
         <p className="sidebar-label">CLINIC WORKSPACE</p>
         <div className="nav-current">◉ &nbsp; Follow-up overview</div>
         <div className="sidebar-bottom">
-          <span className="tag">MILESTONE 01</span>
-          <p>Foundation ready for the agent journey.</p>
+          <span className="tag">MILESTONE 02A</span>
+          <p>Agent decisions, source evidence and owned handoffs.</p>
           <button className="text-button" onClick={logout}>
             Sign out
           </button>
@@ -264,11 +252,15 @@ function App() {
         <div className="notice">
           <span className="status-dot" />
           <div>
-            <strong>Local foundation · synthetic data</strong>
+            <strong>
+              Agent review · synthetic data ·{" "}
+              {modelLabel(modelMode)}
+            </strong>
             <p>
-              This milestone includes source detection and background
-              processing. Model reasoning, patient conversations and outbound
-              messaging are the next milestone.
+              Open a case to watch the Coordinator delegate, read clinic
+              evidence, wait for a demo reply and hand over to staff. Patient
+              messaging and appointment changes are not enabled in this
+              milestone.
             </p>
           </div>
         </div>
@@ -321,14 +313,16 @@ function App() {
                       <td className="capitalize">{c.specialty}</td>
                       <td>{triggerLabels[c.trigger]}</td>
                       <td>
-                        <span className="pill">Ready for agent</span>
+                        <span className="pill capitalize">
+                          {c.agent_status ?? "Ready for agent"}
+                        </span>
                       </td>
                       <td>
                         <button
                           className="text-button"
                           onClick={() => setSelected(c)}
                         >
-                          View evidence →
+                          Open agent review →
                           <span className="sr-only"> for {c.patient}</span>
                         </button>
                       </td>
@@ -377,12 +371,29 @@ function App() {
             )}
           </section>
         )}
+        {selected && (
+          <AgentPanel
+            key={selected.id}
+            caseId={selected.id}
+            modelMode={modelMode}
+            onStatus={(status) =>
+              setCases((rows) =>
+                rows.map((row) =>
+                  row.id === selected.id && row.agent_status !== status
+                    ? { ...row, agent_status: status }
+                    : row,
+                ),
+              )
+            }
+          />
+        )}
         <section className="agents-section">
           <div className="section-heading">
             <div>
               <h2>The agent team</h2>
               <p>
-                Defined responsibilities for the next implementation milestone.
+                One Coordinator selects specialists. Each decision passes
+                through the policy gateway.
               </p>
             </div>
           </div>
@@ -390,7 +401,9 @@ function App() {
             {agents.map((a, i) => (
               <article className="agent-card" key={a.role}>
                 <span className="agent-number">0{i + 1}</span>
-                <span className="planned">Planned</span>
+                <span className="planned">
+                  {modelLabel(modelMode)}
+                </span>
                 <h3>{a.name}</h3>
                 <p>{a.goal}</p>
               </article>
@@ -398,7 +411,7 @@ function App() {
           </div>
         </section>
         <footer>
-          forget-lah · Patient Follow-up · Foundation v0.1.0{" "}
+          forget-lah · Patient Follow-up · Agent runtime v0.2.0{" "}
           <span>All patient records shown are synthetic.</span>
         </footer>
       </main>

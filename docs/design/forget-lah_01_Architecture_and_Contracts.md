@@ -1,4 +1,4 @@
-# re-mind: architecture and contracts
+# forget-lah: architecture and contracts
 
 10 September 2026 | v2.1 | Proposed implementation | Read the requirements register and platform review first
 
@@ -8,9 +8,9 @@ Build a **modular monolith**: one Python backend codebase, a separately running 
 
 Deployment baseline: Docker Compose on one organiser-permitted Lightsail instance. Containers are reverse proxy/static web, FastAPI, worker, PostgreSQL and a synthetic clinic API. The synthetic clinic uses an isolated database/user. This is a single-server hackathon deployment with a single point of failure, not high availability. Measured load tests and recoverability support a credible scaling path.
 
-The runtime model is the organiser's **Claude Sonnet 4.5 JSON endpoint** described in the attached slide. Codex/Astra is our development assistant, not the runtime model of re-mind. No direct Bedrock credentials, native tool calling, arbitrary AWS service permission or speech model access is assumed.
+The runtime model is the organiser's **Claude Sonnet 4.5 JSON endpoint** described in the attached slide. Codex/Astra is our development assistant, not the runtime model of forget-lah. No direct Bedrock credentials, native tool calling, arbitrary AWS service permission or speech model access is assumed.
 
-The latest platform clarification preserves this architecture. A direct Python HTTP adapter will implement the organiser contract, while our typed agent loop controls tool execution. [Guide 05](re-mind_05_Platform_Alignment.md) records the documented transport, compatibility limits and required live checks. A personal AWS environment must use the same deployable release and permitted service shape; changing accounts must not change clinical or agent logic.
+The latest platform clarification preserves this architecture. A direct Python HTTP adapter will implement the organiser contract, while our typed agent loop controls tool execution. [Guide 05](forget-lah_05_Platform_Alignment.md) records the documented transport, compatibility limits and required live checks. A personal AWS environment must use the same deployable release and permitted service shape; changing accounts must not change clinical or agent logic.
 
 ## 2. High-level components
 
@@ -98,7 +98,7 @@ Case states: NEW, WAITING_REPLY, WAITING_SLOT_SELECTION, WAITING_SLOT_CONFIRMATI
 | Missed appointment | Source explicitly records a no-show/missed visit; do not infer no-show merely because the start time passed |
 | Due/overdue routine recall | Source defines the recall due date and episode; check for a linked future booking before contacting |
 
-The existing clinic API owns booking, slot capacity, attendance, recall plans and approved instructions. With imports, the clinic's published snapshot is evidence of those external facts as of a timestamp; re-mind does not acquire authority to invent or change them.
+The existing clinic API owns booking, slot capacity, attendance, recall plans and approved instructions. With imports, the clinic's published snapshot is evidence of those external facts as of a timestamp; forget-lah does not acquire authority to invent or change them.
 
 Routine closure requires the verified outcome for the specific case: attendance intent recorded for a current appointment, or source-confirmed booking/reschedule; plus required instruction acknowledgement and no unresolved blocking issue. Imported attendance intent may be recorded locally and exposed to staff as such. It must not imply write-back to an absent clinic system. Reading an instruction does not prove a test is complete or that the patient attended.
 
@@ -136,7 +136,7 @@ The PWA and WhatsApp conversations share one case, one outstanding question and 
 
 Telephone fallback remains provider-based speech/DTMF. It identifies the clinic/automated nature, verifies the recipient using the approved flow, asks one question at a time and offers a staff callback. No default call recording, no clinical detail in voicemail, no inference that an answered call means confirmation. Do not infer clinical urgency from tone alone. Provider speech output is transcript input to the same typed agent loop.
 
-**Push:** use service worker + Push API + Notifications API and VAPID. Ask permission only after an explanatory user action. On iOS/iPadOS 16.4+, Web Push applies to home-screen web apps; installation/permission and actual device testing matter. Delivery is best-effort, not a reliable clinical alarm. Generic payload: 'You have a follow-up update. Open re-mind.' Fetch details only after authentication. [WebKit guidance](https://webkit.org/blog/13878/web-push-for-web-apps-on-ios-and-ipados/).
+**Push:** use service worker + Push API + Notifications API and VAPID. Ask permission only after an explanatory user action. On iOS/iPadOS 16.4+, Web Push applies to home-screen web apps; installation/permission and actual device testing matter. Delivery is best-effort, not a reliable clinical alarm. Generic payload: 'You have a follow-up update. Open forget-lah.' Fetch details only after authentication. [WebKit guidance](https://webkit.org/blog/13878/web-push-for-web-apps-on-ios-and-ipados/).
 
 **Calendar:** authenticated explicit 'Add to calendar' downloads an RFC 5545 .ics file for a source-verified appointment. Use a stable opaque UID, SEQUENCE and correct UTC/timezone handling. Default event title is generic; do not export preparation notes, record identifiers or sensitive specialty text. This is a one-way user-controlled copy, not a booking action. Mobile clients may duplicate imports or retain old dates; show that changes must be updated/removed by the user. No access to the patient's calendar or automatic synchronisation in the MVP. [iCalendar standard](https://www.rfc-editor.org/rfc/rfc5545).
 
