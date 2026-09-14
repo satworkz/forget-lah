@@ -23,7 +23,7 @@ from forget_lah.runtime.contracts import parse_decision
 from forget_lah.seed import seed
 from forget_lah.source import DEMO_CLINIC_ID, candidates_from_payload
 from forget_lah.worker import claim_job, finish_job
-from services.mock_clinic.app import candidates
+from services.mock_clinic.fixtures import candidates
 
 
 def test_health_requires_applied_migrations(client):

@@ -1,5 +1,8 @@
 import { StrictMode, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { CaseJourney } from "./CaseJourney";
+import { ClinicSimulator } from "./ClinicSimulator";
+import { DemoReset } from "./DemoReset";
 import { AgentPanel } from "./AgentPanel";
 import { api, modelLabel } from "./client";
 import "./styles.css";
@@ -28,6 +31,11 @@ const triggerLabels: Record<string, string> = {
   RECALL_OVERDUE: "Overdue recall",
 };
 
+function journeyFromHash() {
+  return window.location.hash.match(/^#\/cases\/([a-f0-9-]{36})\/journey$/i)?.[1] ?? null;
+}
+function openJourney(caseId: string) { window.location.hash = `/cases/${caseId}/journey`; }
+
 function App() {
   const [signedIn, setSignedIn] = useState(false);
   const [checking, setChecking] = useState(true);
@@ -39,9 +47,19 @@ function App() {
   const [cases, setCases] = useState<FollowupCase[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [modelMode, setModelMode] = useState("mock");
+  const [demoResetEnabled, setDemoResetEnabled] = useState(false);
+  const [demoResetCaseIds, setDemoResetCaseIds] = useState<string[]>([]);
+  const [journeyCaseId, setJourneyCaseId] = useState<string | null>(journeyFromHash);
+  const [simulator, setSimulator] = useState(window.location.hash === "#/clinic-simulator");
   const [selected, setSelected] = useState<FollowupCase | null>(null);
   const [events, setEvents] = useState<AuditEvent[]>([]);
   const [loadingEvents, setLoadingEvents] = useState(false);
+
+  useEffect(() => {
+    const syncRoute = () => { setJourneyCaseId(journeyFromHash()); setSimulator(window.location.hash === "#/clinic-simulator"); };
+    window.addEventListener("hashchange", syncRoute);
+    return () => window.removeEventListener("hashchange", syncRoute);
+  }, []);
 
   async function refresh() {
     const epoch = sessionEpoch.current;
@@ -50,16 +68,19 @@ function App() {
     try {
       const [rows, system] = await Promise.all([
         api<FollowupCase[]>("/api/cases"),
-        api<{ agents: Agent[]; model_mode: string }>("/api/system"),
+        api<{ agents: Agent[]; model_mode: string; demo_reset_enabled: boolean; demo_reset_case_ids: string[] }>("/api/system"),
       ]);
       if (epoch !== sessionEpoch.current) return;
       setCases(rows);
       setAgents(system.agents);
       setModelMode(system.model_mode);
+      setDemoResetEnabled(system.demo_reset_enabled);
+      setDemoResetCaseIds(system.demo_reset_case_ids);
     } catch (e) {
       if (epoch === sessionEpoch.current) {
         setCases([]);
         setAgents([]);
+        setDemoResetEnabled(false);
         setSelected(null);
         setError((e as Error).message);
       }
@@ -215,6 +236,9 @@ function App() {
       </main>
     );
 
+  if (journeyCaseId) return <CaseJourney caseId={journeyCaseId} onBack={() => { window.location.hash = ""; setJourneyCaseId(null); void refresh(); }} />;
+  if (simulator) return <ClinicSimulator onBack={() => { window.location.hash = ""; setSimulator(false); void refresh(); }} />;
+
   return (
     <div className="workspace">
       <aside className="sidebar">
@@ -223,6 +247,7 @@ function App() {
         </div>
         <p className="sidebar-label">CLINIC WORKSPACE</p>
         <div className="nav-current">◉ &nbsp; Follow-up overview</div>
+        <a className="sim-nav" href="#/clinic-simulator">Clinic simulator ↗<small>External test records and slots</small></a>
         <div className="sidebar-bottom">
           <span className="tag">MILESTONE 02A</span>
           <p>Agent decisions, source evidence and owned handoffs.</p>
@@ -244,6 +269,11 @@ function App() {
             {busy ? "Refreshing…" : "Refresh cases"}
           </button>
         </header>
+        {demoResetEnabled && <DemoReset caseIds={demoResetCaseIds} onReset={async () => {
+          sessionEpoch.current += 1;
+          setSelected(null); setEvents([]);
+          await refresh();
+        }} />}
         {error && (
           <p className="error" role="alert">
             {error}
@@ -258,9 +288,9 @@ function App() {
             </strong>
             <p>
               Open a case to watch the Coordinator delegate, read clinic
-              evidence, wait for a demo reply and hand over to staff. Patient
-              messaging and appointment changes are not enabled in this
-              milestone.
+              evidence and respond to a demo reply. The patient simulator can
+              confirm a scheduled visit and display an acknowledgement;
+              requests needing staff appear as handoffs. No real messages are sent.
             </p>
           </div>
         </div>
@@ -318,6 +348,7 @@ function App() {
                         </span>
                       </td>
                       <td>
+                        <div className="case-actions">
                         <button
                           className="text-button"
                           onClick={() => setSelected(c)}
@@ -325,6 +356,10 @@ function App() {
                           Open agent review →
                           <span className="sr-only"> for {c.patient}</span>
                         </button>
+                        <button className="text-button" onClick={() => openJourney(c.id)}>
+                          View full case journey →<span className="sr-only"> for {c.patient}</span>
+                        </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -376,6 +411,7 @@ function App() {
             key={selected.id}
             caseId={selected.id}
             modelMode={modelMode}
+            onJourney={() => openJourney(selected.id)}
             onStatus={(status) =>
               setCases((rows) =>
                 rows.map((row) =>

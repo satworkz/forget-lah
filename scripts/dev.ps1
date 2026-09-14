@@ -24,6 +24,17 @@ function New-LocalSecret {
     return [BitConverter]::ToString($bytes).Replace('-', '').ToLowerInvariant()
 }
 
+function Ensure-SimulatorSecrets {
+    $settingsPath = Join-Path $projectRoot '.env'
+    $settingsText = [IO.File]::ReadAllText($settingsPath)
+    foreach ($secretName in @('POSTGRES_MOCK_PASSWORD', 'MOCK_CLINIC_ADMIN_KEY', 'MOCK_CLINIC_FOLLOWUP_KEY')) {
+        if ($settingsText -notmatch "(?m)^$secretName=") {
+            $settingsText = $settingsText.TrimEnd() + "`n$secretName=$(New-LocalSecret)`n"
+        }
+    }
+    [IO.File]::WriteAllText($settingsPath, $settingsText, (New-Object System.Text.UTF8Encoding $false))
+}
+
 switch ($Action) {
     'doctor' {
         git --version
@@ -35,14 +46,16 @@ switch ($Action) {
         Write-Host 'Prerequisites passed. Next: ./scripts/dev.ps1 setup'
     }
     'setup' {
-        if (Test-Path -LiteralPath '.env') { Write-Host '.env already exists; existing credentials were preserved.'; break }
+        if (Test-Path -LiteralPath '.env') { Ensure-SimulatorSecrets; Write-Host '.env already exists; existing credentials were preserved and missing simulator secrets were added.'; break }
         $content = @("POSTGRES_OWNER_PASSWORD=$(New-LocalSecret)", "POSTGRES_APP_PASSWORD=$(New-LocalSecret)", 'DEMO_STAFF_EMAIL=staff@forget-lah.example', "DEMO_STAFF_PASSWORD=$(New-LocalSecret)", 'WEB_PORT=8080') -join "`n"
         [IO.File]::WriteAllText((Join-Path $projectRoot '.env'), "$content`n", (New-Object System.Text.UTF8Encoding $false))
+        Ensure-SimulatorSecrets
         Write-Host 'Created private local configuration. Open .env locally for your demo login; do not share it.'
         Write-Host 'Next: ./scripts/dev.ps1 up'
     }
     'up' {
         if (!(Test-Path -LiteralPath '.env')) { throw 'Run ./scripts/dev.ps1 setup first.' }
+        Ensure-SimulatorSecrets
         Invoke-Docker compose up --build -d
         Write-Host 'Open http://localhost:8080 after services are healthy. Credentials are in your local .env.'
     }

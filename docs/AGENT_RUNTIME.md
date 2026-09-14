@@ -4,6 +4,8 @@
 
 This increment adds the agent runtime to the working foundation. The staff screen now shows the Coordinator choosing specialists, reading source evidence, waiting, resuming and arranging a staff handoff. The default model is a **deterministic simulation**, so every teammate can run it without a key or paid inference. Direct Claude has been connected and exercised with synthetic dental reviews; see [live validation](LIVE_CLAUDE_VALIDATION.md). A separate organiser adapter is implemented and tested with simulated HTTP responses; its live verification still requires the team's private configuration.
 
+**Latest addition: [Patient simulator](PATIENT_SIMULATOR.md)** — test reminder, attendance confirmation, acknowledgement and completion without real channels. Earlier reviews are preserved; use **Start fresh simulator test** for the new capability.
+
 ## 1. Start the updated app
 
 Open the project in VS Code, open **Terminal → New Terminal**, and use PowerShell. Start Docker Desktop first.
@@ -12,36 +14,40 @@ Open the project in VS Code, open **Terminal → New Terminal**, and use PowerSh
 ./scripts/dev.ps1 up
 ```
 
-This rebuilds the app and applies migrations through `0003` automatically. Existing local credentials, patients and foundation evidence are preserved. Open **http://localhost:8080**, refresh the browser and sign in with the credentials in your own `.env` file. No local Python installation is needed for this Docker route.
+This rebuilds the app and applies application migration `0004` and source migration `sim0002` automatically. Existing local credentials, patients and foundation evidence are preserved. Open **http://localhost:8080**, refresh the browser and sign in with the credentials in your own `.env` file. No local Python installation is needed for this Docker route.
 
 If this is a fresh clone, follow [TEAM_START_HERE.md](TEAM_START_HERE.md) for installation, then run `doctor`, `setup` and `up`. The earlier PDF describes the M1 foundation; use this document for the new agent buttons and tests.
 
 ## 2. Try the three demonstration flows
 
-All patient replies in this milestone are **staff-entered fictional test events**, not authenticated patient messages. Source reads are real HTTP calls to the internal synthetic clinic service. No WhatsApp/SMS/call, reminder or appointment update is sent.
+To change the schedules or notes, add available slots, or create fresh patients for testing, open **Clinic simulator** in the sidebar. See [the simulator walkthrough](CLINIC_SIMULATOR.md). The initial dates are now seeded once and persist across restarts; use the simulator's quick examples if old dates leave the reminder window.
+
+To follow a case from its creation, select **View full case journey →** beside the patient or inside Agent activity. The separate page combines saved staff events, decisions, gateway checks and tool results, and lets you select earlier reviews. Follow [CASE_JOURNEY.md](CASE_JOURNEY.md) for a beginner walkthrough. Viewing this page does not call Claude.
+
+All patient replies in this milestone are **staff-entered fictional test events**, not authenticated patient messages. Source reads are real HTTP calls to the internal synthetic clinic service. No WhatsApp/SMS/call is sent. New simulator reviews can display reminders and acknowledgements and save synthetic attendance confirmations.
 
 ### Flow A — dental recall, two specialist reviews and an owned handoff
 
 1. Find **Mr Lim (demo)** and select **Open agent review**.
-2. In **Agent activity**, check the **SIMULATION MODE** label and select **Start agent review**.
-3. Allow roughly 10–20 seconds locally. The timeline shows the Coordinator reading context, delegating to Engagement, Engagement reading context and then waiting. Every proposal has its own gateway verdict.
+2. In **Agent activity**, check the configured model label. The worker starts the review automatically after foundation processing. A fresh clone uses **SIMULATION MODE**; a locally configured provider may use Claude credits.
+3. The timeline shows **Worker automatically queued this review**, then an **Application rule** reading the initial clinic context with zero model calls. Coordinator receives that result when planning the next action. After delegation to Engagement, another application rule saves the initial demo wait when outreach is disabled. Every action still has a gateway verdict.
 4. In the reply box, enter **Can I come next Friday? What should I bring?** and select **Submit demo reply**.
 5. Allow roughly 20–40 seconds. The Coordinator reads the case again, delegates to Preparation, inspects its instruction/prerequisite evidence, then delegates to Engagement to review the date request. Both specialists return evidence references and a result code.
-6. The run becomes **escalated** with an **AMBER** handoff. The current read-only tools cannot arrange another date, so a staff member must take over. The clinic source still owns appointment management.
+6. The run becomes **escalated** with an **AMBER** handoff. The available tools cannot arrange another date, so a staff member must take over. The clinic source still owns appointment management.
 7. Select **Accept handoff as me**. After the Coordinator checks the recorded staff acceptance, the run becomes **completed**. The named owner is visible. **The staff task remains open**; completion means automation has reached an owned handoff.
 
 Use **Inspect source result** to see actual returned data. Use **Inspect validated decision and gateway verdict** to understand why a step was allowed. These are structured decisions and evidence, not private model reasoning transcripts.
 
 ### Flow B — myopia preparation and attendance intent
 
-1. Open **Alex (demo)** and start an agent review.
-2. At the waiting checkpoint, enter **Yes, I will attend. What should I bring?**
-3. Check that Preparation reads the synthetic spectacles note and prerequisite status. Engagement returns `PATIENT_CONFIRMED_ATTENDANCE` as an **unverified intent finding**.
-4. Check the staff handoff and accept it. The app does not mark a real appointment as confirmed or send clinical instructions.
+1. Open **Alex (demo)**. For an older review, select **Start fresh simulator test**. The source must contain a future scheduled appointment with prerequisite `NOT_APPLICABLE`.
+2. Read the outgoing reminder, then enter **I confirm my attendance, what should I bring?**
+3. Engagement records a synthetic confirmation through the source API. Preparation reads the approved spectacles note and prerequisite status. Both return evidence.
+4. Coordinator displays an acknowledgement with the exact approved note, then completes after the gateway verifies the source receipt and saved message. No staff acceptance is required for this valid simulated confirmation. See [Patient simulator](PATIENT_SIMULATOR.md).
 
 ### Flow C — antenatal staff escalation
 
-1. Open **Priya (demo)** and start an agent review.
+1. Open **Priya (demo)**; its review starts automatically.
 2. At the waiting checkpoint, select **Simulate staff-flagged clinical concern**.
 3. Check that a **RED** handoff appears with **Application rule** as its origin. This path does not wait for a model call.
 4. Accept the handoff. The final completion verdict stays RED, and the staff task stays open.
@@ -53,10 +59,14 @@ This button proves the response to an explicit staff flag. Automatic symptom rec
 - **Reload:** refresh the browser while a run is waiting. Its saved state and timeline remain available.
 - **Pause:** select **Pause agent** during a queued/running/waiting run. A late model/tool result cannot resume it. Select **Retry agent review** to continue; the earlier reply is retained.
 - **Restart:** while waiting, run `./scripts/dev.ps1 down`, then `./scripts/dev.ps1 up`. Sign in again if necessary and reopen the case. Waiting state survives because it is stored in PostgreSQL.
-- **Another demonstration:** after completion, select **Start another demo run**. Earlier runs remain in the database; the current UI displays the latest run for the case.
+- **Another demonstration:** completed cases do not restart automatically. Use the optional [Reset demo data](DEMO_RESET.md) control when you intentionally want to clear the demo history and recreate cases. Newly recreated cases start automatically. Historical reviews remain selectable until reset.
 - **No duplicate actions:** if a stale-screen warning appears, read the refreshed state before trying again. The server rejects outdated case versions and conflicting repeat requests.
 
 ## 3. Where the agents run
+
+New case flow: **detector saves case/job → worker completes foundation processing and queues a review → worker reads source through the gateway (no model call) → Coordinator receives the saved result for planning**. Bootstrap creates a reserved non-login worker identity, authorised only for the synthetic clinic. Revoked service access is rechecked and never silently restored. Staff take responsibility only through their own authenticated actions.
+
+`AGENT_AUTO_START_ENABLED=true` is the default. Set it to false and rebuild to stop new automatic registrations. Existing runs still follow their saved states and can be paused separately. A catch-up scan handles ready cases without reviews, including cases detected before this upgrade; completed or paused reviews are not automatically restarted. A configuration failure appears as a paused review rather than creating repeated runs. These controls do not enable real patient contact or make this local demo a production deployment.
 
 ```mermaid
 flowchart TD
@@ -81,7 +91,7 @@ The three agents are **logical roles in one Python worker**, not three container
 | FastAPI routes | Authenticate staff, recheck clinic membership, validate Origin/CSRF, reject stale versions, store idempotent requests and return HTTP 202. They do not wait for model inference. |
 | Persistent worker | Claims a run using a database lock and a 120-second lease, restores its checkpoint, executes one decision and persists the result. Network calls occur outside database transactions. |
 | Coordinator | Owns the review goal; selects specialists, inspects returned findings/evidence and chooses to continue, wait or escalate. Only it can delegate or complete automation. |
-| Engagement | Reads follow-up context; waits for a demo reply; returns an attendance/date/ambiguous intent finding with source evidence. It cannot prove identity or update attendance. |
+| Engagement | Reviews a resumed demo reply with source evidence and returns an attendance/date/ambiguous intent finding. The worker handles the predictable initial demo wait without a model call. It cannot prove identity or update attendance. |
 | Preparation | Reads the approved-instruction and prerequisite tools; returns both evidence references. Synthetic administrative notes only; no generated clinical instruction is delivered. |
 | Model adapter | Uses either the explicitly labelled simulation or an HTTPS JSON request to the organiser gateway. Model failures never silently switch to simulation. |
 | Policy/tool gateway | Checks the exact request, case version, current staff authority, role, allowed action and evidence. It supplies source identifiers from the application, never from the model. |
@@ -103,10 +113,11 @@ Every model decision has an application-generated `request_id`, the exact `expec
 | RETURN — Engagement | `evidence_ids` | `PATIENT_CONFIRMED_ATTENDANCE`, `PATIENT_REQUESTED_ALTERNATIVE_DATE`, `AMBIGUOUS_REPLY` |
 | RETURN — Preparation | `evidence_ids` | `SPECIALIST_REVIEW_FINISHED` |
 | WAIT | `wake_after_seconds` | `AWAITING_PATIENT_REPLY`, `SOURCE_TEMPORARILY_UNAVAILABLE` |
-| ESCALATE | None | `CLINICAL_REVIEW_REQUIRED`, `AMBIGUOUS_REPLY`, `CAPABILITY_UNAVAILABLE` |
+| COMPLETE_SIMULATED_CONFIRMATION | `evidence_ids` (receipt and acknowledgement tool step IDs) | `SIMULATED_CONFIRMATION_ACKNOWLEDGED` |
+| ESCALATE | None | Model: `AMBIGUOUS_REPLY`, `CAPABILITY_UNAVAILABLE`. Staff-flag rule only: `CLINICAL_REVIEW_REQUIRED` |
 | COMPLETE | `handoff_id` | `STAFF_HANDOFF_ACCEPTED` |
 
-This is a versioned implementation of the earlier design. `RETURN` is the explicit specialist-to-Coordinator report step. Clinical-review findings escalate rather than returning an instruction to the patient.
+This is a versioned implementation of the earlier design. `RETURN` is the explicit specialist-to-Coordinator report step. Questions needing clinical interpretation go to staff without generating advice. The canonical parser retains the clinical reason for rule/historical records, but the model's response schema excludes it and the gateway rejects an unsupported model proposal.
 
 Example model proposal, with illustrative IDs:
 
@@ -143,9 +154,11 @@ An allowed verdict records `request_id`, `case_id`, `case_version`, `action`, `p
 }
 ```
 
-The next model request includes this actual result and its step ID. Preparation must cite successful instruction **and** prerequisite evidence from its own current delegation. Coordinator completion requires a matching handoff with recorded staff identity and acceptance time. Neither success nor authority can be supplied by a model assertion.
+The next model request includes this actual result and its step ID. Preparation must cite successful instruction **and** prerequisite evidence from its own current delegation. Coordinator completion requires either a matching handoff with recorded staff acceptance, or the simulated confirmation receipt and displayed acknowledgement with both specialist reports. Neither success nor authority can be supplied by a model assertion.
 
-**Green** permits bounded reads, delegation and waiting. **Amber** requires staff ownership for ambiguous requests or unavailable capabilities. **Red** routes an explicit staff concern or model-proposed clinical escalation to staff. These are application action controls, not a medically validated triage system.
+**Green** permits bounded reads, delegation and waiting. **Amber** requires staff ownership for ambiguous requests or unavailable capabilities. **Red** routes an explicit staff clinical flag to staff through an application rule. Policy `m2a-staff-clinical-flag-v2` denies a model-proposed `CLINICAL_REVIEW_REQUIRED` with `CLINICAL_ESCALATION_REQUIRES_STAFF_FLAG`; the proposal remains visible and the run pauses. These are application action controls, not a medically validated triage system.
+
+A routine attendance confirmation or question about what to bring does not establish a clinical concern. New simulator reviews can record confirmation and display an acknowledgement when the saved reply and source evidence pass policy checks. Older read-only reviews and unsupported actions such as rescheduling require an **AMBER administrative handoff** (`CAPABILITY_UNAVAILABLE`). Confirmation intent alone cannot claim that the source appointment was updated. An unclear or clinical question still needs staff review, without diagnosis or reassurance; automatic clinical urgency detection remains unimplemented.
 
 ## 5. Requests and database state
 
@@ -167,6 +180,8 @@ Migration `0002` adds six tables; migration `0001` is unchanged:
 | `agent_event` | Run/clinic/case, client idempotency key, expected case version, staff actor, event kind/content and timestamp. Unique run/client key. |
 | `staff_handoff` | Run/clinic/case, reason, Amber/Red risk, accepting staff identity/time. One handoff per run; acceptance is not clinical resolution. |
 | `model_budget` | Shared organiser budget row, UTC day, reserved call count and next permitted call time. Locked across worker processes. |
+
+Migration `0004` adds `simulated_message` for persisted outgoing reminders and acknowledgements. The separate source database migration `sim0002` adds `sim_confirmation` for idempotent attendance confirmation receipts. [Patient simulator](PATIENT_SIMULATOR.md) explains binding, retries and completion checks.
 
 Run states: `queued → running → queued/waiting/escalated/paused/completed`. A waiting reply consumes no polling inference. An expired lease can be reclaimed; stale callbacks cannot commit. GET tools may be replayed after a crash. An interrupted model request may be billed even when its result cannot be saved; this is not an exactly-once inference guarantee.
 
@@ -195,7 +210,7 @@ AGENT_MIN_INTERVAL_SECONDS=2
 4. Verify **ORGANISER MODEL MODE**, then start one fresh run using synthetic data. Every model-origin step should show its validated decision or a safe error code. The mode label indicates configuration, not a verified successful model call.
 5. Check actual gateway usage with the organiser. A full demonstration uses several model calls. Keep API access and large-prompt compatibility testing separate from the final presentation.
 
-Changing mode never converts an existing run: the worker pauses it with `MODEL_MODE_CHANGED`. Finish existing runs in their original mode, or choose a case without an active run. For a completed case, **Start another demo run** uses the newly configured mode.
+Changing mode never converts an existing run: the worker pauses it with `MODEL_MODE_CHANGED`. Finish existing runs in their original mode. Newly detected or intentionally reset demo cases start automatically in the newly configured mode.
 
 Limits: 24 decision steps per run; 4 Coordinator steps per event; 6 specialist steps per delegation; 2 model attempts per saved request; 40 reserved live-model calls per UTC day by default. Resuming does not reset the run budget. A source retry waits 30–300 seconds. Provider retries are bounded; 401/403 pause for operator investigation, and no redirect is followed. Payload cap is a conservative local setting, not an assertion of the organiser's actual limit.
 

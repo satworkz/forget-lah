@@ -17,6 +17,13 @@ class Instruction(StrictModel):
     synthetic: Literal[True]
 
 
+class AvailableSlot(StrictModel):
+    id: str = Field(max_length=36)
+    starts_at: str = Field(max_length=40)
+    ends_at: str = Field(max_length=40)
+    doctor: str = Field(max_length=80)
+
+
 class ContextData(StrictModel):
     specialty: Literal["dental", "myopia", "antenatal"]
     source_status: Literal["due", "scheduled", "no_show", "cancelled", "completed"]
@@ -24,6 +31,10 @@ class ContextData(StrictModel):
     due_at: str | None = Field(max_length=40)
     can_contact_patient: Literal[False]
     can_write_appointments: Literal[False]
+    episode_version: int | None = Field(default=None, ge=1)
+    can_simulate_confirmation: bool = False
+    available_slots: list[AvailableSlot] = Field(default_factory=list, max_length=10)
+    more_available_slots: bool = False
 
 
 class SourceEnvelope(StrictModel):
@@ -40,9 +51,59 @@ class SourceEnvelope(StrictModel):
 class ClinicTools:
     """Read-only allowlist. No patient, URL or clinic is chosen by the model."""
 
-    def __init__(self, base_url: str, transport=None):
+    def __init__(self, base_url: str, transport=None, followup_key=None):
         self.base_url = base_url.rstrip("/")
         self.transport = transport
+        self.followup_key = followup_key
+
+    def confirm(self, binding, operation):
+        name = "record_simulated_confirmation"
+        if not self.followup_key:
+            return self.failure(name, "SOURCE_INVALID", False)
+        episode = quote(binding["source_episode_ref"], safe="")
+        payload = {
+            **operation,
+            "clinic_id": binding["clinic_id"],
+            "patient_id": binding["patient_id"],
+        }
+        try:
+            with httpx.Client(
+                timeout=10, follow_redirects=False, transport=self.transport
+            ) as client:
+                response = client.post(
+                    f"{self.base_url}/internal/followup/{episode}/confirm-attendance",
+                    json=payload,
+                    headers={"X-Followup-Key": self.followup_key},
+                )
+                if response.status_code == 409:
+                    return self.failure(name, "SOURCE_CONFLICT", False)
+                if response.status_code in {403, 404}:
+                    return self.failure(name, "SOURCE_NOT_FOUND", False)
+                response.raise_for_status()
+                if len(response.content) > 16000:
+                    raise ValueError("Response too large")
+                receipt = ConfirmationEnvelope.model_validate(response.json())
+            data = receipt.receipt.model_dump()
+            if (
+                data["receipt_id"] != operation["operation_id"]
+                or data["run_id"] != operation["run_id"]
+                or data["patient_id"] != binding["patient_id"]
+                or data["source_episode_ref"] != binding["source_episode_ref"]
+                or data["episode_version"] != operation["expected_version"]
+            ):
+                raise ValueError("Confirmation receipt binding mismatch")
+            return ToolResult(
+                tool_name=name,
+                status="succeeded",
+                source_version=receipt.source_version,
+                data=data,
+                error_code=None,
+                retryable=False,
+            )
+        except httpx.HTTPError:
+            return self.failure(name, "SOURCE_UNAVAILABLE", True)
+        except ValueError:
+            return self.failure(name, "SOURCE_INVALID", False)
 
     def execute(self, tool_name: str, binding: dict) -> ToolResult:
         if tool_name not in {
@@ -102,3 +163,20 @@ class ClinicTools:
             error_code=code,
             retryable=retryable,
         )
+
+
+class ConfirmationReceipt(StrictModel):
+    receipt_id: str = Field(min_length=36, max_length=36)
+    source_episode_ref: str = Field(max_length=100)
+    patient_id: str = Field(min_length=36, max_length=36)
+    run_id: str = Field(min_length=36, max_length=36)
+    episode_version: int = Field(ge=1)
+    scheduled_at: str = Field(max_length=40)
+    confirmed_at: str = Field(max_length=40)
+    synthetic: Literal[True]
+    status: Literal["PATIENT_CONFIRMED_ATTENDANCE"]
+
+
+class ConfirmationEnvelope(StrictModel):
+    receipt: ConfirmationReceipt
+    source_version: str = Field(min_length=1, max_length=40)

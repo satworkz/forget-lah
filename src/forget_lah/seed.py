@@ -1,7 +1,10 @@
+import secrets
+
 from sqlalchemy import select
 
 from forget_lah.auth import hasher
 from forget_lah.db import Clinic, Membership, Principal, make_engine, session_factory
+from forget_lah.service_identity import AUTOMATION_EMAIL, AUTOMATION_PRINCIPAL_ID
 from forget_lah.settings import Settings
 from forget_lah.source import DEMO_CLINIC_ID
 
@@ -21,6 +24,21 @@ def seed(factory, email: str, password: str) -> None:
             db.add(Membership(principal_id=user.id, clinic_id=DEMO_CLINIC_ID))
 
 
+def seed_automation(factory) -> None:
+    """Provision once. Never re-enable a revoked identity or membership."""
+    with factory.begin() as db:
+        if not db.get(Principal, AUTOMATION_PRINCIPAL_ID):
+            db.add(
+                Principal(
+                    id=AUTOMATION_PRINCIPAL_ID,
+                    email=AUTOMATION_EMAIL,
+                    password_hash=hasher.hash(secrets.token_urlsafe(48)),
+                )
+            )
+            db.flush()
+            db.add(Membership(principal_id=AUTOMATION_PRINCIPAL_ID, clinic_id=DEMO_CLINIC_ID))
+
+
 def main() -> None:
     settings = Settings()
     if not settings.demo_staff_password:
@@ -32,6 +50,7 @@ def main() -> None:
             settings.demo_staff_email,
             settings.demo_staff_password.get_secret_value(),
         )
+        seed_automation(session_factory(engine))
         print(
             "Synthetic clinic and staff account are ready. Existing credentials were not changed."
         )

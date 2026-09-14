@@ -10,14 +10,16 @@ from forget_lah.runtime.budget import reserve_call
 from forget_lah.runtime.clinic_tools import ClinicTools
 from forget_lah.runtime.contracts import (
     REQUIRED_EVIDENCE_BY_ROLE,
-    TOOLS_BY_ROLE,
     CompleteDecision,
+    CompleteSimulationDecision,
     DelegateDecision,
     EscalateDecision,
     ReturnDecision,
     ToolDecision,
+    ToolResult,
     WaitDecision,
     parse_decision,
+    tools_for,
 )
 from forget_lah.runtime.models import (
     AgentDelegation,
@@ -27,6 +29,17 @@ from forget_lah.runtime.models import (
 )
 from forget_lah.runtime.policy import has_authority, policy_for
 from forget_lah.runtime.provider import ModelError, model_for
+from forget_lah.runtime.simulation import (
+    current_tools,
+    future_scheduled,
+    latest_tool,
+    reply_evidence,
+    save_acknowledgement,
+    save_reminder,
+    simulation_enabled,
+    simulation_evidence,
+)
+from forget_lah.service_identity import AUTOMATION_PRINCIPAL_ID
 
 
 def as_utc(value):
@@ -44,6 +57,14 @@ def pause(run, code):
     release(run, "paused")
 
 
+def authority_revoked(run):
+    return (
+        "SERVICE_AUTHORITY_REVOKED"
+        if run.authorised_by == AUTOMATION_PRINCIPAL_ID
+        else "STAFF_AUTHORITY_REVOKED"
+    )
+
+
 def abort_delegation(db, run):
     for delegation in db.scalars(
         select(AgentDelegation).where(
@@ -53,7 +74,7 @@ def abort_delegation(db, run):
         delegation.status = "aborted"
 
 
-def request_handoff(db, run, reason):
+def request_handoff(db, run, reason, *, risk):
     existing = db.scalar(select(StaffHandoff).where(StaffHandoff.run_id == run.id))
     if not existing:
         db.add(
@@ -63,7 +84,7 @@ def request_handoff(db, run, reason):
                 case_id=run.case_id,
                 run_id=run.id,
                 reason_code=reason,
-                risk="RED" if reason == "CLINICAL_REVIEW_REQUIRED" else "AMBER",
+                risk=risk,
             )
         )
     abort_delegation(db, run)
@@ -89,21 +110,27 @@ def claim_run(factory):
         if not run:
             return None
         if not has_authority(db, run):
-            pause(run, "STAFF_AUTHORITY_REVOKED")
+            pause(run, authority_revoked(run))
             return None
         if run.status == "waiting":
-            abort_delegation(db, run)
-            run.active_role = "coordinator"
-            run.checkpoint = {
-                **run.checkpoint,
-                "latest_event": {
-                    **run.checkpoint["latest_event"],
-                    "id": uid(),
-                    "wake_reason": "timer",
-                },
-                "returned_specialists": [],
-                "delegation_start": 0,
-            }
+            if simulation_enabled(run) and run.checkpoint.get("next_source_retry"):
+                run.checkpoint = {
+                    **run.checkpoint,
+                    "latest_event": {**run.checkpoint["latest_event"], "wake_reason": "timer"},
+                }
+            else:
+                abort_delegation(db, run)
+                run.active_role = "coordinator"
+                run.checkpoint = {
+                    **run.checkpoint,
+                    "latest_event": {
+                        **run.checkpoint["latest_event"],
+                        "id": uid(),
+                        "wake_reason": "timer",
+                    },
+                    "returned_specialists": [],
+                    "delegation_start": 0,
+                }
         run.status, run.lease_token = "running", uid()
         run.lease_until = now + timedelta(seconds=120)
         return run.id, run.lease_token
@@ -146,6 +173,31 @@ def observation_for(db, run, case, step_id):
         for step in reversed(recent)
         if step.tool_result and step.observation.get("latest_event", {}).get("id") == event["id"]
     ][-6:]
+    # Repeated reads remain in the journey; only the newest context is needed by the model.
+    newest_context = next(
+        (t["id"] for t in reversed(tools) if t["result"]["tool_name"] == "read_followup_context"),
+        None,
+    )
+    tools = [
+        t
+        for t in tools
+        if t["result"]["tool_name"] != "read_followup_context" or t["id"] == newest_context
+    ]
+    # The model needs receipt evidence, never source patient identifiers.
+    tools = [
+        {
+            **t,
+            "result": {
+                **t["result"],
+                "data": {
+                    k: v
+                    for k, v in t["result"]["data"].items()
+                    if k not in {"patient_id", "source_episode_ref", "run_id"}
+                },
+            },
+        }
+        for t in tools
+    ]
     handoff = db.scalar(select(StaffHandoff).where(StaffHandoff.run_id == run.id))
     delegation = db.scalar(
         select(AgentDelegation).where(
@@ -161,6 +213,9 @@ def observation_for(db, run, case, step_id):
         and t["result"]["status"] == "succeeded"
     ]
     required = REQUIRED_EVIDENCE_BY_ROLE[run.active_role]
+    simulation = simulation_evidence(db, run)
+    if run.active_role == "engagement" and simulation.get("record_required"):
+        required = (*required, "record_simulated_confirmation")
     completed_tools = {t["result"]["tool_name"] for t in eligible}
     return {
         "request_id": step_id,
@@ -192,7 +247,8 @@ def observation_for(db, run, case, step_id):
         ],
         "delegation_start": run.checkpoint.get("delegation_start", 0),
         "handoff": {"id": handoff.id, "accepted": bool(handoff.accepted_by)} if handoff else None,
-        "allowed_tools": list(TOOLS_BY_ROLE[run.active_role]),
+        "allowed_tools": list(tools_for(run.active_role, simulation_enabled(run))),
+        "simulation": simulation,
         "outreach_enabled": False,
         "booking_writes_enabled": False,
     }
@@ -221,13 +277,98 @@ def rule_escalation(db, run, case):
                 "decision": "ALLOW",
                 "risk": "RED",
                 "reason_codes": ["STAFF_FLAGGED_CLINICAL_CONCERN"],
-                "policy_version": "m2a-read-only-v1",
+                "policy_version": "m2a-staff-clinical-flag-v2",
                 "action": "ESCALATE",
             },
         )
     )
-    request_handoff(db, run, "CLINICAL_REVIEW_REQUIRED")
+    request_handoff(db, run, "CLINICAL_REVIEW_REQUIRED", risk="RED")
     case.case_version += 1
+
+
+def apply_initial_demo_wait(db, settings, run, case, step):
+    """Save a fixed demo checkpoint without asking the model to choose WAIT."""
+    observation = step.observation
+    if (
+        run.active_role != "engagement"
+        or observation["latest_event"]["kind"] != "started"
+        or observation["outreach_enabled"] is not False
+        or observation["booking_writes_enabled"] is not False
+    ):
+        return False
+    delegation = db.scalar(
+        select(AgentDelegation).where(
+            AgentDelegation.run_id == run.id,
+            AgentDelegation.status == "active",
+            AgentDelegation.target == "engagement",
+            AgentDelegation.event_id == observation["latest_event"]["id"],
+        )
+    )
+    # Only reuse the latest context result from this event. A failed or absent
+    # source read must still go through normal recovery, never this shortcut.
+    source = next(
+        (
+            tool
+            for tool in reversed(observation["tools"])
+            if tool["result"]["tool_name"] == "read_followup_context"
+        ),
+        None,
+    )
+    if not delegation or not source or source["result"]["status"] != "succeeded":
+        return False
+    if any(
+        previous.observation.get("latest_event", {}).get("id") == observation["latest_event"]["id"]
+        for previous in db.scalars(
+            select(AgentStep).where(
+                AgentStep.run_id == run.id,
+                AgentStep.role == "engagement",
+                AgentStep.origin == "rule",
+                AgentStep.status == "completed",
+            )
+        )
+    ):
+        return False
+    data = source["result"].get("data", {})
+    if (
+        data.get("can_contact_patient") is not False
+        or data.get("can_write_appointments") is not False
+    ):
+        return False
+    decision = WaitDecision(
+        request_id=step.id,
+        expected_case_version=case.case_version,
+        step_type="WAIT",
+        reason_code="AWAITING_PATIENT_REPLY",
+        wake_after_seconds=0,
+    )
+    step.origin = "rule"
+    step.observation = {
+        **observation,
+        "application_rule": {
+            "name": "INITIAL_DEMO_REPLY_WAIT",
+            "source_step_id": source["id"],
+            "delegation_id": delegation.id,
+            "explanation": "Outreach is disabled; wait for a staff-entered demo reply. No message was sent.",
+        },
+    }
+    step.decision = decision.model_dump()
+    step.policy = policy_for(db, run, case, step, decision)
+    if step.policy["decision"] != "ALLOW":
+        step.status, step.error_code = "rejected", "POLICY_DENIED"
+        pause(run, "POLICY_DENIED")
+    else:
+        if simulation_enabled(run) and settings.simulation_configured:
+            message = save_reminder(db, run, source)
+            step.observation = {
+                **step.observation,
+                "application_rule": {
+                    **step.observation["application_rule"],
+                    "explanation": "A reminder was displayed in the patient simulator; wait for a staff-entered synthetic reply.",
+                    "simulated_message_id": message.id,
+                },
+            }
+        apply_control(db, run, case, step, decision, settings)
+    return True
 
 
 def prepare_step(factory, settings, run_id, token):
@@ -240,7 +381,7 @@ def prepare_step(factory, settings, run_id, token):
             pause(run, "MODEL_MODE_CHANGED")
             return None
         if not has_authority(db, run):
-            pause(run, "STAFF_AUTHORITY_REVOKED")
+            pause(run, authority_revoked(run))
             return None
         if run.checkpoint["latest_event"]["kind"] == "clinical_concern":
             rule_escalation(db, run, case)
@@ -267,6 +408,7 @@ def prepare_step(factory, settings, run_id, token):
                 s
                 for s in steps
                 if s.role == run.active_role
+                and not (simulation_enabled(run) and s.origin == "rule")
                 and (
                     s.observation.get("latest_event", {}).get("id")
                     == run.checkpoint["latest_event"]["id"]
@@ -274,7 +416,9 @@ def prepare_step(factory, settings, run_id, token):
                     else s.sequence > run.checkpoint.get("delegation_start", 0)
                 )
             ]
-            if len(active) >= (4 if run.active_role == "coordinator" else 6):
+            if len(active) >= (
+                6 if simulation_enabled(run) or run.active_role != "coordinator" else 4
+            ):
                 pause(run, "ROLE_BUDGET_EXHAUSTED")
                 return None
             step_id = uid()
@@ -293,6 +437,75 @@ def prepare_step(factory, settings, run_id, token):
             )
             db.add(pending)
             db.flush()
+            # Existing pending model attempts retain their original provenance.
+            # Apply rules before reserving a live call or incrementing attempts.
+            retry_tool = (
+                run.checkpoint.get("next_source_retry") if simulation_enabled(run) else None
+            )
+            if retry_tool and run.checkpoint["latest_event"].get("wake_reason") == "timer":
+                retries = run.checkpoint.get("simulated_tool_retries", {})
+                run.checkpoint = {
+                    **run.checkpoint,
+                    "next_source_retry": None,
+                    "simulated_tool_retries": {
+                        **retries,
+                        retry_tool: retries.get(retry_tool, 0) + 1,
+                    },
+                }
+                decision = ToolDecision(
+                    request_id=pending.id,
+                    expected_case_version=case.case_version,
+                    step_type="TOOL",
+                    tool_name=retry_tool,
+                    reason_code={
+                        "record_simulated_confirmation": "RECORD_SIMULATED_CONFIRMATION",
+                        "send_simulated_acknowledgement": "SEND_SIMULATED_ACKNOWLEDGEMENT",
+                    }[retry_tool],
+                )
+                pending.origin = "rule"
+                pending.observation = {
+                    **pending.observation,
+                    "application_rule": {
+                        "name": "SIMULATED_SOURCE_RETRY",
+                        "explanation": "The worker retried the failed simulated tool with the same reply binding. No model call was needed; check the actual result.",
+                    },
+                }
+                pending.decision = decision.model_dump()
+                pending.policy = policy_for(db, run, case, pending, decision)
+                if pending.policy["decision"] != "ALLOW":
+                    pending.status, pending.error_code = "rejected", "POLICY_DENIED"
+                    pause(run, "POLICY_DENIED")
+                    return None
+                pending.status = "tool_pending"
+            elif (
+                pending.sequence == 1
+                and run.active_role == "coordinator"
+                and pending.observation["latest_event"]["kind"] == "started"
+            ):
+                decision = ToolDecision(
+                    request_id=pending.id,
+                    expected_case_version=case.case_version,
+                    step_type="TOOL",
+                    reason_code="READ_SOURCE",
+                    tool_name="read_followup_context",
+                )
+                pending.origin = "rule"
+                pending.observation = {
+                    **pending.observation,
+                    "application_rule": {
+                        "name": "INITIAL_SOURCE_READ",
+                        "explanation": "A new routine review requires current clinic context before model planning.",
+                    },
+                }
+                pending.decision = decision.model_dump()
+                pending.policy = policy_for(db, run, case, pending, decision)
+                if pending.policy["decision"] != "ALLOW":
+                    pending.status, pending.error_code = "rejected", "POLICY_DENIED"
+                    pause(run, "POLICY_DENIED")
+                    return None
+                pending.status = "tool_pending"
+            elif apply_initial_demo_wait(db, settings, run, case, pending):
+                return None
         if pending.status == "pending":
             if pending.attempts >= 2:
                 pending.status, pending.error_code = "error", "MODEL_ATTEMPTS_EXHAUSTED"
@@ -370,11 +583,35 @@ def apply_control(db, run, case, step, decision, settings):
         release(run, "queued", delay=delay)
     elif isinstance(decision, WaitDecision):
         run.checkpoint = {**run.checkpoint, "wait_reason": decision.reason_code}
+        if simulation_enabled(run) and decision.reason_code == "SOURCE_TEMPORARILY_UNAVAILABLE":
+            previous = db.scalar(
+                select(AgentStep)
+                .where(
+                    AgentStep.run_id == run.id,
+                    AgentStep.sequence < step.sequence,
+                    AgentStep.tool_result.is_not(None),
+                )
+                .order_by(AgentStep.sequence.desc())
+            )
+            if (
+                previous
+                and previous.tool_result.get("retryable")
+                and previous.tool_result["tool_name"]
+                in {"record_simulated_confirmation", "send_simulated_acknowledgement"}
+            ):
+                name = previous.tool_result["tool_name"]
+                if run.checkpoint.get("simulated_tool_retries", {}).get(name, 0) >= 2:
+                    pause(run, "SOURCE_ATTEMPTS_EXHAUSTED")
+                    return
+                run.checkpoint = {**run.checkpoint, "next_source_retry": name}
         release(run, "waiting", delay=decision.wake_after_seconds or None)
     elif isinstance(decision, EscalateDecision):
-        request_handoff(db, run, decision.reason_code)
+        request_handoff(db, run, decision.reason_code, risk=step.policy["risk"])
     elif isinstance(decision, CompleteDecision):
         run.checkpoint = {**run.checkpoint, "outcome": "OWNED_STAFF_HANDOFF"}
+        release(run, "completed")
+    elif isinstance(decision, CompleteSimulationDecision):
+        run.checkpoint = {**run.checkpoint, "outcome": "SIMULATED_ATTENDANCE_CONFIRMED"}
         release(run, "completed")
 
 
@@ -449,17 +686,83 @@ def execute_pending_tool(factory, settings, run_id, token, step_id, tools):
             "source_episode_ref": case.source_episode_ref,
         }
         tool_name, version = decision.tool_name, case.case_version
-    result = tools.execute(tool_name, binding)
+        simulation_action = tool_name in {
+            "record_simulated_confirmation",
+            "send_simulated_acknowledgement",
+        }
+        if simulation_action and not settings.simulation_configured:
+            step.status, step.error_code = "rejected", "SIMULATOR_DISABLED"
+            pause(run, "SIMULATOR_DISABLED")
+            return False
+        if tool_name == "record_simulated_confirmation":
+            context = latest_tool(current_tools(db, run), "read_followup_context", "engagement")
+            operation = {
+                "operation_id": reply_evidence(db, run).id,
+                "run_id": run.id,
+                "expected_version": context.tool_result["data"]["episode_version"],
+            }
+    if tool_name == "record_simulated_confirmation":
+        result = tools.confirm(binding, operation)
+    elif tool_name == "send_simulated_acknowledgement":
+        # Recheck the current source before displaying appointment details.
+        result = tools.execute("read_followup_context", binding)
+    else:
+        result = tools.execute(tool_name, binding)
     with factory.begin() as db:
         run = current_run(db, run_id, token)
         if not run:
+            if tool_name == "record_simulated_confirmation":
+                stale_step = db.get(AgentStep, step_id)
+                if (
+                    stale_step
+                    and stale_step.run_id == run_id
+                    and stale_step.status == "rejected"
+                    and stale_step.tool_result is None
+                ):
+                    stale_step.tool_result = result.model_dump()
+                    stale_step.status, stale_step.error_code = (
+                        "rejected",
+                        "LATE_SIMULATED_WRITE_RESULT",
+                    )
             return False
         case = current_case(db, run)
         step = db.get(AgentStep, step_id)
         if case.case_version != version or not has_authority(db, run):
+            if tool_name == "record_simulated_confirmation":
+                step.tool_result = result.model_dump()
             step.status, step.error_code = "rejected", "STALE_OR_REVOKED_CONTEXT"
             pause(run, "STALE_OR_REVOKED_CONTEXT")
             return False
+        if tool_name == "send_simulated_acknowledgement":
+            receipt = latest_tool(
+                current_tools(db, run), "record_simulated_confirmation", "engagement"
+            )
+            if (
+                result.status != "succeeded"
+                or not future_scheduled(result.data)
+                or result.data.get("episode_version")
+                != receipt.tool_result["data"]["episode_version"]
+                or result.data.get("scheduled_at") != receipt.tool_result["data"]["scheduled_at"]
+                or not simulation_evidence(db, run)["ack_ready"]
+            ):
+                result = ClinicTools.failure(
+                    tool_name, result.error_code or "SOURCE_CONFLICT", result.retryable
+                )
+            else:
+                message = save_acknowledgement(db, run)
+                result = ToolResult(
+                    tool_name=tool_name,
+                    status="succeeded",
+                    source_version=message.source_version,
+                    data={
+                        "message_id": message.id,
+                        "channel": "patient_simulator",
+                        "delivery_status": "displayed_in_simulator",
+                        "synthetic": True,
+                    },
+                    error_code=None,
+                    retryable=False,
+                )
         step.tool_result, step.status = result.model_dump(), "completed"
         case.case_version += 1
         release(run, "queued", delay=settings.agent_min_interval_seconds)
@@ -470,7 +773,14 @@ def process_run(factory, settings, run_id, token, *, model=None, tools=None):
     work = prepare_step(factory, settings, run_id, token)
     if work is None:
         return False
-    tools = tools or ClinicTools(settings.mock_clinic_url)
+    tools = tools or ClinicTools(
+        settings.mock_clinic_url,
+        followup_key=(
+            settings.mock_clinic_followup_key.get_secret_value()
+            if settings.mock_clinic_followup_key
+            else None
+        ),
+    )
     if work["phase"] == "pending":
         provider = model or model_for(settings, work["mode"])
         try:

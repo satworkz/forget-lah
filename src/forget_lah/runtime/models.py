@@ -135,3 +135,18 @@ class ModelBudget(Base):
     day: Mapped[str] = mapped_column(String(10))
     calls: Mapped[int] = mapped_column(Integer, default=0)
     next_allowed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class SimulatedMessage(Base):
+    __tablename__ = "simulated_message"
+    __table_args__ = (run_fk(), UniqueConstraint("run_id", "event_id", "kind"))
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    clinic_id: Mapped[str] = mapped_column(String(36))
+    case_id: Mapped[str] = mapped_column(String(36))
+    run_id: Mapped[str] = mapped_column(String(36))
+    event_id: Mapped[str] = mapped_column(String(36))
+    kind: Mapped[str] = mapped_column(String(30))
+    body: Mapped[str] = mapped_column(String(2600))
+    source_version: Mapped[str] = mapped_column(String(40))
+    evidence: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

@@ -26,6 +26,7 @@ type Step = {
 };
 type View = {
   case_version: number;
+  auto_start: { enabled: boolean; authorised: boolean };
   run: {
     id: string;
     status: string;
@@ -47,7 +48,8 @@ type View = {
     status: string;
     evidence_ids: string[];
   }[];
-  events: { id: string; kind: string; content: string }[];
+  events: { id: string; kind: string; content: string; created_at: string }[];
+  patient_simulator: { available: boolean; enabled: boolean; messages: { id: string; kind: string; body: string; created_at: string }[] };
   handoff: {
     reason_code: string;
     risk: string;
@@ -71,10 +73,12 @@ export function AgentPanel({
   caseId,
   modelMode,
   onStatus,
+  onJourney,
 }: {
   caseId: string;
   modelMode: string;
   onStatus: (status: string | null) => void;
+  onJourney: () => void;
 }) {
   const [view, setView] = useState<View | null>(null);
   const [error, setError] = useState("");
@@ -124,23 +128,18 @@ export function AgentPanel({
   }, [caseId]);
 
   async function act(kind: string) {
-    if (!view || busy) return;
+    if (!view?.run || busy) return;
     setBusy(true);
     setError("");
     try {
-      const start = kind === "start";
-      await api(`/api/cases/${caseId}/agent/${start ? "runs" : "events"}`, {
+      await api(`/api/cases/${caseId}/agent/events`, {
         method: "POST",
         headers: mutationHeaders(),
         body: JSON.stringify({
           expected_case_version: view.case_version,
-          ...(start
-            ? {}
-            : {
-                run_id: view.run!.id,
-                kind,
-                content: kind === "demo_reply" ? reply : "",
-              }),
+          run_id: view.run.id,
+          kind,
+          content: kind === "demo_reply" ? reply : "",
         }),
       });
       if (mounted.current) await reloadRef.current();
@@ -152,6 +151,19 @@ export function AgentPanel({
   }
 
   const run = view?.run;
+  const conversation = view ? [
+    ...(view.patient_simulator?.messages ?? []).map(m => ({...m, text: m.body, label: m.kind === "reminder" ? "Clinic reminder · simulated" : "Clinic acknowledgement · simulated"})),
+    ...view.events.filter(e => e.kind === "demo_reply").map(e => ({...e, text: e.content, label: "Patient reply · simulated"})),
+  ].sort((a,b) => a.created_at.localeCompare(b.created_at)) : [];
+  async function freshSimulation() {
+    if (!view || busy) return;
+    setBusy(true); setError("");
+    try {
+      await api(`/api/cases/${caseId}/agent/runs`, {method: "POST", headers: mutationHeaders(), body: JSON.stringify({expected_case_version: view.case_version, fresh_simulation: true})});
+      setReply("I confirm my attendance");
+      await reloadRef.current();
+    } catch(e) {setError((e as Error).message);} finally {setBusy(false);}
+  }
   const reviewMode = run?.mode ?? modelMode;
   return (
     <section className="panel agent-workspace" aria-labelledby="agent-title">
@@ -164,12 +176,13 @@ export function AgentPanel({
           {modelLabel(reviewMode)}
         </span>
       </div>
+      <button className="secondary" onClick={onJourney}>View full case journey →</button>
       <p className="muted">
         {reviewMode === "mock"
           ? "Decisions follow a deterministic demo script. Source reads, saved progress and permission checks really run."
           : "Decisions use the configured Claude provider. A failed model call pauses or retries; it never switches to simulation."}{" "}
-        All records and replies here are fictional. No messages or booking
-        changes are sent.
+        All records and replies here are fictional. Simulated messages stay in this dashboard;
+        no real messages or booking changes are sent.
       </p>
       {run && run.mode !== modelMode && (
         <p className="muted">
@@ -187,15 +200,12 @@ export function AgentPanel({
         <>
           {!run && (
             <div className="agent-actions">
-              <button
-                className="primary"
-                disabled={busy}
-                onClick={() => void act("start")}
-              >
-                Start agent review
-              </button>
-              <p>
-                The Coordinator will inspect this case and choose a specialist.
+              <p role="status">
+                {!view.auto_start.enabled
+                  ? "Automatic review is disabled in the app configuration."
+                  : !view.auto_start.authorised
+                    ? "Automatic review needs an active clinic service identity. Check bootstrap and clinic access."
+                    : "Waiting for the worker to finish case setup and queue the review automatically. No start action is needed."}
               </p>
             </div>
           )}
@@ -205,10 +215,23 @@ export function AgentPanel({
                 <span className="pill capitalize">{run.status}</span>
                 <strong className="capitalize">{run.active_role}</strong>
                 <span>
-                  {run.step_count} / {run.step_limit} decision steps
+                  {run.step_count} steps used · maximum {run.step_limit}
                 </span>
               </div>
-              <p>{run.goal}</p>
+              <p><strong>Assigned goal:</strong> {run.goal}</p>
+              {view.patient_simulator?.available && ["waiting", "paused", "escalated", "completed"].includes(run.status) && !run.available_at && <div className="agent-actions">
+                <button className="secondary" disabled={busy} onClick={() => void freshSimulation()}>Start fresh simulator test</button>
+                <p className="small">Uses the current clinic records in a new review. Earlier reviews remain in the case journey.</p>
+              </div>}
+              {(view.patient_simulator?.enabled || conversation.length > 0) && <section className="sim-conversation" aria-label="Patient conversation simulator">
+                <h3>Patient conversation simulator</h3>
+                <p className="small">Local test conversation. Confirmations update only the synthetic clinic system.</p>
+                {conversation.map(m => <article key={m.id} className="sim-message">
+                  <strong>{m.label}</strong><time>{new Date(m.created_at).toLocaleString()}</time>
+                  <p>{m.text}</p>
+                </article>)}
+                {!conversation.length && <p>Waiting for the first simulated reminder…</p>}
+              </section>}
               {run.status === "waiting" && (
                 <div className="agent-prompt">
                   <strong>
@@ -244,6 +267,7 @@ export function AgentPanel({
                     >
                       Submit demo reply
                     </button>
+                    {view.patient_simulator?.enabled && <button type="button" className="secondary" disabled={busy} onClick={() => setReply("I confirm my attendance")}>Use attendance confirmation</button>}
                   </form>
                   <button
                     className="secondary"
@@ -271,6 +295,9 @@ export function AgentPanel({
                   <p className="capitalize">
                     {readable(view.handoff.reason_code)}
                   </p>
+                  {view.handoff.reason_code === "CAPABILITY_UNAVAILABLE" && <p>
+                    {view.patient_simulator?.enabled ? "This scenario needs clinic help. Check the tool evidence for an unavailable action, changed appointment or preparation issue. Rescheduling and booking are not implemented." : "This older review used read-only capabilities. Start a fresh simulator test to exercise attendance confirmation and acknowledgement."}
+                  </p>}
                   {view.handoff.accepted ? (
                     <p>
                       Owner: {view.handoff.owner}. The staff task remains open.
@@ -310,8 +337,7 @@ export function AgentPanel({
               )}
               {run.status === "completed" && (
                 <p className="completion">
-                  Automation complete: a named staff member owns the follow-up.
-                  Clinical work and appointment changes remain with the clinic.
+                  {run.outcome === "SIMULATED_ATTENDANCE_CONFIRMED" ? "Follow-up complete: attendance confirmation is recorded in the mock clinic system and the acknowledgement is displayed above. This records an intention to attend, not actual attendance." : "Automation complete: a named staff member owns the follow-up. Clinical work and appointment changes remain with the clinic."}
                 </p>
               )}
               {["queued", "running", "waiting"].includes(run.status) && (
@@ -321,15 +347,6 @@ export function AgentPanel({
                   onClick={() => void act("pause")}
                 >
                   Pause agent
-                </button>
-              )}
-              {run.status === "completed" && (
-                <button
-                  className="secondary"
-                  disabled={busy}
-                  onClick={() => void act("start")}
-                >
-                  Start another demo run
                 </button>
               )}
               <h3>Decision and tool evidence</h3>
@@ -348,6 +365,18 @@ export function AgentPanel({
                       <span>{step.status}</span>
                     </div>
                     <p>{step.goal}</p>
+                    {step.origin === "rule" && step.decision?.step_type === "TOOL" && (
+                      <p>{step.decision.tool_name === "read_followup_context"
+                        ? "The worker requested the initial clinic context automatically."
+                        : "The worker retried the interrupted simulated action using its saved evidence."}
+                        {" "}This step uses 0 model calls. Check the tool result below.</p>
+                    )}
+                    {step.origin === "rule" && step.decision?.step_type === "WAIT" && (
+                      <p>{view.patient_simulator.messages.some((message) => message.kind === "reminder")
+                        ? "The worker displayed the simulated reminder and saved this wait automatically."
+                        : "The worker saved this wait automatically; this review has no outgoing reminder."}
+                        {" "}No Claude call was needed for this step. Submit a demo reply to continue.</p>
+                    )}
                     {step.decision && (
                       <p>
                         <strong>{String(step.decision.step_type)}</strong>

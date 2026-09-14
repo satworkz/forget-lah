@@ -1,86 +1,189 @@
-from datetime import UTC, datetime, timedelta
+import secrets
+from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from pydantic import SecretStr
+from pydantic_settings import BaseSettings
+from sqlalchemy import func, select, text, update
+from sqlalchemy.exc import IntegrityError
 
-from forget_lah.source import DEMO_CLINIC_ID
-
-app = FastAPI(title="Synthetic clinic source", docs_url=None, redoc_url=None, openapi_url=None)
-
-
-@app.get("/health/live")
-def health():
-    return {"status": "ok", "synthetic": True}
-
-
-@app.get("/internal/candidates")
-def candidates():
-    # Stable episode IDs prevent duplicate cases across polls. Relative dates keep setup usable.
-    now = datetime.now(UTC).replace(hour=2, minute=0, second=0, microsecond=0)
-    return [
-        {
-            "patient_id": "20000000-0000-4000-8000-000000000001",
-            "display_alias": "Mr Lim (demo)",
-            "source_episode_ref": "DEMO-DENTAL-RECALL-01",
-            "specialty": "dental",
-            "record_type": "recall",
-            "source_status": "due",
-            "has_future_booking": False,
-            "due_at": (now - timedelta(days=14)).isoformat(),
-        },
-        {
-            "patient_id": "20000000-0000-4000-8000-000000000002",
-            "display_alias": "Alex (demo)",
-            "source_episode_ref": "DEMO-MYOPIA-VISIT-01",
-            "specialty": "myopia",
-            "record_type": "appointment",
-            "source_status": "scheduled",
-            "scheduled_at": (now + timedelta(days=3)).isoformat(),
-        },
-        {
-            "patient_id": "20000000-0000-4000-8000-000000000003",
-            "display_alias": "Priya (demo)",
-            "source_episode_ref": "DEMO-ANTENATAL-VISIT-01",
-            "specialty": "antenatal",
-            "record_type": "appointment",
-            "source_status": "no_show",
-            "scheduled_at": (now - timedelta(days=1)).isoformat(),
-        },
-    ]
+from forget_lah.db import make_engine, session_factory
+from services.mock_clinic.contracts import CreateEpisode, CreateSlot, UpdateEpisode, UpdateSlot
+from services.mock_clinic.store import (
+    Episode,
+    Patient,
+    Slot,
+    candidate,
+    envelope,
+    latest_confirmation,
+    slot_dict,
+)
 
 
-@app.get("/internal/followup-context/{episode}")
-def followup_context(episode: str):
-    row = next((item for item in candidates() if item["source_episode_ref"] == episode), None)
-    if row is None:
-        raise HTTPException(404, "Synthetic episode not found")
-    # Administrative demo text only; not clinically validated or sent to a patient.
-    notes = {
-        "dental": "Demo clinic note: bring your appointment confirmation.",
-        "myopia": "Demo clinic note: bring your existing spectacles if you have them.",
-        "antenatal": "Demo clinic note: bring your maternity appointment booklet if you have one.",
-    }
-    return {
-        "clinic_id": DEMO_CLINIC_ID,
-        "patient_id": row["patient_id"],
-        "source_episode_ref": episode,
-        "source_version": "synthetic-v1",
-        "synthetic": True,
-        "context": {
-            "specialty": row["specialty"],
-            "source_status": row["source_status"],
-            "scheduled_at": row.get("scheduled_at"),
-            "due_at": row.get("due_at"),
-            "can_contact_patient": False,
-            "can_write_appointments": False,
-        },
-        "instructions": [
-            {
-                "instruction_id": f"DEMO-{row['specialty'].upper()}-NOTE",
-                "version": "1",
-                "locale": "en-SG",
-                "approved_text": notes[row["specialty"]],
-                "synthetic": True,
-            }
-        ],
-        "prerequisites": ["NOT_APPLICABLE"],
-    }
+class MockSettings(BaseSettings):
+    mock_database_url: SecretStr
+    mock_clinic_admin_key: SecretStr
+    mock_clinic_followup_key: SecretStr | None = None
+
+
+def create_app(settings=None, engine=None):
+    settings = settings or MockSettings()
+    owns_engine = engine is None
+    engine = engine or make_engine(settings.mock_database_url.get_secret_value())
+    factory = session_factory(engine)
+
+    @asynccontextmanager
+    async def lifespan(_):
+        yield
+        if owns_engine:
+            engine.dispose()
+
+    app = FastAPI(
+        title="Clinic simulator — synthetic source",
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
+        lifespan=lifespan,
+    )
+    from services.mock_clinic.confirmations import install_confirmation_routes
+
+    install_confirmation_routes(app, factory, settings)
+
+    @app.middleware("http")
+    async def secure_admin(request: Request, call_next):
+        if request.url.path.startswith("/internal/admin"):
+            expected = settings.mock_clinic_admin_key.get_secret_value()
+            if not expected or not secrets.compare_digest(
+                request.headers.get("X-Simulator-Key", ""), expected
+            ):
+                from fastapi.responses import JSONResponse
+
+                return JSONResponse({"detail": "Simulator access denied"}, status_code=403)
+        response = await call_next(request)
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
+    @app.get("/health/live")
+    def health():
+        try:
+            with factory() as db:
+                if db.scalar(text("SELECT version_num FROM alembic_version")) != "sim0002":
+                    raise ValueError("Migration required")
+            return {"status": "ok", "synthetic": True}
+        except Exception as exc:
+            raise HTTPException(503, "Simulator database is not ready") from exc
+
+    @app.get("/internal/candidates")
+    def candidates():
+        with factory() as db:
+            return [
+                candidate(db, row)
+                for row in db.scalars(select(Episode).order_by(Episode.ref).limit(200))
+            ]
+
+    @app.get("/internal/followup-context/{episode}")
+    def context(episode: str):
+        with factory() as db:
+            row = db.get(Episode, episode)
+            if not row:
+                raise HTTPException(404, "Synthetic episode not found")
+            return envelope(db, row)
+
+    @app.get("/internal/admin/snapshot")
+    def snapshot():
+        with factory() as db:
+            episodes = [
+                {
+                    **candidate(db, row),
+                    "doctor_note": row.doctor_note,
+                    "note_approved": row.note_approved,
+                    "prerequisite": row.prerequisite,
+                    "version": row.version,
+                    "attendance_confirmation": latest_confirmation(db, row),
+                }
+                for row in db.scalars(select(Episode).order_by(Episode.ref).limit(200))
+            ]
+            slots = [
+                slot_dict(row)
+                for row in db.scalars(select(Slot).order_by(Slot.starts_at, Slot.id).limit(500))
+            ]
+            return {"synthetic": True, "episodes": episodes, "slots": slots}
+
+    @app.post("/internal/admin/episodes", status_code=201)
+    def create_episode(body: CreateEpisode):
+        ref, patient_id = f"SIM-{body.request_id}", str(body.request_id)
+        try:
+            with factory.begin() as db:
+                if db.bind.dialect.name == "postgresql":
+                    db.execute(text("SELECT pg_advisory_xact_lock(76139002)"))
+                if db.scalar(select(func.count()).select_from(Episode)) >= 200:
+                    raise HTTPException(409, "Local simulator limit is 200 episodes")
+                alias = body.display_alias
+                if not alias.endswith("(demo)"):
+                    alias += " (demo)"
+                db.add(Patient(id=patient_id, display_alias=alias))
+                db.flush()
+                db.add(
+                    Episode(
+                        ref=ref,
+                        patient_id=patient_id,
+                        **body.model_dump(exclude={"request_id", "display_alias"}),
+                    )
+                )
+        except IntegrityError as exc:
+            raise HTTPException(
+                409, "This test episode already exists. Reload the simulator."
+            ) from exc
+        return {"source_episode_ref": ref}
+
+    @app.put("/internal/admin/episodes/{episode}")
+    def edit_episode(episode: str, body: UpdateEpisode):
+        with factory.begin() as db:
+            changed = db.execute(
+                update(Episode)
+                .where(Episode.ref == episode, Episode.version == body.expected_version)
+                .values(
+                    **body.model_dump(exclude={"expected_version"}), version=Episode.version + 1
+                )
+            )
+            if changed.rowcount != 1:
+                raise HTTPException(
+                    409, "Record changed or no longer exists. Reload before editing."
+                )
+        return {"source_episode_ref": episode, "version": body.expected_version + 1}
+
+    @app.post("/internal/admin/slots", status_code=201)
+    def create_slot(body: CreateSlot):
+        try:
+            with factory.begin() as db:
+                if db.bind.dialect.name == "postgresql":
+                    db.execute(text("SELECT pg_advisory_xact_lock(76139003)"))
+                if db.scalar(select(func.count()).select_from(Slot)) >= 500:
+                    raise HTTPException(409, "Local simulator limit is 500 slots")
+                db.add(Slot(id=str(body.request_id), **body.model_dump(exclude={"request_id"})))
+        except IntegrityError as exc:
+            raise HTTPException(
+                409, "Slot already exists, or this doctor already has a slot at that start time."
+            ) from exc
+        return {"id": str(body.request_id)}
+
+    @app.put("/internal/admin/slots/{slot_id}")
+    def edit_slot(slot_id: str, body: UpdateSlot):
+        try:
+            with factory.begin() as db:
+                changed = db.execute(
+                    update(Slot)
+                    .where(Slot.id == slot_id, Slot.version == body.expected_version)
+                    .values(
+                        **body.model_dump(exclude={"expected_version"}), version=Slot.version + 1
+                    )
+                )
+                if changed.rowcount != 1:
+                    raise HTTPException(
+                        409, "Slot changed or no longer exists. Reload before editing."
+                    )
+        except IntegrityError as exc:
+            raise HTTPException(409, "This doctor already has a slot at that start time.") from exc
+        return {"id": slot_id, "version": body.expected_version + 1}
+
+    return app

@@ -3,16 +3,23 @@ from sqlalchemy import select
 from forget_lah.db import Membership, Principal
 from forget_lah.runtime.contracts import (
     REQUIRED_EVIDENCE_BY_ROLE,
-    TOOLS_BY_ROLE,
     CompleteDecision,
+    CompleteSimulationDecision,
     DelegateDecision,
+    EscalateDecision,
     ReturnDecision,
     ToolDecision,
+    tools_for,
 )
 from forget_lah.runtime.models import AgentDelegation, AgentStep, StaffHandoff
+from forget_lah.runtime.simulation import simulation_enabled, simulation_evidence
+from forget_lah.service_identity import AUTOMATION_PRINCIPAL_ID
+from forget_lah.source import DEMO_CLINIC_ID
 
 
 def has_authority(db, run):
+    if run.authorised_by == AUTOMATION_PRINCIPAL_ID and run.clinic_id != DEMO_CLINIC_ID:
+        return False
     return (
         db.scalar(
             select(Membership.id)
@@ -29,17 +36,40 @@ def has_authority(db, run):
 
 
 def policy_for(db, run, case, step, decision):
-    reasons = ["REQUEST_AND_CASE_BOUND", "STAFF_AUTHORITY_RECHECKED"]
+    reasons = [
+        "REQUEST_AND_CASE_BOUND",
+        "SERVICE_AUTHORITY_RECHECKED"
+        if run.authorised_by == AUTOMATION_PRINCIPAL_ID
+        else "STAFF_AUTHORITY_RECHECKED",
+    ]
     deny = None
     if not has_authority(db, run):
-        deny = "STAFF_AUTHORITY_REVOKED"
+        deny = (
+            "SERVICE_AUTHORITY_REVOKED"
+            if run.authorised_by == AUTOMATION_PRINCIPAL_ID
+            else "STAFF_AUTHORITY_REVOKED"
+        )
     elif decision.request_id != step.id or decision.expected_case_version != case.case_version:
         deny = "STALE_OR_WRONG_REQUEST"
     elif step.role != run.active_role:
         deny = "ROLE_CHANGED"
     elif isinstance(decision, ToolDecision):
-        if decision.tool_name not in TOOLS_BY_ROLE.get(run.active_role, ()):
+        if decision.tool_name not in tools_for(run.active_role, simulation_enabled(run)):
             deny = "TOOL_NOT_ALLOWED_FOR_ROLE"
+        elif decision.tool_name in {
+            "record_simulated_confirmation",
+            "send_simulated_acknowledgement",
+        }:
+            evidence = simulation_evidence(db, run)
+            ready = (
+                "record_ready"
+                if decision.tool_name == "record_simulated_confirmation"
+                else "ack_ready"
+            )
+            if not evidence[ready]:
+                deny = "SIMULATION_EVIDENCE_REQUIRED"
+            else:
+                reasons.append("SYNTHETIC_PATIENT_AND_APPOINTMENT_BOUND")
         else:
             reasons.append("READ_ONLY_SYNTHETIC_SOURCE")
     elif isinstance(decision, DelegateDecision):
@@ -98,8 +128,25 @@ def policy_for(db, run, case, step, decision):
                     break
                 evidence_tools.add(evidence.tool_result["tool_name"])
             required = set(REQUIRED_EVIDENCE_BY_ROLE[run.active_role])
+            if run.active_role == "engagement" and simulation_evidence(db, run).get(
+                "record_required"
+            ):
+                required.add("record_simulated_confirmation")
             if not deny and not required.issubset(evidence_tools):
                 deny = "SPECIALIST_EVIDENCE_INCOMPLETE"
+    elif isinstance(decision, EscalateDecision):
+        if decision.reason_code == "CLINICAL_REVIEW_REQUIRED":
+            deny = "CLINICAL_ESCALATION_REQUIRES_STAFF_FLAG"
+        else:
+            reasons.append("ADMINISTRATIVE_HANDOFF_ONLY")
+    elif isinstance(decision, CompleteSimulationDecision):
+        proof = simulation_evidence(db, run)["complete_evidence_ids"]
+        if run.active_role != "coordinator":
+            deny = "ONLY_COORDINATOR_CAN_COMPLETE"
+        elif not proof or set(decision.evidence_ids) != set(proof):
+            deny = "SIMULATED_CONFIRMATION_AND_ACK_REQUIRED"
+        else:
+            reasons.append("SOURCE_RECEIPT_AND_SIMULATED_DELIVERY_VERIFIED")
     elif isinstance(decision, CompleteDecision):
         handoff = db.scalar(
             select(StaffHandoff).where(
@@ -116,15 +163,13 @@ def policy_for(db, run, case, step, decision):
         else:
             reasons.append("NAMED_STAFF_ACCEPTANCE_VERIFIED")
     existing_handoff = db.scalar(select(StaffHandoff).where(StaffHandoff.run_id == run.id))
-    clinical = decision.reason_code == "CLINICAL_REVIEW_REQUIRED" or (
-        existing_handoff is not None and existing_handoff.risk == "RED"
-    )
+    clinical = existing_handoff is not None and existing_handoff.risk == "RED"
     return {
         "request_id": step.id,
         "case_id": case.id,
         "case_version": case.case_version,
         "action": decision.step_type,
-        "policy_version": "m2a-read-only-v1",
+        "policy_version": "m2a-staff-clinical-flag-v2",
         "decision": "DENY" if deny else "ALLOW",
         "risk": "RED" if clinical else "AMBER" if decision.step_type == "ESCALATE" else "GREEN",
         "reason_codes": [deny] if deny else reasons,

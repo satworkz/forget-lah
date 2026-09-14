@@ -5,6 +5,7 @@ import pytest
 
 from forget_lah.db import uid
 from forget_lah.runtime.clinic_tools import ClinicTools
+from forget_lah.runtime.contracts import CompleteSimulationDecision
 from forget_lah.runtime.provider import (
     AnthropicModel,
     ModelError,
@@ -14,7 +15,7 @@ from forget_lah.runtime.provider import (
     response_schema_for,
 )
 from forget_lah.settings import Settings
-from services.mock_clinic.app import followup_context
+from services.mock_clinic.fixtures import followup_context
 
 
 def settings(**kwargs):
@@ -41,6 +42,38 @@ def anthropic_envelope(**changes):
         "usage": {"input_tokens": 80, "output_tokens": 7},
         **changes,
     }
+
+
+def test_simulated_completion_schema_preserves_strict_local_evidence_validation():
+    obs = {
+        **observation(),
+        "simulation": {"enabled": True, "complete_evidence_ids": [uid(), uid()]},
+    }
+
+    def handler(request):
+        schema = json.loads(request.content)["output_config"]["format"]["schema"]
+        branches = schema["properties"]["decision"]["anyOf"]
+        completion = next(
+            b
+            for b in branches
+            if b["properties"]["step_type"]["const"] == "COMPLETE_SIMULATED_CONFIRMATION"
+        )
+        evidence = completion["properties"]["evidence_ids"]
+        assert evidence["minItems"] == 1 and "maxItems" not in evidence
+        return httpx.Response(200, json=anthropic_envelope())
+
+    AnthropicModel(settings(), httpx.MockTransport(handler)).decide(obs)
+    decision = {
+        "request_id": obs["request_id"],
+        "expected_case_version": 1,
+        "step_type": "COMPLETE_SIMULATED_CONFIRMATION",
+        "reason_code": "SIMULATED_CONFIRMATION_ACKNOWLEDGED",
+        "evidence_ids": obs["simulation"]["complete_evidence_ids"],
+    }
+    CompleteSimulationDecision.model_validate(decision)
+    for evidence in (decision["evidence_ids"][:1], decision["evidence_ids"] + [uid()]):
+        with pytest.raises(ValueError):
+            CompleteSimulationDecision.model_validate({**decision, "evidence_ids": evidence})
 
 
 def test_anthropic_wire_contract_is_distinct_but_returns_shared_reply():
@@ -325,6 +358,21 @@ def test_delegation_schema_binds_target_to_reason():
         ("engagement", "FOLLOWUP_REVIEW_REQUIRED"),
         ("preparation", "PREPARATION_REVIEW_REQUIRED"),
     }
+
+
+@pytest.mark.parametrize("role", ["coordinator", "engagement", "preparation"])
+def test_model_cannot_select_staff_only_clinical_escalation(role):
+    obs = observation() | {"role": role}
+    assert decision_formats_for(obs)["ESCALATE"]["reason_code"] == [
+        "AMBIGUOUS_REPLY",
+        "CAPABILITY_UNAVAILABLE",
+    ]
+    choices = response_schema_for(obs)["properties"]["decision"]["anyOf"]
+    escalation = next(c for c in choices if c["properties"]["step_type"]["const"] == "ESCALATE")
+    assert escalation["properties"]["reason_code"]["enum"] == [
+        "AMBIGUOUS_REPLY",
+        "CAPABILITY_UNAVAILABLE",
+    ]
 
 
 def test_completed_specialist_is_not_redelegated_for_unchanged_event():

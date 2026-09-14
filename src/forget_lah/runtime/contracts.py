@@ -7,7 +7,21 @@ from pydantic import Field, TypeAdapter, model_validator
 from forget_lah.agents import StrictModel
 
 Role = Literal["coordinator", "engagement", "preparation"]
-ToolName = Literal["read_followup_context", "get_approved_instructions", "check_prerequisites"]
+# Clinical text/voice triage is not implemented. RED belongs to the authenticated
+# staff-flag rule, not to a model selecting an escalation enum.
+MODEL_ESCALATION_REASONS = ("AMBIGUOUS_REPLY", "CAPABILITY_UNAVAILABLE")
+ToolName = Literal[
+    "read_followup_context",
+    "get_approved_instructions",
+    "check_prerequisites",
+    "record_simulated_confirmation",
+    "send_simulated_acknowledgement",
+]
+SIMULATION_TOOLS = {
+    "engagement": ("record_simulated_confirmation",),
+    "coordinator": ("send_simulated_acknowledgement",),
+    "preparation": (),
+}
 REQUIRED_EVIDENCE_BY_ROLE = {
     "coordinator": (),
     "engagement": ("read_followup_context",),
@@ -26,6 +40,9 @@ Reason = Literal[
     "CLINICAL_REVIEW_REQUIRED",
     "CAPABILITY_UNAVAILABLE",
     "STAFF_HANDOFF_ACCEPTED",
+    "RECORD_SIMULATED_CONFIRMATION",
+    "SEND_SIMULATED_ACKNOWLEDGEMENT",
+    "SIMULATED_CONFIRMATION_ACKNOWLEDGED",
 ]
 
 
@@ -37,8 +54,20 @@ class BoundDecision(StrictModel):
 
 class ToolDecision(BoundDecision):
     step_type: Literal["TOOL"]
-    reason_code: Literal["READ_SOURCE"]
+    reason_code: Literal[
+        "READ_SOURCE", "RECORD_SIMULATED_CONFIRMATION", "SEND_SIMULATED_ACKNOWLEDGEMENT"
+    ]
     tool_name: ToolName
+
+    @model_validator(mode="after")
+    def tool_reason(self):
+        expected = {
+            "record_simulated_confirmation": "RECORD_SIMULATED_CONFIRMATION",
+            "send_simulated_acknowledgement": "SEND_SIMULATED_ACKNOWLEDGEMENT",
+        }.get(self.tool_name, "READ_SOURCE")
+        if self.reason_code != expected:
+            raise ValueError("Tool and reason must match")
+        return self
 
 
 class DelegateDecision(BoundDecision):
@@ -84,13 +113,21 @@ class CompleteDecision(BoundDecision):
     handoff_id: str = Field(min_length=36, max_length=36)
 
 
+class CompleteSimulationDecision(BoundDecision):
+    step_type: Literal["COMPLETE_SIMULATED_CONFIRMATION"]
+    reason_code: Literal["SIMULATED_CONFIRMATION_ACKNOWLEDGED"]
+    evidence_ids: list[str] = Field(min_length=2, max_length=2)
+
+
 Decision = Annotated[
     ToolDecision
     | DelegateDecision
     | ReturnDecision
     | WaitDecision
     | EscalateDecision
-    | CompleteDecision,
+    | CompleteDecision
+    | CompleteSimulationDecision,
+    # Synthetic success is distinct from owned staff handoff completion.
     Field(discriminator="step_type"),
 ]
 decision_adapter = TypeAdapter(Decision)
@@ -128,7 +165,10 @@ class ToolResult(StrictModel):
     status: Literal["succeeded", "failed"]
     source_version: str | None
     data: dict
-    error_code: Literal["SOURCE_UNAVAILABLE", "SOURCE_INVALID", "SOURCE_NOT_FOUND"] | None
+    error_code: (
+        Literal["SOURCE_UNAVAILABLE", "SOURCE_INVALID", "SOURCE_NOT_FOUND", "SOURCE_CONFLICT"]
+        | None
+    )
     retryable: bool
 
 
@@ -147,4 +187,11 @@ DECISION_FORMATS = {
     "WAIT": {"wake_after_seconds": "0 for reply; 30-300 for source retry"},
     "ESCALATE": {},
     "COMPLETE": {"handoff_id": "accepted handoff ID from application evidence"},
+    "COMPLETE_SIMULATED_CONFIRMATION": {
+        "evidence_ids": ["confirmation tool step ID", "acknowledgement tool step ID"]
+    },
 }
+
+
+def tools_for(role, simulated=False):
+    return TOOLS_BY_ROLE[role] + (SIMULATION_TOOLS[role] if simulated else ())

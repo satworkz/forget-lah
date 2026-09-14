@@ -9,7 +9,18 @@ from forget_lah.agents import StrictModel
 from forget_lah.auth import digest
 from forget_lah.db import FollowupCase, Principal, uid, utcnow
 from forget_lah.runtime.engine import abort_delegation, as_utc, release
-from forget_lah.runtime.models import AgentDelegation, AgentEvent, AgentRun, AgentStep, StaffHandoff
+from forget_lah.runtime.journey import case_journey
+from forget_lah.runtime.models import (
+    AgentDelegation,
+    AgentEvent,
+    AgentRun,
+    AgentStep,
+    SimulatedMessage,
+    StaffHandoff,
+)
+from forget_lah.runtime.simulation import message_dict, simulation_enabled
+from forget_lah.runtime.startup import REVIEW_GOAL, SIMULATOR_GOAL, automation_authorised
+from forget_lah.source import DEMO_CLINIC_ID
 
 
 class StartInput(StrictModel):
@@ -20,6 +31,10 @@ class EventInput(StartInput):
     run_id: str = Field(min_length=36, max_length=36)
     kind: Literal["demo_reply", "clinical_concern", "retry", "pause", "accept_handoff"]
     content: str = Field(default="", max_length=600)
+
+
+class StartRunInput(StartInput):
+    fresh_simulation: bool = False
 
 
 def latest_run(db, case_id):
@@ -64,11 +79,21 @@ def install_routes(app, factory, settings, authorise):
             run = latest_run(db, case.id)
             result = {
                 "case_version": case.case_version,
+                "auto_start": {
+                    "enabled": settings.agent_auto_start_enabled,
+                    "authorised": automation_authorised(db, case.clinic_id),
+                },
                 "run": None,
                 "steps": [],
                 "delegations": [],
                 "events": [],
                 "handoff": None,
+                "patient_simulator": {
+                    "available": settings.simulation_configured
+                    and case.clinic_id == DEMO_CLINIC_ID,
+                    "enabled": False,
+                    "messages": [],
+                },
             }
             if not run:
                 return result
@@ -127,7 +152,12 @@ def install_routes(app, factory, settings, authorise):
                 )
             ]
             result["events"] = [
-                {"id": e.id, "kind": e.kind, "content": e.content}
+                {
+                    "id": e.id,
+                    "kind": e.kind,
+                    "content": e.content,
+                    "created_at": as_utc(e.created_at).isoformat(),
+                }
                 for e in db.scalars(
                     select(AgentEvent)
                     .where(AgentEvent.run_id == run.id)
@@ -145,10 +175,31 @@ def install_routes(app, factory, settings, authorise):
                     "owner": owner.email if owner else None,
                     "staff_task_status": "open",  # Acceptance never claims clinical resolution.
                 }
+            result["patient_simulator"] = {
+                "available": settings.simulation_configured and case.clinic_id == DEMO_CLINIC_ID,
+                "enabled": bool(run and simulation_enabled(run)),
+                "messages": [
+                    message_dict(m)
+                    for m in db.scalars(
+                        select(SimulatedMessage)
+                        .where(SimulatedMessage.run_id == run.id)
+                        .order_by(SimulatedMessage.created_at)
+                    )
+                ]
+                if run
+                else [],
+            }
             return result
 
+    @app.get("/api/cases/{case_id}/journey")
+    def journey_view(case_id: str, request: Request, run_id: str | None = None):
+        with factory() as db:
+            _, clinics = identity(db, request)
+            case = scoped_case(db, case_id, clinics)
+            return case_journey(db, case, run_id)
+
     @app.post("/api/cases/{case_id}/agent/runs", status_code=202)
-    def start_run(case_id: str, body: StartInput, request: Request):
+    def start_run(case_id: str, body: StartRunInput, request: Request):
         key = idempotency_key(request)
         with factory.begin() as db:
             user, clinics = identity(db, request)
@@ -170,7 +221,21 @@ def install_routes(app, factory, settings, authorise):
                 raise HTTPException(409, "Case changed; refresh before starting")
             active = latest_run(db, case.id)
             if active and active.status != "completed":
-                raise HTTPException(409, "This case already has an agent run; use its controls")
+                if not (
+                    body.fresh_simulation
+                    and settings.simulation_configured
+                    and case.clinic_id == DEMO_CLINIC_ID
+                    and active.status in {"escalated", "paused", "waiting"}
+                    and active.available_at is None
+                ):
+                    raise HTTPException(409, "This case already has an agent run; use its controls")
+                if active.status == "waiting":
+                    abort_delegation(db, active)
+                    active.checkpoint = {
+                        **active.checkpoint,
+                        "pause_reason": "REPLACED_BY_FRESH_SIMULATION",
+                    }
+                    release(active, "paused")
             if not settings.model_configured:
                 raise HTTPException(
                     503, "Model mode needs private configuration; see CLAUDE_SETUP.md"
@@ -185,10 +250,12 @@ def install_routes(app, factory, settings, authorise):
                 started_by=user.id,
                 authorised_by=user.id,
                 mode=settings.agent_model_mode,
-                goal="Review source evidence and the demo reply; pause or reach an owned staff handoff.",
+                goal=SIMULATOR_GOAL if settings.simulation_configured else REVIEW_GOAL,
                 checkpoint={
                     "latest_event": {"id": run_id, "kind": "started", "content": ""},
                     "returned_specialists": [],
+                    "patient_simulator_enabled": settings.simulation_configured
+                    and case.clinic_id == DEMO_CLINIC_ID,
                 },
             )
             db.add(run)
@@ -274,16 +341,22 @@ def install_routes(app, factory, settings, authorise):
             abort_delegation(db, run)
             run.authorised_by, run.active_role = user.id, "coordinator"
             next_event = {"id": event_id, "kind": body.kind, "content": body.content}
+            if body.kind == "demo_reply":
+                next_event["reply_event_id"] = event_id
             if body.kind in {"pause", "retry"}:
                 next_event = {
                     **run.checkpoint["latest_event"],
                     "id": event_id,
                     "wake_reason": body.kind,
+                    "reply_event_id": run.checkpoint["latest_event"].get(
+                        "reply_event_id", run.checkpoint["latest_event"]["id"]
+                    ),
                 }
             run.checkpoint = {
                 "latest_event": next_event,
                 "returned_specialists": [],
                 "delegation_start": 0,
+                "patient_simulator_enabled": simulation_enabled(run),
             }
             case.case_version += 1
             if body.kind == "pause":

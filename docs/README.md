@@ -1,5 +1,7 @@
 # forget-lah documentation
 
+**Want to change the test records?** Use [CLINIC_SIMULATOR.md](CLINIC_SIMULATOR.md) to edit schedules and notes, add slots and create fresh scenarios.
+
 **Connecting your own Claude account? Start with [CLAUDE_SETUP.md](CLAUDE_SETUP.md)** for account/key setup, the connection check and the remaining delivery steps.
 
 **Already running the app? Start with [AGENT_RUNTIME.md](AGENT_RUNTIME.md)** for the new agent buttons, three demo flows and technical explanation. On a new computer, first use [TEAM_START_HERE.md](TEAM_START_HERE.md) for installation. Its [PDF version](forget-lah_Team_Quick_Start.pdf) is the preserved v0.1 foundation guide; the M2a agent instructions are in AGENT_RUNTIME.md.
@@ -8,8 +10,11 @@ Markdown (`.md`) files are editable documents. GitHub displays them as formatted
 
 | Document | Purpose | Who needs it? |
 | --- | --- | --- |
+| [PATIENT_SIMULATOR.md](PATIENT_SIMULATOR.md) | Test reminder, confirmation, acknowledgement and automatic completion | Everyone testing follow-up |
 | [CLAUDE_SETUP.md](CLAUDE_SETUP.md) | Own Claude account, private configuration, live check, provider switching and delivery order | Everyone setting up live inference |
 | [AGENT_RUNTIME.md](AGENT_RUNTIME.md) | Current agent demo, technical components, contracts, state and organiser configuration | Everyone using M2a |
+| [CASE_JOURNEY.md](CASE_JOURNEY.md) | Read the full case history, component activities and input/output evidence | Everyone learning or debugging a flow |
+| [DEMO_RESET.md](DEMO_RESET.md) | Enable the reset button and recreate a clean demo safely | Demo presenters |
 | [contracts/agent-decision-v1.json](contracts/agent-decision-v1.json) | Complete machine-readable model decision schema | Agent/API developers |
 | [TEAM_START_HERE.md](TEAM_START_HERE.md) | Install, start, sign in and test the available flows | Everyone getting started |
 | [FIRST_RUN.md](FIRST_RUN.md) | Short link to the team guide; retained for existing references | No separate reading required |

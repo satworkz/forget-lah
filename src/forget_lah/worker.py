@@ -8,9 +8,10 @@ import httpx
 from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import SQLAlchemyError
 
-from forget_lah.db import AuditEvent, Job, make_engine, session_factory, uid, utcnow
+from forget_lah.db import AuditEvent, FollowupCase, Job, make_engine, session_factory, uid, utcnow
 from forget_lah.detector import detect
 from forget_lah.runtime.engine import claim_run, process_run
+from forget_lah.runtime.startup import queue_case_review, queue_ready_reviews
 from forget_lah.settings import Settings
 from forget_lah.source import DEMO_CLINIC_ID, read_candidates
 
@@ -37,7 +38,8 @@ def claim_job(factory) -> tuple[str, str] | None:
         return job.id, job.lease_token
 
 
-def finish_job(factory, job_id: str, lease_token: str) -> bool:
+def finish_job(factory, job_id: str, lease_token: str, *, settings=None) -> bool:
+    settings = settings or Settings()
     with factory.begin() as db:
         job = db.scalar(
             select(Job)
@@ -51,16 +53,23 @@ def finish_job(factory, job_id: str, lease_token: str) -> bool:
         )
         if not job:
             return False
-        # M1 proves durable job processing. It never pretends a model or provider was called.
+        case = db.scalar(
+            select(FollowupCase)
+            .where(FollowupCase.id == job.case_id, FollowupCase.clinic_id == job.clinic_id)
+            .with_for_update()
+        )
         db.add(
             AuditEvent(
                 clinic_id=job.clinic_id,
                 case_id=job.case_id,
                 event_type="FOUNDATION_CASE_READY",
-                details={"note": "Ready for the agent runtime milestone; no outreach sent"},
+                details={
+                    "note": "Foundation processing finished; automatic review may now be queued. No outreach sent."
+                },
             )
         )
         job.status, job.lease_until, job.lease_token = "done", None, None
+        queue_case_review(db, case, settings)
         return True
 
 
@@ -92,7 +101,8 @@ def main() -> None:
                 claim = claim_job(factory)
                 if not claim:
                     break
-                finish_job(factory, *claim)
+                finish_job(factory, *claim, settings=settings)
+            queue_ready_reviews(factory, settings)
             for _ in range(3):
                 activation = claim_run(factory)
                 if not activation:

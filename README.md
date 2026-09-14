@@ -18,7 +18,7 @@ Open this project folder in VS Code. Open Terminal > New Terminal and use PowerS
 
 `setup` creates a private `.env` with random passwords. Open that file locally and use DEMO_STAFF_EMAIL and DEMO_STAFF_PASSWORD to sign in. Never commit or share `.env`. Existing setup credentials are preserved if you run setup again.
 
-Open **http://localhost:8080**. The first build downloads images and dependencies. After startup, allow the worker about ten seconds and refresh cases. Open a patient's agent review, select **Start agent review**, and follow [the demonstration steps](docs/AGENT_RUNTIME.md#2-try-the-three-demonstration-flows). Existing `.env` credentials and database records survive the automatic migrations through `0003`.
+Open **http://localhost:8080**. The first build downloads images and dependencies. The worker detects cases and automatically queues a review when foundation processing finishes; no start button or open browser is needed. Open a patient's agent review to watch it progress and follow [the demonstration steps](docs/AGENT_RUNTIME.md#2-try-the-three-demonstration-flows). Existing `.env` credentials and database records survive the automatic migrations through `0003`.
 
 ```powershell
 ./scripts/dev.ps1 status
@@ -33,7 +33,7 @@ Open **http://localhost:8080**. The first build downloads images and dependencie
 
 Browser → Caddy/React → FastAPI → PostgreSQL. The worker detects follow-up cases, resumes agent runs, calls the configured model adapter and dispatches allowlisted reads through the policy gateway. Three logical agent roles share that worker. Bootstrap applies Alembic migrations and seeds the synthetic clinic/staff login before startup. PostgreSQL has no published port; the web app binds to local loopback only.
 
-The mock clinic serves deterministic episode identities with dates relative to today and synthetic administrative notes. It is a fixture service, not a real clinic integration or booking system. No provider key is required in default simulation mode. Optional organiser mode is described in [AGENT_RUNTIME.md](docs/AGENT_RUNTIME.md#6-organiser-claude-configuration).
+The mock clinic is a database-backed simulator. Open **Clinic simulator** in the sidebar to edit schedules and notes, add slots or create fresh synthetic episodes. The existing PostgreSQL server hosts its isolated database/user; forget-lah continues to read the clinic APIs. Dates are seeded once and edits survive restarts. Follow the [simulator guide](docs/CLINIC_SIMULATOR.md). No provider key is required in default simulation mode. Optional organiser mode is described in [AGENT_RUNTIME.md](docs/AGENT_RUNTIME.md#6-organiser-claude-configuration).
 
 ## Development without rebuilding containers
 
@@ -48,7 +48,7 @@ pnpm --dir apps/web install --frozen-lockfile
 pnpm --dir apps/web build
 ```
 
-Python tests use temporary SQLite databases with the actual Alembic migrations. Eight PostgreSQL checks cover job/run claiming, migration preservation, schema alignment, atomic live-call budgets and shared pacing. They run in Compose and GitHub Actions; without TEST_DATABASE_URL they explicitly skip. Model HTTP tests use simulated responses and consume no organiser credits. UI/API contracts remain reviewed TypeScript interfaces; generated OpenAPI types are pending.
+Python tests use temporary SQLite databases with the actual Alembic migrations. Eleven PostgreSQL checks cover job/run claiming, migration preservation, schema alignment, atomic live-call budgets, shared pacing, competing resets/automatic starters and conflicting simulator edits. They run in Compose and GitHub Actions; without TEST_DATABASE_URL they explicitly skip. Model HTTP tests use simulated responses and consume no organiser credits. UI/API contracts remain reviewed TypeScript interfaces; generated OpenAPI types are pending.
 
 ## GitHub and team sharing
 
@@ -61,3 +61,5 @@ Keep `.env`, credentials, local dependencies and database backups out of Git. Re
 Start with [the design index](docs/design/forget-lah_README.md). Then read [current implementation status](docs/IMPLEMENTATION_STATUS.md) and [next milestone](docs/NEXT_MILESTONE.md).
 
 Sources for infrastructure conventions: [FastAPI container deployment](https://fastapi.tiangolo.com/deployment/docker/), [Compose startup conditions](https://docs.docker.com/compose/how-tos/startup-order/). Use the organiser's actual onboarding and API contract before live integration.
+
+Test the new simulated confirmation and acknowledgement flow: [Patient simulator guide](docs/PATIENT_SIMULATOR.md).

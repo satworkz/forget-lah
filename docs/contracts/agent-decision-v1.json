@@ -41,6 +41,50 @@
       "title": "CompleteDecision",
       "type": "object"
     },
+    "CompleteSimulationDecision": {
+      "additionalProperties": false,
+      "properties": {
+        "request_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Request Id",
+          "type": "string"
+        },
+        "expected_case_version": {
+          "minimum": 1,
+          "title": "Expected Case Version",
+          "type": "integer"
+        },
+        "reason_code": {
+          "const": "SIMULATED_CONFIRMATION_ACKNOWLEDGED",
+          "title": "Reason Code",
+          "type": "string"
+        },
+        "step_type": {
+          "const": "COMPLETE_SIMULATED_CONFIRMATION",
+          "title": "Step Type",
+          "type": "string"
+        },
+        "evidence_ids": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "title": "Evidence Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "request_id",
+        "expected_case_version",
+        "reason_code",
+        "step_type",
+        "evidence_ids"
+      ],
+      "title": "CompleteSimulationDecision",
+      "type": "object"
+    },
     "DelegateDecision": {
       "additionalProperties": false,
       "properties": {
@@ -196,7 +240,11 @@
           "type": "integer"
         },
         "reason_code": {
-          "const": "READ_SOURCE",
+          "enum": [
+            "READ_SOURCE",
+            "RECORD_SIMULATED_CONFIRMATION",
+            "SEND_SIMULATED_ACKNOWLEDGEMENT"
+          ],
           "title": "Reason Code",
           "type": "string"
         },
@@ -209,7 +257,9 @@
           "enum": [
             "read_followup_context",
             "get_approved_instructions",
-            "check_prerequisites"
+            "check_prerequisites",
+            "record_simulated_confirmation",
+            "send_simulated_acknowledgement"
           ],
           "title": "Tool Name",
           "type": "string"
@@ -273,6 +323,7 @@
   "discriminator": {
     "mapping": {
       "COMPLETE": "#/$defs/CompleteDecision",
+      "COMPLETE_SIMULATED_CONFIRMATION": "#/$defs/CompleteSimulationDecision",
       "DELEGATE": "#/$defs/DelegateDecision",
       "ESCALATE": "#/$defs/EscalateDecision",
       "RETURN": "#/$defs/ReturnDecision",
@@ -299,6 +350,9 @@
     },
     {
       "$ref": "#/$defs/CompleteDecision"
+    },
+    {
+      "$ref": "#/$defs/CompleteSimulationDecision"
     }
   ]
 }
