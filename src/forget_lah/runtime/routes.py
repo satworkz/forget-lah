@@ -18,7 +18,7 @@ from forget_lah.runtime.models import (
     SimulatedMessage,
     StaffHandoff,
 )
-from forget_lah.runtime.simulation import message_dict, simulation_enabled
+from forget_lah.runtime.simulation import message_dict, simulation_enabled, simulation_evidence
 from forget_lah.runtime.startup import REVIEW_GOAL, SIMULATOR_GOAL, automation_authorised
 from forget_lah.source import DEMO_CLINIC_ID
 
@@ -332,6 +332,26 @@ def install_routes(app, factory, settings, authorise):
             )
             # Revoke in-flight work before exposing the new event. Late results
             # cannot reuse the old case version or lease token.
+            proof = simulation_evidence(db, run)
+            if (
+                body.kind == "retry"
+                and run.checkpoint.get("pause_reason") == "ROLE_BUDGET_EXHAUSTED"
+                and run.active_role == "coordinator"
+                and settings.simulation_configured
+                and (proof["ack_ready"] or proof["complete_evidence_ids"])
+            ):
+                # Explicit recovery of a legacy read loop. Keep the original reply,
+                # specialist evidence and receipt; the whole-run budget is unchanged.
+                run.authorised_by = user.id
+                run.checkpoint = {
+                    **run.checkpoint,
+                    "pause_reason": None,
+                    "coordinator_resume_after": run.step_count,
+                    "completion_recovery_event_id": event_id,
+                }
+                case.case_version += 1
+                release(run, "queued", delay=0)
+                return {"event_id": event_id, "status": run.status}
             for pending in db.scalars(
                 select(AgentStep).where(
                     AgentStep.run_id == run.id, AgentStep.status.in_(["pending", "tool_pending"])

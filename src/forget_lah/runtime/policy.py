@@ -12,7 +12,11 @@ from forget_lah.runtime.contracts import (
     tools_for,
 )
 from forget_lah.runtime.models import AgentDelegation, AgentStep, StaffHandoff
-from forget_lah.runtime.simulation import simulation_enabled, simulation_evidence
+from forget_lah.runtime.simulation import (
+    read_already_available,
+    simulation_enabled,
+    simulation_evidence,
+)
 from forget_lah.service_identity import AUTOMATION_PRINCIPAL_ID
 from forget_lah.source import DEMO_CLINIC_ID
 
@@ -56,6 +60,8 @@ def policy_for(db, run, case, step, decision):
     elif isinstance(decision, ToolDecision):
         if decision.tool_name not in tools_for(run.active_role, simulation_enabled(run)):
             deny = "TOOL_NOT_ALLOWED_FOR_ROLE"
+        elif read_already_available(db, run, decision.tool_name):
+            deny = "READ_EVIDENCE_ALREADY_AVAILABLE"
         elif decision.tool_name in {
             "record_simulated_confirmation",
             "send_simulated_acknowledgement",

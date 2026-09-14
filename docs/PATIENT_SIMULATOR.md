@@ -43,6 +43,10 @@ Confirmation permission uses a conservative set of explicit phrases, including t
 
 Transient simulated-tool failures allow bounded timed retries with the same reply operation ID. Receipts and messages are not duplicated. A late source receipt after a staff pause remains visible without completing the case. The 24-step limit remains; exhausting a budget pauses the review.
 
+Successful source reads are reused within the current event. The Coordinator can use a specialist's saved context; each specialist still gathers its own required evidence. Completed reads are removed from the model's choices and repeated requests are blocked by the gateway. A new reply or source-retry event can refresh the source; the confirmation and acknowledgement actions also check current source state before proceeding.
+
+If an older review stopped with **role budget exhausted** after both specialists finished and confirmation evidence is ready, **Retry agent review** preserves the original reply, receipt and specialist reports. It opens a new Coordinator allowance for the remaining completion work; the 24-step review limit and daily model budget are unchanged. Other pause conditions still use the existing retry behavior. Earlier failed steps remain visible in history.
+
 ## Configuration and persistence
 
 - `PATIENT_SIMULATOR_ENABLED` defaults to true in local Compose. False disables the capability for new reviews and blocks simulated writes; previous history remains readable.

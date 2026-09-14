@@ -1,5 +1,13 @@
 # forget-lah agent runtime validation
 
+## Repeated source reads and role-budget recovery — 14 September 2026
+
+- **193 automated tests passed, zero skips**, including twelve PostgreSQL checks. Ruff lint/format and the backend Docker build passed. Two existing third-party deprecation warnings remain. No frontend code changed.
+- A regression model deliberately repeats an already-successful context read: the response schema no longer offers that read and the gateway independently rejects it with `READ_EVIDENCE_ALREADY_AVAILABLE`, without executing another source call. Successful reads remain scoped to the current event; specialist evidence remains scoped to its delegation.
+- Recovery tests preserve the original reply, receipt, specialist reports and earlier step records. An explicit retry of a Coordinator role-budget pause with completion evidence ready finishes in two more steps; the receipt is not duplicated and the overall 24-step limit is unchanged.
+- Live Claude recovery passed for Alex review `5c574c50-7340-48d9-8319-eb98d696de9f`: previously paused at 15 steps, then acknowledgement at step 16 and successful completion at step 17. The original confirmation evidence was reused. No data reset or limit increase was performed.
+- A fresh live Claude review `3cedc0a5-8fdb-42cd-8bb4-db286215ee95` then passed with the reply “I confirm my attendance”: **14 total steps / 12 model attempts**, no errors, no handoff, one saved reminder and acknowledgement. The Coordinator performed one initial rule read and one read for the new reply, with no repeated reads inside either event. Verification used authenticated HTTP APIs and the running worker/source services. Temporary test access was retired; both reviews remain visible in history. No new browser-layout or organiser-endpoint verification was performed for this backend change.
+
 ## Patient confirmation simulator — 14 September 2026
 
 - **191 automated tests passed, zero skips**, including twelve PostgreSQL checks, using the Compose test image. Two existing third-party deprecation warnings remain. Ruff lint/format passed for 74 Python files; TypeScript/Vite and Docker builds passed.

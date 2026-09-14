@@ -33,6 +33,7 @@ from forget_lah.runtime.simulation import (
     current_tools,
     future_scheduled,
     latest_tool,
+    read_already_available,
     reply_evidence,
     save_acknowledgement,
     save_reminder,
@@ -247,7 +248,11 @@ def observation_for(db, run, case, step_id):
         ],
         "delegation_start": run.checkpoint.get("delegation_start", 0),
         "handoff": {"id": handoff.id, "accepted": bool(handoff.accepted_by)} if handoff else None,
-        "allowed_tools": list(tools_for(run.active_role, simulation_enabled(run))),
+        "allowed_tools": [
+            name
+            for name in tools_for(run.active_role, simulation_enabled(run))
+            if not read_already_available(db, run, name)
+        ],
         "simulation": simulation,
         "outreach_enabled": False,
         "booking_writes_enabled": False,
@@ -408,6 +413,10 @@ def prepare_step(factory, settings, run_id, token):
                 s
                 for s in steps
                 if s.role == run.active_role
+                and (
+                    run.active_role != "coordinator"
+                    or s.sequence > run.checkpoint.get("coordinator_resume_after", 0)
+                )
                 and not (simulation_enabled(run) and s.origin == "rule")
                 and (
                     s.observation.get("latest_event", {}).get("id")

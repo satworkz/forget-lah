@@ -16,7 +16,14 @@ from forget_lah.db import uid
 from forget_lah.detector import detect
 from forget_lah.runtime.clinic_tools import ClinicTools
 from forget_lah.runtime.models import AgentRun, AgentStep, SimulatedMessage
-from forget_lah.runtime.provider import AnthropicModel, MockModel, ModelReply, OrganiserModel
+from forget_lah.runtime.provider import (
+    AnthropicModel,
+    MockModel,
+    ModelError,
+    ModelReply,
+    OrganiserModel,
+    decision_formats_for,
+)
 from forget_lah.settings import Settings
 from forget_lah.source import DEMO_CLINIC_ID, candidates_from_payload
 from services.mock_clinic.app import MockSettings
@@ -70,6 +77,69 @@ def simulated_runtime(store, simulator):
 def source_count(engine):
     with engine.connect() as db:
         return db.scalar(select(func.count()).select_from(Confirmation))
+
+
+def test_successful_reads_are_not_offered_again_and_gateway_blocks_repetition(simulated_runtime):
+    runtime, tools, _, _ = simulated_runtime
+    case_id, _ = start(runtime, "myopia")
+
+    class RepeatRead(MockModel):
+        def decide(self, obs, **kwargs):
+            assert "read_followup_context" not in obs["allowed_tools"]
+            assert "TOOL" not in decision_formats_for(obs)
+            return ModelReply(
+                json.dumps(
+                    {
+                        "request_id": obs["request_id"],
+                        "expected_case_version": obs["expected_case_version"],
+                        "step_type": "TOOL",
+                        "reason_code": "READ_SOURCE",
+                        "tool_name": "read_followup_context",
+                    }
+                )
+            )
+
+    drain(runtime, model=RepeatRead(), tools=tools)
+    result = view(runtime[1], case_id)
+    assert result["run"]["status"] == "paused"
+    assert result["steps"][-1]["policy"]["reason_codes"] == ["READ_EVIDENCE_ALREADY_AVAILABLE"]
+    assert sum(bool(s["tool_result"]) for s in result["steps"]) == 1
+
+
+def test_role_budget_recovery_preserves_receipt_and_specialists(simulated_runtime):
+    runtime, tools, _, source_engine = simulated_runtime
+    case_id, run_id = start(runtime, "myopia")
+    drain(runtime, tools=tools)
+    event(runtime[1], case_id, "demo_reply", "I confirm my attendance")
+
+    class LegacyBudgetPause(MockModel):
+        def decide(self, obs, **kwargs):
+            if obs.get("simulation", {}).get("ack_ready"):
+                assert decision_formats_for(obs)["TOOL"]["tool_name"] == [
+                    "send_simulated_acknowledgement"
+                ]
+                raise ModelError("ROLE_BUDGET_EXHAUSTED")
+            return super().decide(obs, **kwargs)
+
+    drain(runtime, tools=tools, model=LegacyBudgetPause())
+    before = view(runtime[1], case_id)
+    assert before["run"]["pause_reason"] == "ROLE_BUDGET_EXHAUSTED"
+    assert source_count(source_engine) == 1
+    with runtime[0]() as db:
+        checkpoint = dict(db.get(AgentRun, run_id).checkpoint)
+    assert event(runtime[1], case_id, "retry").status_code == 202
+    with runtime[0]() as db:
+        resumed = db.get(AgentRun, run_id)
+        assert resumed.checkpoint["latest_event"] == checkpoint["latest_event"]
+        assert resumed.checkpoint["returned_specialists"] == checkpoint["returned_specialists"]
+        assert resumed.step_count == before["run"]["step_count"]
+    drain(runtime, tools=tools)
+    after = view(runtime[1], case_id)
+    assert after["run"]["status"] == "completed"
+    assert after["run"]["step_count"] == before["run"]["step_count"] + 2
+    assert after["run"]["step_limit"] == before["run"]["step_limit"] == 24
+    assert source_count(source_engine) == 1
+    assert after["steps"][: len(before["steps"])] == before["steps"]
 
 
 @pytest.mark.parametrize("specialty", ["dental", "myopia", "antenatal"])

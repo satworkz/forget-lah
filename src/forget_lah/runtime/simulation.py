@@ -75,6 +75,22 @@ def latest_tool(steps, name, role=None):
     )
 
 
+def read_already_available(db, run, name):
+    """Reuse successful reads within this event; specialists need their own evidence."""
+    if name not in {"read_followup_context", "get_approved_instructions", "check_prerequisites"}:
+        return False
+    return any(
+        s.tool_result["tool_name"] == name
+        and (
+            run.active_role == "coordinator"
+            or (
+                s.role == run.active_role and s.sequence > run.checkpoint.get("delegation_start", 0)
+            )
+        )
+        for s in current_tools(db, run)
+    )
+
+
 def future_scheduled(data):
     try:
         date = datetime.fromisoformat(data.get("scheduled_at") or "")
