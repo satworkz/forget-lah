@@ -33,7 +33,10 @@ def decision_summary(step):
         return f"{role} proposed {kind}. Execution is not recorded as complete; check the outcome below."
     if step.origin == "rule":
         if kind == "TOOL":
-            if step.observation.get("application_rule", {}).get("name") == "SIMULATED_SOURCE_RETRY":
+            if step.observation.get("application_rule", {}).get("name") in {
+                "SIMULATED_SOURCE_RETRY",
+                "EXPLICIT_SIMULATED_CONFIRMATION",
+            }:
                 return step.observation["application_rule"]["explanation"]
             return (
                 "The worker requested the required initial clinic context through the gateway. "
@@ -50,6 +53,13 @@ def decision_summary(step):
             "An application rule escalated the staff-flagged concern. This did not require Claude."
         )
     descriptions = {
+        "REPORT_SYMPTOMS": "Coordinator identified a current patient symptom report. The gateway checked quoted evidence; the worker acknowledged the report and created a clinical callback task. Attendance intention is separate from a source confirmation.",
+        "INTERPRET_ATTENDANCE": "Engagement interpreted acceptance of the existing appointment; the source API must still record confirmation."
+        if decision.get("confirmed")
+        else "Engagement requested clarification about attendance for the existing appointment. No confirmation was recorded.",
+        "INTERPRET_SELECTION": f"Engagement interpreted the reply as option {decision.get('option_number')}. The gateway checked the saved offer and reply; a separate source call must confirm the booking."
+        if decision.get("option_number") is not None
+        else "Engagement could not identify a clear choice and asked the patient to clarify. No booking was changed.",
         "TOOL": f"{role} requested {decision.get('tool_name')}. Check the tool result separately from permission.",
         "DELEGATE": f"{role} assigned a task to {decision.get('target', '').title()}. The worker runs that role next.",
         "RETURN": f"{role} returned {decision.get('reason_code', '').replace('_', ' ').lower()} with evidence references.",
@@ -58,6 +68,11 @@ def decision_summary(step):
         "COMPLETE": "The Coordinator proposed finishing automation after staff acceptance. This does not book an appointment.",
         "COMPLETE_SIMULATED_CONFIRMATION": "The Coordinator completed the simulated follow-up after checking the source confirmation receipt and displayed acknowledgement. No staff handoff was needed.",
     }
+    if (
+        decision.get("tool_name") == "send_simulated_options"
+        and (step.tool_result or {}).get("status") == "succeeded"
+    ):
+        return "The Coordinator displayed source-owned slots and approved clinic notes, then saved a waiting checkpoint for the patient's explicit slot selection. Nothing is booked yet."
     return descriptions.get(kind, "Recorded agent action")
 
 
@@ -256,8 +271,9 @@ def case_journey(db, case, run_id=None):
             if step.tool_result:
                 stages.append(
                     stage(
-                        "Worker → Patient simulator → PostgreSQL"
-                        if step.tool_result["tool_name"] == "send_simulated_acknowledgement"
+                        "Worker → Clinic adapter → Patient simulator → PostgreSQL"
+                        if step.tool_result["tool_name"]
+                        in {"send_simulated_acknowledgement", "send_simulated_options"}
                         else "Worker → Clinic adapter → Synthetic clinic API → Worker",
                         "Actual tool result",
                         {
@@ -327,6 +343,8 @@ def case_journey(db, case, run_id=None):
                 message.created_at,
                 "Simulated reminder displayed"
                 if message.kind == "reminder"
+                else "Simulated slots and clinic notes displayed"
+                if message.kind == "options"
                 else "Simulated acknowledgement displayed",
                 [
                     stage(
@@ -391,7 +409,14 @@ def case_journey(db, case, run_id=None):
                 "accepted": bool(handoff.accepted_by),
                 "owner": owner.email if owner else None,
                 "accepted_at": stamp(handoff.accepted_at) if handoff.accepted_at else None,
-                "staff_task_status": "open",
+                "staff_task_status": "resolved"
+                if any(
+                    run.checkpoint.get(k, {}).get("status") == "resolved"
+                    for k in ("callback", "clinical_review")
+                )
+                else "open",
+                "callback": run.checkpoint.get("callback"),
+                "clinical_review": run.checkpoint.get("clinical_review"),
             }
             if handoff
             else None,

@@ -67,7 +67,7 @@ def create_app(settings=None, engine=None):
     def health():
         try:
             with factory() as db:
-                if db.scalar(text("SELECT version_num FROM alembic_version")) != "sim0002":
+                if db.scalar(text("SELECT version_num FROM alembic_version")) != "sim0003":
                     raise ValueError("Migration required")
             return {"status": "ok", "synthetic": True}
         except Exception as exc:

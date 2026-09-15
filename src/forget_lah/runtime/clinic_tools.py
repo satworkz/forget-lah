@@ -22,6 +22,7 @@ class AvailableSlot(StrictModel):
     starts_at: str = Field(max_length=40)
     ends_at: str = Field(max_length=40)
     doctor: str = Field(max_length=80)
+    version: int = Field(default=1, ge=1)
 
 
 class ContextData(StrictModel):
@@ -33,6 +34,8 @@ class ContextData(StrictModel):
     can_write_appointments: Literal[False]
     episode_version: int | None = Field(default=None, ge=1)
     can_simulate_confirmation: bool = False
+    can_simulate_booking: bool = False
+    can_simulate_rescheduling: bool = False
     available_slots: list[AvailableSlot] = Field(default_factory=list, max_length=10)
     more_available_slots: bool = False
 
@@ -61,17 +64,26 @@ class ClinicTools:
         if not self.followup_key:
             return self.failure(name, "SOURCE_INVALID", False)
         episode = quote(binding["source_episode_ref"], safe="")
+        booking = "slot_id" in operation
+        endpoint = (
+            "reschedule"
+            if operation.get("reschedule")
+            else "book-recall"
+            if booking
+            else "confirm-attendance"
+        )
         payload = {
             **operation,
             "clinic_id": binding["clinic_id"],
             "patient_id": binding["patient_id"],
         }
+        payload.pop("reschedule", None)
         try:
             with httpx.Client(
                 timeout=10, follow_redirects=False, transport=self.transport
             ) as client:
                 response = client.post(
-                    f"{self.base_url}/internal/followup/{episode}/confirm-attendance",
+                    f"{self.base_url}/internal/followup/{episode}/{endpoint}",
                     json=payload,
                     headers={"X-Followup-Key": self.followup_key},
                 )
@@ -89,7 +101,8 @@ class ClinicTools:
                 or data["run_id"] != operation["run_id"]
                 or data["patient_id"] != binding["patient_id"]
                 or data["source_episode_ref"] != binding["source_episode_ref"]
-                or data["episode_version"] != operation["expected_version"]
+                or data["episode_version"] != operation["expected_version"] + int(booking)
+                or (booking and data["booking_slot_id"] != operation["slot_id"])
             ):
                 raise ValueError("Confirmation receipt binding mismatch")
             return ToolResult(
@@ -175,6 +188,7 @@ class ConfirmationReceipt(StrictModel):
     confirmed_at: str = Field(max_length=40)
     synthetic: Literal[True]
     status: Literal["PATIENT_CONFIRMED_ATTENDANCE"]
+    booking_slot_id: str | None = Field(default=None, max_length=36)
 
 
 class ConfirmationEnvelope(StrictModel):

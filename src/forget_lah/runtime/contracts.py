@@ -7,8 +7,8 @@ from pydantic import Field, TypeAdapter, model_validator
 from forget_lah.agents import StrictModel
 
 Role = Literal["coordinator", "engagement", "preparation"]
-# Clinical text/voice triage is not implemented. RED belongs to the authenticated
-# staff-flag rule, not to a model selecting an escalation enum.
+# Generic escalation cannot assert clinical severity. REPORT_SYMPTOMS binds exact
+# patient quotes to a clinical callback; RED denotes review, not emergency triage.
 MODEL_ESCALATION_REASONS = ("AMBIGUOUS_REPLY", "CAPABILITY_UNAVAILABLE")
 ToolName = Literal[
     "read_followup_context",
@@ -16,10 +16,11 @@ ToolName = Literal[
     "check_prerequisites",
     "record_simulated_confirmation",
     "send_simulated_acknowledgement",
+    "send_simulated_options",
 ]
 SIMULATION_TOOLS = {
     "engagement": ("record_simulated_confirmation",),
-    "coordinator": ("send_simulated_acknowledgement",),
+    "coordinator": ("send_simulated_acknowledgement", "send_simulated_options"),
     "preparation": (),
 }
 REQUIRED_EVIDENCE_BY_ROLE = {
@@ -43,6 +44,7 @@ Reason = Literal[
     "RECORD_SIMULATED_CONFIRMATION",
     "SEND_SIMULATED_ACKNOWLEDGEMENT",
     "SIMULATED_CONFIRMATION_ACKNOWLEDGED",
+    "SEND_SIMULATED_OPTIONS",
 ]
 
 
@@ -55,7 +57,10 @@ class BoundDecision(StrictModel):
 class ToolDecision(BoundDecision):
     step_type: Literal["TOOL"]
     reason_code: Literal[
-        "READ_SOURCE", "RECORD_SIMULATED_CONFIRMATION", "SEND_SIMULATED_ACKNOWLEDGEMENT"
+        "READ_SOURCE",
+        "RECORD_SIMULATED_CONFIRMATION",
+        "SEND_SIMULATED_ACKNOWLEDGEMENT",
+        "SEND_SIMULATED_OPTIONS",
     ]
     tool_name: ToolName
 
@@ -64,6 +69,7 @@ class ToolDecision(BoundDecision):
         expected = {
             "record_simulated_confirmation": "RECORD_SIMULATED_CONFIRMATION",
             "send_simulated_acknowledgement": "SEND_SIMULATED_ACKNOWLEDGEMENT",
+            "send_simulated_options": "SEND_SIMULATED_OPTIONS",
         }.get(self.tool_name, "READ_SOURCE")
         if self.reason_code != expected:
             raise ValueError("Tool and reason must match")
@@ -86,6 +92,32 @@ class ReturnDecision(BoundDecision):
         "AMBIGUOUS_REPLY",
     ]
     evidence_ids: list[str] = Field(min_length=1, max_length=4)
+
+
+class SelectionDecision(BoundDecision):
+    step_type: Literal["INTERPRET_SELECTION"]
+    reason_code: Literal["PATIENT_SELECTION_REVIEWED"]
+    offer_id: str = Field(min_length=36, max_length=36)
+    reply_event_id: str = Field(min_length=36, max_length=36)
+    option_number: int | None = Field(ge=1, le=10)
+    unsupported_question: Literal["NONE", "WEATHER", "PARKING", "OTHER_NON_CLINICAL"] = "NONE"
+
+
+class AttendanceDecision(BoundDecision):
+    step_type: Literal["INTERPRET_ATTENDANCE"]
+    reason_code: Literal["PATIENT_ATTENDANCE_REVIEWED"]
+    reply_event_id: str = Field(min_length=36, max_length=36)
+    source_step_id: str = Field(min_length=36, max_length=36)
+    confirmed: bool
+    unsupported_question: Literal["NONE", "WEATHER", "PARKING", "OTHER_NON_CLINICAL"] = "NONE"
+
+
+class ClinicalReportDecision(BoundDecision):
+    step_type: Literal["REPORT_SYMPTOMS"]
+    reason_code: Literal["PATIENT_REPORTED_SYMPTOMS"]
+    reply_event_id: str = Field(min_length=36, max_length=36)
+    symptom_quotes: list[str] = Field(min_length=1, max_length=3)
+    attendance_quote: str | None = None
 
 
 class WaitDecision(BoundDecision):
@@ -126,7 +158,10 @@ Decision = Annotated[
     | WaitDecision
     | EscalateDecision
     | CompleteDecision
-    | CompleteSimulationDecision,
+    | CompleteSimulationDecision
+    | SelectionDecision
+    | AttendanceDecision
+    | ClinicalReportDecision,
     # Synthetic success is distinct from owned staff handoff completion.
     Field(discriminator="step_type"),
 ]
@@ -181,6 +216,23 @@ TOOLS_BY_ROLE: dict[str, tuple[str, ...]] = {
 # The model receives this compact protocol; the complete machine-readable schema
 # is exported for developers. Identity, URLs, recipients and permissions are absent.
 DECISION_FORMATS = {
+    "REPORT_SYMPTOMS": {
+        "reply_event_id": "saved patient reply ID",
+        "symptom_quotes": ["exact substring reporting current symptoms"],
+        "attendance_quote": "exact unconditional attendance acceptance substring, or null",
+    },
+    "INTERPRET_ATTENDANCE": {
+        "reply_event_id": "saved reply ID",
+        "source_step_id": "current source step ID",
+        "confirmed": "true for clear acceptance; false to clarify",
+        "unsupported_question": ["NONE", "WEATHER", "PARKING", "OTHER_NON_CLINICAL"],
+    },
+    "INTERPRET_SELECTION": {
+        "offer_id": "saved offer ID",
+        "reply_event_id": "saved reply ID",
+        "option_number": "selected option number, or null to clarify",
+        "unsupported_question": ["NONE", "WEATHER", "PARKING", "OTHER_NON_CLINICAL"],
+    },
     "TOOL": {"tool_name": list(TOOLS_BY_ROLE["preparation"])},
     "DELEGATE": {"target": ["engagement", "preparation"], "goal": "brief bounded goal"},
     "RETURN": {"evidence_ids": ["successful tool step ID from this delegation"]},

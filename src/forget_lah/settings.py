@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     llm_gateway_api_key: SecretStr | None = None
     llm_model: str = "global.anthropic.claude-sonnet-4-5-20250929-v1:0"
     agent_max_steps: int = Field(default=24, ge=4, le=40)
-    agent_daily_call_limit: int = Field(default=40, ge=1, le=200)
+    agent_daily_call_limit: int = Field(default=40, ge=1, le=400)
     agent_request_max_bytes: int = Field(default=8000, ge=2000, le=64000)
     agent_min_interval_seconds: int = Field(default=2, ge=0, le=30)
 

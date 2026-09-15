@@ -29,7 +29,15 @@ class StartInput(StrictModel):
 
 class EventInput(StartInput):
     run_id: str = Field(min_length=36, max_length=36)
-    kind: Literal["demo_reply", "clinical_concern", "retry", "pause", "accept_handoff"]
+    kind: Literal[
+        "demo_reply",
+        "clinical_concern",
+        "retry",
+        "pause",
+        "accept_handoff",
+        "resolve_callback",
+        "resolve_clinical",
+    ]
     content: str = Field(default="", max_length=600)
 
 
@@ -173,7 +181,14 @@ def install_routes(app, factory, settings, authorise):
                     "risk": handoff.risk,
                     "accepted": bool(handoff.accepted_by),
                     "owner": owner.email if owner else None,
-                    "staff_task_status": "open",  # Acceptance never claims clinical resolution.
+                    "staff_task_status": "resolved"
+                    if any(
+                        run.checkpoint.get(k, {}).get("status") == "resolved"
+                        for k in ("callback", "clinical_review")
+                    )
+                    else "open",
+                    "callback": run.checkpoint.get("callback"),
+                    "clinical_review": run.checkpoint.get("clinical_review"),
                 }
             result["patient_simulator"] = {
                 "available": settings.simulation_configured and case.clinic_id == DEMO_CLINIC_ID,
@@ -299,7 +314,25 @@ def install_routes(app, factory, settings, authorise):
             newest = latest_run(db, case.id)
             if newest.id != run.id:
                 raise HTTPException(409, "This is not the current agent run")
-            if body.kind == "accept_handoff":
+            if body.kind in {"resolve_callback", "resolve_clinical"}:
+                handoff = db.scalar(
+                    select(StaffHandoff).where(StaffHandoff.run_id == run.id).with_for_update()
+                )
+                callback = run.checkpoint.get(
+                    "clinical_review" if body.kind == "resolve_clinical" else "callback", {}
+                )
+                if (
+                    run.status != "escalated"
+                    or callback.get("status") != "accepted"
+                    or not handoff
+                    or handoff.accepted_by != user.id
+                ):
+                    raise HTTPException(
+                        409, "Only the assigned owner can resolve an accepted review"
+                    )
+                if not body.content.strip():
+                    raise HTTPException(422, "Record the outcome of your patient contact")
+            elif body.kind == "accept_handoff":
                 handoff = db.scalar(
                     select(StaffHandoff).where(StaffHandoff.run_id == run.id).with_for_update()
                 )
@@ -330,12 +363,60 @@ def install_routes(app, factory, settings, authorise):
                     expected_case_version=body.expected_case_version,
                 )
             )
+            if body.kind in {"accept_handoff", "resolve_clinical"} and run.checkpoint.get(
+                "clinical_review"
+            ):
+                review = {**run.checkpoint["clinical_review"]}
+                resolved = body.kind == "resolve_clinical"
+                review.update(status="resolved" if resolved else "accepted")
+                review["resolved_event_id" if resolved else "accepted_event_id"] = event_id
+                review["resolved_at" if resolved else "accepted_at"] = utcnow().isoformat()
+                review["resolved_by" if resolved else "accepted_by"] = user.id
+                if resolved:
+                    review["resolution"] = body.content.strip()
+                run.checkpoint = {
+                    **run.checkpoint,
+                    "clinical_review": review,
+                    "outcome": "CLINICAL_REVIEW_RESOLVED_BY_STAFF" if resolved else None,
+                }
+                run.authorised_by = user.id
+                case.case_version += 1
+                release(run, "completed" if resolved else "escalated")
+                return {"event_id": event_id, "status": run.status}
+            if body.kind in {"accept_handoff", "resolve_callback"} and run.checkpoint.get(
+                "callback"
+            ):
+                callback = {**run.checkpoint["callback"]}
+                callback.update(
+                    status="resolved" if body.kind == "resolve_callback" else "accepted"
+                )
+                callback[
+                    "resolved_event_id" if body.kind == "resolve_callback" else "accepted_event_id"
+                ] = event_id
+                if body.kind == "resolve_callback":
+                    callback.update(
+                        resolution=body.content.strip(),
+                        resolved_by=user.id,
+                        resolved_at=utcnow().isoformat(),
+                    )
+                run.checkpoint = {
+                    **run.checkpoint,
+                    "callback": callback,
+                    "outcome": "SIMULATED_CONFIRMATION_AND_CALLBACK_RESOLVED"
+                    if body.kind == "resolve_callback"
+                    else None,
+                }
+                run.authorised_by = user.id
+                case.case_version += 1
+                release(run, "completed" if body.kind == "resolve_callback" else "escalated")
+                return {"event_id": event_id, "status": run.status}
             # Revoke in-flight work before exposing the new event. Late results
             # cannot reuse the old case version or lease token.
             proof = simulation_evidence(db, run)
             if (
                 body.kind == "retry"
-                and run.checkpoint.get("pause_reason") == "ROLE_BUDGET_EXHAUSTED"
+                and run.checkpoint.get("pause_reason")
+                in {"ROLE_BUDGET_EXHAUSTED", "MODEL_REQUEST_TOO_LARGE"}
                 and run.active_role == "coordinator"
                 and settings.simulation_configured
                 and (proof["ack_ready"] or proof["complete_evidence_ids"])

@@ -1,5 +1,78 @@
 # forget-lah agent runtime validation
 
+## Clinical symptom callback lifecycle — 15 September 2026
+
+- **241 tests passed, zero skips**, including PostgreSQL checks. Coverage includes symptom acknowledgement, separate attendance intention, no routine source write, quote/reply binding rejection, acceptance without completion, required resolution text, owner-only resolution and no further model steps for staff acceptance/resolution.
+- Live Anthropic run `5564029b-4186-4f23-800a-ac3bf8d8801a` handled Alex's exact eye-swelling/pain message via `REPORT_SYMPTOMS`. It produced a RED `PATIENT_REPORTED_SYMPTOMS` review and the callback acknowledgement. Authenticated staff API acceptance left it open; a clearly synthetic contact/review outcome resolved it with no extra model calls. Temporary validation access was retired. No real patient contact was made.
+- Three additional budget-accounted live inference checks used negated current symptoms, completely resolved historical pain, and a routine bring question; all delegated routine review rather than emitting `REPORT_SYMPTOMS`. These are limited examples, not clinical validation or proof of diagnostic accuracy.
+- Ruff lint/format, TypeScript/Vite and backend/web builds passed. API/worker/web were recreated; API is healthy and localhost returns HTTP 200. Schema and [clinical review guide](CLINICAL_REVIEW.md) were updated. No new migration was needed. No browser-layout inspection was performed. Two existing dependency deprecation warnings remain.
+
+## Natural reminder acceptance and parking questions — 15 September 2026
+
+- Added typed, gateway-bound `INTERPRET_ATTENDANCE` for natural replies to existing appointment reminders. Unsupported topic metadata follows the interpretation across roles so Preparation does not investigate parking or escalate merely because it cannot answer. A clarification names the saved appointment date/time; a later reply resumes normally. Parking text is a fixed limitation template, while live Claude performs the classification.
+- Live run `2f420ba2-c1d8-4572-88d5-06bb7fa60f16` processed “Yes fine, How about the parking lot availability during that time?” and completed at 14 steps with a source receipt, exact clinic notes and the parking limitation sentence. No handoff. The 21 September, 10 am appointment was retained.
+- Live run `d0896091-d43d-42c8-bd97-3ed21d301255` processed “Yes fine? how about the parking lots during that day?”, asked whether the patient was confirming the specific 21 September appointment, then completed after “yes” at 18 steps, without handoff. Temporary validation access was retired. An earlier live failure that escalated during Preparation remains historical evidence; the cross-role topic propagation fixed it.
+- The full regression run after the runtime fix had 237 passing tests and one failing new test assertion: the offline model can prepare before interpreting attendance. The assertion was corrected to check propagation after interpretation, and all four focused tests passed (both conversation paths plus wrong reply/source binding rejection). No tests were skipped in the full run. Ruff lint/format, source schema export, backend/web builds and diff checks passed. API/worker were recreated and API is healthy. Two existing dependency deprecation warnings remain.
+
+## Unsupported side questions during slot selection — 15 September 2026
+
+- **234 tests passed, zero skips**, including PostgreSQL checks. Added mixed selection/weather, conditional weather (no booking), and unrelated non-clinical question coverage. The saved selection interpretation drives a fixed limitation reply without an unnecessary handoff. Existing clinical callback and source-write protections remain passing.
+- A budget-accounted live Anthropic inference replay of Alex's saved decision-14 context from run `8281e905-39da-40da-b919-afe89bead79c` selected option 1 and classified `unsupported_question=WEATHER` for “18th should be fine, how will be the weather over there on that day?”. Strict response validation passed. This was inference only: no new appointment mutation or rewrite of the historical case. Message delivery/lifecycle were verified by automated tests, not a new live end-to-end run.
+- Ruff lint/format, backend/web image builds and diff checks passed; API/worker were recreated, API is healthy and the app returns HTTP 200. Schema export and patient simulator guide were updated. No schema migration, weather integration or extra per-reply model call was added. Two existing dependency deprecation warnings remain.
+
+## Preparation notes after confirmation — 15 September 2026
+
+- Slot offers omit general clinic notes; the acknowledgement retains exact approved instructions after source-confirmed booking, rescheduling or attendance confirmation. The conversation label is now “Available slots”. Prerequisite checks and saved preparation evidence remain in place.
+- **231 tests passed, zero skips**, including PostgreSQL checks. Existing recall/rescheduling lifecycle tests now verify that the note is absent from the offer and present in the final acknowledgement. Ruff lint/format and backend/web builds passed.
+- Local API, worker and web were recreated; the API is healthy and the web URL returns HTTP 200. No new paid Claude run or browser-layout inspection was needed for this message-rendering change. Existing historical messages are preserved; start a fresh simulator test to see new wording. Two existing dependency deprecation warnings remain.
+
+## Claude-interpreted option choices — 15 September 2026
+
+- **231 automated tests passed, zero skips.** Coverage includes a scripted model selecting from free-form wording, null interpretation producing a clarification without a write/repeated offer, and gateway rejection of wrong offer IDs, wrong reply IDs and invalid offered option numbers. The live selection path no longer invokes the phrase-matching helper; that helper belongs only to the offline MockModel fixture.
+- Live Claude run `ff2104ee-cbd5-4fc7-a4bd-ab776d92a11b` processed “option 1 is fine” via model-origin `INTERPRET_SELECTION`, proposed option 1 against the actual saved offer/reply, then recorded the source update and acknowledgement. It completed at step 22 with one offer and no handoff. The synthetic appointment moved from 16 to 17 September, 10 am SGT. Previous reviews are preserved; temporary test access was retired.
+- The patient prompt no longer suggests a fixed reply. Selection context includes the displayed Singapore-time labels. Provider request-size tests cover ten offered options and long notes; model output remains schema-validated and policy-gated. Model interpretation is not treated as proof of real identity or real-channel consent.
+- Backend/web builds, TypeScript/Vite and Ruff checks passed. Validation used authenticated APIs and the running worker; no new browser-layout verification was performed. Two existing third-party deprecation warnings remain.
+
+## Natural option selection and shorter patient messages — 15 September 2026
+
+- **225 automated tests passed, zero skips.** Added coverage for the exact “option 1 ok for me” reply in both recall booking and rescheduling, plus clear variants and rejection of negations, conditions, questions, multiple choices and out-of-range option numbers. Existing offer binding, source availability and callback tests remain passing. Ruff lint/format, backend Docker build and diff checks passed; frontend code was unchanged in this increment.
+- Live Claude run `309d8b56-758a-4041-b5b2-3711d5b8b7c0` displayed the shorter slot prompt without the generic test-information disclaimer or “reply exactly” wording. The exact reply “option 1 ok for me” moved the synthetic appointment from 17 September to 16 September, 10 am SGT, and completed at step 22 with an acknowledgement, one options message and no handoff.
+- Validation used the authenticated API and running Claude worker/source. Temporary test access was retired. Earlier repeated-offer reviews and their old wording remain intact; use the latest review or start a fresh simulator test. No new browser-layout verification was performed.
+
+## Available slots and existing-appointment rescheduling — 15 September 2026
+
+- **211 automated tests passed, zero skips**, including fourteen PostgreSQL checks. Ruff lint/format, TypeScript/Vite, backend/web builds and diff checks passed. Two existing third-party deprecation warnings remain.
+- Live Claude run `8bdb0efa-3deb-4cce-b757-3f0784311496` processed the exact reply “I dont think I can make it, what are all the available slots?”. It displayed 17 September, 10 am SGT at step 12 while preserving the existing 16 September appointment. “Book option 1” then moved the synthetic appointment through the clinic API, displayed both dates and approved notes, and completed at step 23 without handoff or pause.
+- Regression coverage includes listing without mutation, source-owned rescheduling, idempotent replay, rejection of unauthorised source calls, stale-slot alternatives plus staff fallback, and two concurrent patients competing for the same slot. PostgreSQL verifies one succeeds while the other fails without changing its original appointment.
+- This uses the existing source tables and confirmation receipts; no migration or reservation/hold subsystem was added. Source-owned old slots are released only when an exact prior receipt/revision proves ownership; imported appointments do not invent a releasable slot.
+- Local services were rebuilt/recreated. Validation used authenticated APIs, the actual worker and Claude; temporary test access was retired. No new browser-layout or organiser-endpoint verification was performed. Earlier reviews and failed attempts remain in history.
+
+## Attendance retained with an owned callback — 15 September 2026
+
+- **208 automated tests passed, zero skips**, including thirteen PostgreSQL checks. Updated mixed-question coverage verifies AMBER callback creation across three specialties, approved-note boundaries, acceptance without completion, rejection of resolution before acceptance/by a different owner/without an outcome, staff resolution and journey status. Acceptance/resolution add no model steps or duplicate patient messages.
+- Ruff lint/format checks, TypeScript/Vite, backend/web builds and diff checks passed. Local services were recreated successfully. Two existing third-party deprecation warnings remain. No new browser-layout verification was performed.
+- Live Claude run `f0e40724-a0dd-46ac-b804-bea8c4779107` used the exact mixed confirmation/blood-test reply and reached step 12, then paused at the configured **DAILY_MODEL_BUDGET_EXHAUSTED** limit before acknowledgement. Consequently the new callback lifecycle is verified by automated integration tests, not a completed live-Claude run. The limit was not changed and the failed live attempt was not converted to simulation. Temporary test access was retired; history remains intact.
+- New behavior supersedes the earlier mixed-question auto-completion below. Routine confirmation remains automatic; supported blood-test questions create a callback task. Named acceptance keeps that task open until the owner records patient contact and resolution. No real phone call is placed.
+
+## Attendance confirmation plus blood-test question — 15 September 2026
+
+- **208 automated tests passed, zero skips**, including thirteen PostgreSQL checks. Ruff lint/format, TypeScript/Vite and backend/web Docker builds passed. Two existing third-party deprecation warnings remain.
+- Live Claude review `52f069d6-62fb-4a07-9d0c-b8db57e309d8` completed in **13 steps with no handoff or pause** using the exact reply “I confirm my attendance, do i have any blood test on the day?”. It recorded the existing 16 September, 10 am SGT attendance confirmation, read approved notes/prerequisites, displayed an acknowledgement and verified completion.
+- The confirmation write is a persisted `EXPLICIT_SIMULATED_CONFIRMATION` rule with zero model attempts after Engagement obtains source evidence. The normal gateway and source checks still apply. This avoids model confusion between disabled real-world messaging and enabled simulator permission. Failed source writes retain bounded retry/escalation behavior.
+- Regression coverage includes the exact mixed reply in all three specialties, approved versus unapproved blood-test notes, and conditional/contradictory replies that must never authorize a write. The acknowledgement does not claim a blood-test requirement absent from approved notes; attendance completion is separate from any question needing clinic clarification.
+- Earlier failed reviews remain in history. Verification used authenticated APIs and the running worker/source; temporary test access was retired. No new browser-layout or organiser-endpoint verification was performed.
+
+## Recall booking simulator — 15 September 2026
+
+- **201 automated tests passed, zero skips**, including thirteen PostgreSQL checks. Coverage includes two competing patients claiming one slot, idempotent receipt replay, wrong-key rejection, stale slots/notes, selection without an offer, duplicate waiting, bounded provider requests and evidence-preserving recovery. Ruff lint and formatting passed; two existing third-party deprecation warnings remain.
+
+- Implemented a source-owned synthetic recall booking endpoint, explicit saved-offer selection, exact approved-note display, updated preparation checks and receipt-backed completion. The source migration `sim0003` preserves earlier confirmations and stores booking provenance. Existing appointment rescheduling remains unsupported.
+- Live direct-Claude Mr Lim review `f0d47931-6e41-49e5-9726-ca11f057d180` displayed 16 and 17 September slots after “Can I come this Wednesday? Do I have any blood test on same day?”. It displayed the existing approved note and explicitly did not infer blood-test requirements absent from that note.
+- “Book option 1” booked **16 September 2026, 10 am SGT** in the mock clinic. The receipt, updated preparation evidence and acknowledgement were saved. Final state is **completed**, no handoff, at **23 recorded steps**. A preflight request-size pause was recovered through the authenticated retry API while preserving the receipt and messages; the earlier failed step remains visible. No source data or history was erased.
+- Live testing also found an inappropriate repeat WAIT after a patient reply. Model choices now exclude that wait, and the gateway independently denies it. The option-display tool persists its own waiting checkpoint.
+- Role/phase-specific prompts and a three-slot model preview keep the ten-slot/long-note regression within the existing 8,000-byte request cap for both provider protocols. Full tool results remain in history and all returned slots remain in the patient offer. The organiser protocol is tested with simulated HTTP responses, not a live organiser endpoint.
+- Verification uses authenticated HTTP APIs, the running worker, live Claude and the source API. Temporary test accounts/sessions were retired. TypeScript/Vite and Docker builds passed. No new browser-layout verification or remote CI run is claimed.
+
 ## Repeated source reads and role-budget recovery — 14 September 2026
 
 - **193 automated tests passed, zero skips**, including twelve PostgreSQL checks. Ruff lint/format and the backend Docker build passed. Two existing third-party deprecation warnings remain. No frontend code changed.

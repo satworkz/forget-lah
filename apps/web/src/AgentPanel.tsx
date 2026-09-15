@@ -56,6 +56,8 @@ type View = {
     accepted: boolean;
     owner: string | null;
     staff_task_status: string;
+    callback?: { status: string; question: string; resolution?: string } | null;
+    clinical_review?: { status: string; patient_message: string; symptom_quotes: string[]; attendance_intent: string; attendance_quote?: string | null; resolution?: string } | null;
   } | null;
 };
 const readable = (value: unknown) =>
@@ -84,6 +86,7 @@ export function AgentPanel({
   const [error, setError] = useState("");
   const [loadError, setLoadError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [resolution, setResolution] = useState("");
   const [reply, setReply] = useState(
     "Can I come next Friday? What should I bring?",
   );
@@ -139,7 +142,7 @@ export function AgentPanel({
           expected_case_version: view.case_version,
           run_id: view.run.id,
           kind,
-          content: kind === "demo_reply" ? reply : "",
+          content: kind === "demo_reply" ? reply : ["resolve_callback", "resolve_clinical"].includes(kind) ? resolution : "",
         }),
       });
       if (mounted.current) await reloadRef.current();
@@ -152,7 +155,7 @@ export function AgentPanel({
 
   const run = view?.run;
   const conversation = view ? [
-    ...(view.patient_simulator?.messages ?? []).map(m => ({...m, text: m.body, label: m.kind === "reminder" ? "Clinic reminder · simulated" : "Clinic acknowledgement · simulated"})),
+    ...(view.patient_simulator?.messages ?? []).map(m => ({...m, text: m.body, label: m.kind === "reminder" ? "Clinic reminder · simulated" : m.kind === "options" ? "Available slots · simulated" : m.kind === "clarification" ? "Clinic question · simulated" : "Clinic acknowledgement · simulated"})),
     ...view.events.filter(e => e.kind === "demo_reply").map(e => ({...e, text: e.content, label: "Patient reply · simulated"})),
   ].sort((a,b) => a.created_at.localeCompare(b.created_at)) : [];
   async function freshSimulation() {
@@ -225,7 +228,7 @@ export function AgentPanel({
               </div>}
               {(view.patient_simulator?.enabled || conversation.length > 0) && <section className="sim-conversation" aria-label="Patient conversation simulator">
                 <h3>Patient conversation simulator</h3>
-                <p className="small">Local test conversation. Confirmations update only the synthetic clinic system.</p>
+                <p className="small">Local test conversation. Bookings and confirmations update only the synthetic clinic system.</p>
                 {conversation.map(m => <article key={m.id} className="sim-message">
                   <strong>{m.label}</strong><time>{new Date(m.created_at).toLocaleString()}</time>
                   <p>{m.text}</p>
@@ -267,7 +270,9 @@ export function AgentPanel({
                     >
                       Submit demo reply
                     </button>
-                    {view.patient_simulator?.enabled && <button type="button" className="secondary" disabled={busy} onClick={() => setReply("I confirm my attendance")}>Use attendance confirmation</button>}
+                    {view.patient_simulator?.enabled && !view.patient_simulator.messages.some(m => m.kind === "options") && <button type="button" className="secondary" disabled={busy} onClick={() => setReply("I confirm my attendance")}>Use attendance confirmation</button>}
+                    {view.patient_simulator?.enabled && <button type="button" className="secondary" disabled={busy} onClick={() => setReply("I dont think I can make it, what are all the available slots?")}>Ask for available slots</button>}
+                    {view.patient_simulator?.messages.some(m => m.kind === "options") && <button type="button" className="secondary" disabled={busy} onClick={() => setReply("Book option 1")}>Choose option 1 from the latest offer</button>}
                   </form>
                   <button
                     className="secondary"
@@ -278,7 +283,7 @@ export function AgentPanel({
                   </button>
                   <p className="small">
                     This button proves the rule-based escalation path. Automatic
-                    clinical detection from text or voice is not implemented.
+                    symptom reports in demo text now create a clinical callback task; voice triage is not implemented.
                   </p>
                 </div>
               )}
@@ -288,19 +293,48 @@ export function AgentPanel({
                 >
                   <strong>
                     {view.handoff.risk} ·{" "}
-                    {view.handoff.accepted
+                    {view.handoff.staff_task_status === "resolved" ? "Staff review resolved" : view.handoff.accepted
                       ? "Handoff accepted"
                       : "Staff owner needed"}
                   </strong>
                   <p className="capitalize">
                     {readable(view.handoff.reason_code)}
                   </p>
+                  {view.handoff.reason_code === "SLOT_SELECTION_CHANGED" && <p>The selected option changed before confirmation. This request did not move the appointment. Review the current alternatives in the conversation and help the patient choose another time.</p>}
+                  {view.handoff.reason_code === "NO_AVAILABLE_SLOTS" && <p>The clinic source currently lists no available slots. The existing appointment has not been changed. Staff can help arrange a suitable time.</p>}
+                  {view.handoff.callback && <div>
+                    <p><strong>Attendance: Confirmed in the clinic simulator</strong></p>
+                    <p><strong>Blood-test question: {view.handoff.callback.status === "resolved" ? "Resolved by staff" : "Awaiting clinic response"}</strong></p>
+                    <p>Patient asked: {view.handoff.callback.question}</p>
+                    <p>Callback {view.handoff.callback.status}. Accepting ownership does not resolve the question.</p>
+                    {view.handoff.callback.resolution && <p>Recorded contact outcome: {view.handoff.callback.resolution}</p>}
+                    {view.handoff.callback.status === "accepted" && <>
+                      <label htmlFor="callback-resolution">After contacting the patient, record what you clarified</label>
+                      <textarea id="callback-resolution" value={resolution} maxLength={600} onChange={e => setResolution(e.target.value)} />
+                      <button className="primary" disabled={busy || !resolution.trim()} onClick={() => void act("resolve_callback")}>Record contact and resolve callback</button>
+                      <p className="small">Only the staff member who accepted this callback can resolve it. This records staff-reported contact; it does not place a phone call.</p>
+                    </>}
+                  </div>}
+                  {view.handoff.clinical_review && <div>
+                    <p><strong>Clinical callback: {view.handoff.clinical_review.status}</strong></p>
+                    <p>Patient reported: {view.handoff.clinical_review.patient_message}</p>
+                    <p>Symptoms: {view.handoff.clinical_review.symptom_quotes.join("; ")}</p>
+                    <p>Attendance intention: {view.handoff.clinical_review.attendance_intent === "stated" ? "Patient says they plan to attend" : "Not confirmed in this message"}. This is separate from a clinic-system confirmation.</p>
+                    <p>Clinical review is required. RED marks a clinical handoff; it is not an automated diagnosis or urgency assessment. Accepting ownership keeps the task open until contact and review are recorded.</p>
+                    {view.handoff.clinical_review.resolution && <p>Recorded contact and review outcome: {view.handoff.clinical_review.resolution}</p>}
+                    {view.handoff.clinical_review.status === "accepted" && <>
+                      <label htmlFor="clinical-resolution">After contacting the patient and arranging clinical review, record the outcome and any further follow-up</label>
+                      <textarea id="clinical-resolution" value={resolution} maxLength={600} onChange={e => setResolution(e.target.value)} />
+                      <button className="primary" disabled={busy || !resolution.trim()} onClick={() => void act("resolve_clinical")}>Record contact and resolve review</button>
+                      <p className="small">Only the assigned owner can resolve this task. Recording an outcome does not place a phone call or establish that symptoms have resolved.</p>
+                    </>}
+                  </div>}
                   {view.handoff.reason_code === "CAPABILITY_UNAVAILABLE" && <p>
-                    {view.patient_simulator?.enabled ? "This scenario needs clinic help. Check the tool evidence for an unavailable action, changed appointment or preparation issue. Rescheduling and booking are not implemented." : "This older review used read-only capabilities. Start a fresh simulator test to exercise attendance confirmation and acknowledgement."}
+                    {view.patient_simulator?.enabled ? "This scenario needs clinic help. Check the tool evidence for an unavailable action, changed slot or preparation issue. The simulator supports recall bookings, attendance confirmations and rescheduling future appointments through the clinic API." : "This older review used read-only capabilities. Start a fresh simulator test to exercise attendance confirmation and acknowledgement."}
                   </p>}
                   {view.handoff.accepted ? (
                     <p>
-                      Owner: {view.handoff.owner}. The staff task remains open.
+                      Owner: {view.handoff.owner}. The staff task is {view.handoff.staff_task_status}.
                     </p>
                   ) : (
                     <>
@@ -368,6 +402,8 @@ export function AgentPanel({
                     {step.origin === "rule" && step.decision?.step_type === "TOOL" && (
                       <p>{step.decision.tool_name === "read_followup_context"
                         ? "The worker requested the initial clinic context automatically."
+                        : step.decision.tool_name === "record_simulated_confirmation"
+                        ? "The worker submitted the explicitly confirmed simulator action through the policy gateway."
                         : "The worker retried the interrupted simulated action using its saved evidence."}
                         {" "}This step uses 0 model calls. Check the tool result below.</p>
                     )}

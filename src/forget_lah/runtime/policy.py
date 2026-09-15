@@ -3,17 +3,23 @@ from sqlalchemy import select
 from forget_lah.db import Membership, Principal
 from forget_lah.runtime.contracts import (
     REQUIRED_EVIDENCE_BY_ROLE,
+    AttendanceDecision,
+    ClinicalReportDecision,
     CompleteDecision,
     CompleteSimulationDecision,
     DelegateDecision,
     EscalateDecision,
     ReturnDecision,
+    SelectionDecision,
     ToolDecision,
+    WaitDecision,
     tools_for,
 )
 from forget_lah.runtime.models import AgentDelegation, AgentStep, StaffHandoff
 from forget_lah.runtime.simulation import (
+    latest_selection_offer,
     read_already_available,
+    saved_reply,
     simulation_enabled,
     simulation_evidence,
 )
@@ -57,6 +63,76 @@ def policy_for(db, run, case, step, decision):
         deny = "STALE_OR_WRONG_REQUEST"
     elif step.role != run.active_role:
         deny = "ROLE_CHANGED"
+    elif isinstance(decision, ClinicalReportDecision):
+        reply = saved_reply(db, run)
+        if (
+            run.active_role != "coordinator"
+            or not simulation_enabled(run)
+            or not reply
+            or decision.reply_event_id != reply.id
+        ):
+            deny = "CLINICAL_REPLY_BINDING_REQUIRED"
+        elif any(
+            not q.strip() or len(q) > 200 or q not in reply.content for q in decision.symptom_quotes
+        ):
+            deny = "SYMPTOM_QUOTES_NOT_IN_PATIENT_REPLY"
+        elif decision.attendance_quote is not None and (
+            not decision.attendance_quote.strip()
+            or len(decision.attendance_quote) > 200
+            or decision.attendance_quote not in reply.content
+        ):
+            deny = "ATTENDANCE_QUOTE_NOT_IN_PATIENT_REPLY"
+        else:
+            reasons.append("PATIENT_REPORT_BOUND_CLINIC_REVIEW_REQUIRED")
+    elif isinstance(decision, AttendanceDecision):
+        review = simulation_evidence(db, run).get("attendance_review")
+        delegation = db.scalar(
+            select(AgentDelegation).where(
+                AgentDelegation.run_id == run.id,
+                AgentDelegation.status == "active",
+                AgentDelegation.target == "engagement",
+            )
+        )
+        if not review or not delegation or run.active_role != "engagement":
+            deny = "ATTENDANCE_REVIEW_NOT_AVAILABLE"
+        elif (
+            decision.reply_event_id != review["reply_event_id"]
+            or decision.source_step_id != review["source_step_id"]
+        ):
+            deny = "ATTENDANCE_REPLY_OR_SOURCE_MISMATCH"
+        else:
+            reasons.append("MODEL_INTERPRETATION_BOUND_TO_SAVED_REPLY_AND_APPOINTMENT")
+    elif isinstance(decision, SelectionDecision):
+        offer = latest_selection_offer(db, run)
+        reply = saved_reply(db, run)
+        evidence = simulation_evidence(db, run)
+        delegation = db.scalar(
+            select(AgentDelegation).where(
+                AgentDelegation.run_id == run.id,
+                AgentDelegation.status == "active",
+                AgentDelegation.target == "engagement",
+            )
+        )
+        if (
+            not simulation_enabled(run)
+            or run.active_role != "engagement"
+            or not delegation
+            or not evidence.get("selection_offer")
+        ):
+            deny = "SELECTION_REVIEW_NOT_AVAILABLE"
+        elif (
+            not offer
+            or not reply
+            or decision.offer_id != offer.id
+            or decision.reply_event_id != reply.id
+        ):
+            deny = "SELECTION_REPLY_OR_OFFER_MISMATCH"
+        elif decision.option_number is not None and not 1 <= decision.option_number <= len(
+            offer.evidence.get("slots", [])
+        ):
+            deny = "SELECTION_NOT_IN_OFFER"
+        else:
+            reasons.append("MODEL_INTERPRETATION_BOUND_TO_SAVED_REPLY_AND_OFFER")
     elif isinstance(decision, ToolDecision):
         if decision.tool_name not in tools_for(run.active_role, simulation_enabled(run)):
             deny = "TOOL_NOT_ALLOWED_FOR_ROLE"
@@ -65,13 +141,14 @@ def policy_for(db, run, case, step, decision):
         elif decision.tool_name in {
             "record_simulated_confirmation",
             "send_simulated_acknowledgement",
+            "send_simulated_options",
         }:
             evidence = simulation_evidence(db, run)
-            ready = (
-                "record_ready"
-                if decision.tool_name == "record_simulated_confirmation"
-                else "ack_ready"
-            )
+            ready = {
+                "record_simulated_confirmation": "record_ready",
+                "send_simulated_acknowledgement": "ack_ready",
+                "send_simulated_options": "options_ready",
+            }[decision.tool_name]
             if not evidence[ready]:
                 deny = "SIMULATION_EVIDENCE_REQUIRED"
             else:
@@ -140,6 +217,13 @@ def policy_for(db, run, case, step, decision):
                 required.add("record_simulated_confirmation")
             if not deny and not required.issubset(evidence_tools):
                 deny = "SPECIALIST_EVIDENCE_INCOMPLETE"
+    elif isinstance(decision, WaitDecision):
+        if (
+            simulation_enabled(run)
+            and run.checkpoint["latest_event"]["kind"] == "demo_reply"
+            and decision.reason_code == "AWAITING_PATIENT_REPLY"
+        ):
+            deny = "PATIENT_REPLY_ALREADY_AVAILABLE"
     elif isinstance(decision, EscalateDecision):
         if decision.reason_code == "CLINICAL_REVIEW_REQUIRED":
             deny = "CLINICAL_ESCALATION_REQUIRES_STAFF_FLAG"
@@ -177,6 +261,10 @@ def policy_for(db, run, case, step, decision):
         "action": decision.step_type,
         "policy_version": "m2a-staff-clinical-flag-v2",
         "decision": "DENY" if deny else "ALLOW",
-        "risk": "RED" if clinical else "AMBER" if decision.step_type == "ESCALATE" else "GREEN",
+        "risk": "RED"
+        if clinical or (isinstance(decision, ClinicalReportDecision) and not deny)
+        else "AMBER"
+        if decision.step_type == "ESCALATE"
+        else "GREEN",
         "reason_codes": [deny] if deny else reasons,
     }

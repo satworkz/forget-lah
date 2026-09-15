@@ -59,6 +59,9 @@ class Confirmation(Base):
     episode_version: Mapped[int] = mapped_column(Integer)
     scheduled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     confirmed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    booking_slot_id: Mapped[str | None] = mapped_column(String(36))
+    booking_slot_version: Mapped[int | None] = mapped_column(Integer)
+    prior_episode_version: Mapped[int | None] = mapped_column(Integer)
 
 
 def confirmation_dict(row):
@@ -72,6 +75,7 @@ def confirmation_dict(row):
         "confirmed_at": iso(row.confirmed_at),
         "synthetic": True,
         "status": "PATIENT_CONFIRMED_ATTENDANCE",
+        "booking_slot_id": row.booking_slot_id,
     }
 
 
@@ -151,7 +155,11 @@ def envelope(db, row):
         )
     )
     available = [
-        {k: v for k, v in slot_dict(s).items() if k in {"id", "starts_at", "ends_at", "doctor"}}
+        {
+            k: v
+            for k, v in slot_dict(s).items()
+            if k in {"id", "starts_at", "ends_at", "doctor", "version"}
+        }
         for s in slots[:10]
     ]
     # Availability edits also change source_version; a previous read remains historical evidence.
@@ -173,6 +181,11 @@ def envelope(db, row):
             "can_write_appointments": False,
             "episode_version": row.version,
             "can_simulate_confirmation": True,
+            "can_simulate_booking": row.record_type == "recall"
+            and row.source_status == "due"
+            and not row.has_future_booking,
+            "can_simulate_rescheduling": row.record_type == "appointment"
+            and row.source_status == "scheduled",
             "available_slots": available,
             "more_available_slots": len(slots) > 10,
         },

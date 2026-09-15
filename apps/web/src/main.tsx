@@ -289,7 +289,7 @@ function App() {
             <p>
               Open a case to watch the Coordinator delegate, read clinic
               evidence and respond to a demo reply. The patient simulator can
-              confirm a scheduled visit and display an acknowledgement;
+              offer and book a recall slot, confirm a scheduled visit, and display an acknowledgement;
               requests needing staff appear as handoffs. No real messages are sent.
             </p>
           </div>
