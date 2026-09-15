@@ -8,6 +8,8 @@ To connect your own Claude account, start with [Claude setup](docs/CLAUDE_SETUP.
 
 ## First run on Windows
 
+**Using Ubuntu?** Follow [Ubuntu quick start](docs/UBUNTU_QUICK_START.md). The companion `scripts/dev.sh` supports setup, build, start and local container deployment. Windows commands below are unchanged.
+
 Open this project folder in VS Code. Open Terminal > New Terminal and use PowerShell. Docker Desktop must be running Linux containers.
 
 ```powershell
