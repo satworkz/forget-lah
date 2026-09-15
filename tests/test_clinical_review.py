@@ -9,9 +9,53 @@ from test_simulator import simulator as simulator
 
 from forget_lah.db import Principal, uid
 from forget_lah.runtime.models import AgentStep, StaffHandoff
-from forget_lah.runtime.provider import MockModel, ModelReply
+from forget_lah.runtime.provider import MockModel, ModelReply, decision_formats_for
 
 REPLY = "yes, I confirm the attendance, but I have swelling in my eyes now and pain as well."
+
+
+def test_routine_confirmation_and_bring_question_cannot_report_symptoms(simulated_runtime):
+    runtime, tools, _, source_engine = simulated_runtime
+    case_id, _ = start(runtime, "myopia")
+    drain(runtime, tools=tools)
+
+    class RoutineModel(MockModel):
+        def decide(self, obs, **kwargs):
+            if obs["latest_event"].get("kind") == "demo_reply":
+                assert "REPORT_SYMPTOMS" not in decision_formats_for(obs)
+            return super().decide(obs, **kwargs)
+
+    event(
+        runtime[1], case_id, "demo_reply", "yes I attend, What should I bring?"
+    ).raise_for_status()
+    drain(runtime, tools=tools, model=RoutineModel())
+    result = view(runtime[1], case_id)
+    assert result["run"]["status"] == "completed", result
+    assert result["handoff"] is None
+    assert source_count(source_engine) == 1
+    assert "spectacles" in result["patient_simulator"]["messages"][-1]["body"]
+
+
+def test_gateway_rejects_attendance_as_symptom_even_if_model_ignores_schema(simulated_runtime):
+    runtime, tools, _, source_engine = simulated_runtime
+    case_id, _ = start(runtime, "myopia")
+    drain(runtime, tools=tools)
+    event(runtime[1], case_id, "demo_reply", REPLY).raise_for_status()
+
+    class BadQuote(ClinicalModel):
+        def decide(self, obs, **kwargs):
+            response = super().decide(obs, **kwargs)
+            decision = json.loads(response.text)
+            decision["symptom_quotes"] = ["I confirm the attendance"]
+            return ModelReply(json.dumps(decision))
+
+    drain(runtime, tools=tools, model=BadQuote())
+    result = view(runtime[1], case_id)
+    assert result["handoff"] is None
+    assert result["steps"][-1]["policy"]["reason_codes"] == [
+        "ADMINISTRATIVE_TEXT_IS_NOT_SYMPTOM_EVIDENCE"
+    ]
+    assert source_count(source_engine) == 0
 
 
 class ClinicalModel(MockModel):

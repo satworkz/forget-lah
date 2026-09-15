@@ -21,7 +21,7 @@ def explicit_confirmation(text):
     text = re.sub(r"\s+", " ", text.strip().lower()).rstrip(".! ")
     return bool(
         re.fullmatch(
-            r"(?:yes[, ]+)?i (?:confirm(?: (?:my |the )?attendance)?|will attend)"
+            r"(?:yes[, ]+)?i (?:confirm(?: (?:my |the )?attendance)?|(?:will )?attend)"
             r"(?:[,!. ]+(?:what should i bring|what do i need to bring|"
             r"do i have (?:a |any )?blood tests?(?: (?:on (?:the|that|the same|my appointment) day|that day))?|"
             r"is (?:a |any )?blood test scheduled(?: (?:on (?:the|that|the same|my appointment) day|that day))?)\??)?",

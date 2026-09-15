@@ -17,6 +17,7 @@ from forget_lah.runtime.contracts import (
 )
 from forget_lah.runtime.models import AgentDelegation, AgentStep, StaffHandoff
 from forget_lah.runtime.simulation import (
+    explicit_confirmation,
     latest_selection_offer,
     read_already_available,
     saved_reply,
@@ -76,6 +77,14 @@ def policy_for(db, run, case, step, decision):
             not q.strip() or len(q) > 200 or q not in reply.content for q in decision.symptom_quotes
         ):
             deny = "SYMPTOM_QUOTES_NOT_IN_PATIENT_REPLY"
+        elif explicit_confirmation(reply.content) or any(
+            explicit_confirmation(q)
+            or q.strip().lower().rstrip("?.! ")
+            in {"what should i bring", "what do i need to bring"}
+            or (decision.attendance_quote is not None and q == decision.attendance_quote)
+            for q in decision.symptom_quotes
+        ):
+            deny = "ADMINISTRATIVE_TEXT_IS_NOT_SYMPTOM_EVIDENCE"
         elif decision.attendance_quote is not None and (
             not decision.attendance_quote.strip()
             or len(decision.attendance_quote) > 200

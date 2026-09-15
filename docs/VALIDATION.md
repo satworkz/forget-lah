@@ -1,5 +1,12 @@
 # forget-lah agent runtime validation
 
+## Routine confirmation incorrectly classified as symptoms — 15 September 2026
+
+- **243 automated tests passed, zero skips**, including PostgreSQL checks; two existing dependency deprecation warnings remain.
+- Added whole-message recognition for “yes I attend, What should I bring?” and excluded symptom reporting for that bounded routine confirmation/preparation grammar. The gateway independently rejects attendance/preparation phrases as symptom evidence, including the observed erroneous quote “yes I attend”. Messages with additional symptoms do not match the full routine grammar and retain the clinical path.
+- Live Claude run `a3c676db-ddf9-4112-9fa1-068e0a66cf79` completed the exact reply at step 13, with a source confirmation for 18 September, 10 am SGT and the approved spectacles instruction. No handoff was created. Temporary test access was retired; the earlier false-positive review remains historical evidence.
+- Focused tests cover routine completion, a deliberately incorrect administrative symptom quote, genuine clinical escalation and callback ownership/resolution. Backend build, Ruff lint/format and diff checks passed. API/worker were recreated and are running; no frontend changes or migration were required.
+
 ## Clinical symptom callback lifecycle — 15 September 2026
 
 - **241 tests passed, zero skips**, including PostgreSQL checks. Coverage includes symptom acknowledgement, separate attendance intention, no routine source write, quote/reply binding rejection, acceptance without completion, required resolution text, owner-only resolution and no further model steps for staff acceptance/resolution.
