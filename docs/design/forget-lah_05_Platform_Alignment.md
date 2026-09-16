@@ -1,4 +1,4 @@
-# re-mind: platform alignment and early technical checks
+# forget-lah: platform alignment and early technical checks
 
 10 September 2026 | v2.1 addendum | Documentation review complete; live integration checks not yet performed
 
@@ -20,7 +20,7 @@ This review inspected the README. Linked Python file bodies were unavailable thr
 
 ## 3. Technical implementation consequences
 
-| Area | Decision for re-mind | Acceptance evidence |
+| Area | Decision for forget-lah | Acceptance evidence |
 |---|---|---|
 | Transport | Small httpx adapter; configuration selects endpoint, model and proven authentication. No local Ollama server or GPU is needed merely to speak the remote protocol. Do not assume OpenAI or Anthropic SDK wire compatibility. | A successful synthetic request using the team's actual contract, with sanitised request/response fixtures |
 | Agent tool use | Put compact allowed-tool definitions and AgentStep schema in the prompt; strict JSON parsing, Pydantic validation, policy checks, known-function dispatch, actual result feedback | Real model chooses a tool, application executes it, next model decision changes when the source returns no suitable result |

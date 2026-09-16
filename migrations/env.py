@@ -2,6 +2,7 @@ from alembic import context
 from sqlalchemy import create_engine
 
 from forget_lah.db import Base
+from forget_lah.runtime import models  # noqa: F401 - register agent tables for schema inspection
 from forget_lah.settings import Settings
 
 url = Settings().database_url.get_secret_value()

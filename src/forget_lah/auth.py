@@ -7,6 +7,7 @@ from argon2.exceptions import VerificationError
 from sqlalchemy import delete, select
 
 from forget_lah.db import AuthSession, Principal, utcnow
+from forget_lah.service_identity import AUTOMATION_PRINCIPAL_ID
 
 hasher = PasswordHasher()
 DUMMY_HASH = hasher.hash(secrets.token_urlsafe(32))
@@ -23,7 +24,7 @@ def authenticate(factory, email: str, password: str, hours: int):
             valid = hasher.verify(user.password_hash if user else DUMMY_HASH, password)
         except VerificationError:
             valid = False
-        if not valid or not user or not user.active:
+        if not valid or not user or not user.active or user.id == AUTOMATION_PRINCIPAL_ID:
             return None
         token, csrf = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
         db.execute(delete(AuthSession).where(AuthSession.expires_at <= utcnow()))
@@ -48,6 +49,6 @@ def session_principal(db, cookie: str | None):
     if expires.tzinfo is None:  # SQLite-only test representation.
         expires = expires.replace(tzinfo=UTC)
     user = db.get(Principal, session.principal_id)
-    if expires <= utcnow() or not user or not user.active:
+    if expires <= utcnow() or not user or not user.active or user.id == AUTOMATION_PRINCIPAL_ID:
         return None
     return user, session

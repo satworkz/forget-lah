@@ -1,10 +1,10 @@
-# re-mind: requirements and decisions
+# forget-lah: requirements and decisions
 
 10 September 2026 | v2.1 | Current design baseline | All implementation work is still planned
 
 ## 1. Product promise
 
-**re-mind helps clinics complete patient follow-up through accessible conversations, approved preparation reminders and accountable staff handoffs.** It supports upcoming appointments, missed appointments and source-defined routine recalls that have become due or overdue without a booking.
+**forget-lah helps clinics complete patient follow-up through accessible conversations, approved preparation reminders and accountable staff handoffs.** It supports upcoming appointments, missed appointments and source-defined routine recalls that have become due or overdue without a booking.
 
 The selected problem statement concerns dental clinics manually identifying overdue follow-ups and contacting patients individually. Dental remains the anchor demonstration. Myopia and antenatal care demonstrate reuse of the same administrative follow-up workflow with different approved source data. They are not claims of clinical efficacy or automated medical triage.
 
@@ -14,7 +14,7 @@ The name leaves room for future reminder products. General-purpose reminders, no
 
 | ID | Requirement | Design response and acceptance evidence |
 |---|---|---|
-| R01 | Rename to re-mind | New design pack, future UI/repository/branding use re-mind; Python imports use remind |
+| R01 | Rename to forget-lah | New design pack, future UI/repository/branding use forget-lah; Python imports use remind |
 | R02 | Simple, extensible and scalable | Modular Python backend, one relational store, replaceable adapters and one React frontend; demonstrate a second worker without duplicate actions, not unmeasured scale claims |
 | R03 | Final-week DevOps | Git, CI, migrations, secrets hygiene and containers from day one; final week completes deployment, rollback, restore, security and performance checks |
 | R04 | Automate wherever possible | One-command development start, migrations, deterministic seeds, test suites, Terraform plans and scripted deployment; external access and source approval remain explicit |
@@ -41,7 +41,7 @@ The name leaves room for future reminder products. General-purpose reminders, no
 ## 4. Decisions that protect the scope
 
 1. Automatic routine follow-up begins after a clinic has enrolled contacts, approved templates/policies and published valid source data. This setup is distinct from approving every agent action.
-2. If a clinic has booking APIs, a confirmed patient choice may be committed through that source's safe operation. re-mind never owns slot availability.
+2. If a clinic has booking APIs, a confirmed patient choice may be committed through that source's safe operation. forget-lah never owns slot availability.
 3. If a clinic only uploads schedules, the agent can confirm attendance intent for the published appointment and collect alternative-date preferences. A change request ends in an owned staff handoff until staff records the externally confirmed outcome. No invented availability or automatic booking success.
 4. Patient app use and installation are optional. Channel choice, voice access and caregiver support preserve access for people who do not use smartphones.
 5. Singpass establishes an identity. Our clinic membership, patient linkage, representative authority and consent checks establish permission. A parent logging in is not automatically authorised for a child's myopia follow-up.
@@ -64,13 +64,13 @@ Source: user-provided `IMG_1657.jpeg`, titled AWS Resource & Kiro Credits.
 - Finale: **6-10 October 2026**, five public teams plus five SME teams; slide literally says **AWS tokens: 100** and Kiro credits USD 20 per participant.
 - The finale's AWS unit is ambiguous. Do not interpret it as 100 model tokens or assume it means another USD 100 credit.
 
-The later organiser clarification supplied by the user takes precedence over earlier slide ambiguity. It specifies an AWS account created in the organiser environment, platform testing/hosting and model inference, and approximately USD 100 per team shared across Lightsail and LLM/API usage. Training and fine-tuning on the platform are prohibited. The private API key identifies team usage; it is separate from AWS account credentials. Preference learning in re-mind means consented database updates, not model training.
+The later organiser clarification supplied by the user takes precedence over earlier slide ambiguity. It specifies an AWS account created in the organiser environment, platform testing/hosting and model inference, and approximately USD 100 per team shared across Lightsail and LLM/API usage. Training and fine-tuning on the platform are prohibited. The private API key identifies team usage; it is separate from AWS account credentials. Preference learning in forget-lah means consented database updates, not model training.
 
-The user is willing to use a personal AWS account for extra development capacity. Plan for portable deployment, but do not interpret this as organiser approval for alternative hosting or model services. Calling the team endpoint from a personal server still uses the team API allowance. Additional AWS services and third-party provider coverage remain unconfirmed. See [the platform review](re-mind_05_Platform_Alignment.md) for technical evidence and the first implementation checks.
+The user is willing to use a personal AWS account for extra development capacity. Plan for portable deployment, but do not interpret this as organiser approval for alternative hosting or model services. Calling the team endpoint from a personal server still uses the team API allowance. Additional AWS services and third-party provider coverage remain unconfirmed. See [the platform review](forget-lah_05_Platform_Alignment.md) for technical evidence and the first implementation checks.
 
 ## 6. Coordinator questions: prepared for the user to send
 
-We are building re-mind for Patient Follow-up and plan to develop locally, deploy using Lightsail and call the supplied Claude Sonnet 4.5 JSON endpoint. Please clarify:
+We are building forget-lah for Patient Follow-up and plan to develop locally, deploy using Lightsail and call the supplied Claude Sonnet 4.5 JSON endpoint. Please clarify:
 
 1. May personal AWS provide supplementary development/testing while we also test and host on the supplied platform? May the team API be called from local/personal environments, is there an IP allowlist, and can its allowance be topped up? We understand hosting and inference share the approximately USD 100 team allocation.
 2. Which Lightsail region, bundle sizes and resources are permitted? Are static IPs, snapshots, DNS, Terraform and limited IAM/API credentials available?

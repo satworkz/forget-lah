@@ -1,5 +1,7 @@
 # forget-lah | Team quick start
 
+> **Update for v0.2.0:** installation and login steps below still apply. After startup, use [AGENT_RUNTIME.md](AGENT_RUNTIME.md) for the new agent buttons and tests. This earlier v0.1 guide/PDF describes foundation behaviour; agent cards are now active in the configured mode, and case stages change as runs progress. The automated suite has expanded; see [VALIDATION.md](VALIDATION.md).
+
 **Set up your workspace. Run the app. Test the follow-up cases.**
 
 Windows guide | Foundation v0.1.0 | 10 September 2026

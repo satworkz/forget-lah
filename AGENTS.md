@@ -1,4 +1,4 @@
-# re-mind engineering instructions
+# forget-lah engineering instructions
 
 Read README.md, docs/IMPLEMENTATION_STATUS.md, and the current design guides before extending the project.
 

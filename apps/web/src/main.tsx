@@ -1,5 +1,10 @@
 import { StrictMode, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { CaseJourney } from "./CaseJourney";
+import { ClinicSimulator } from "./ClinicSimulator";
+import { DemoReset } from "./DemoReset";
+import { AgentPanel } from "./AgentPanel";
+import { api, modelLabel } from "./client";
 import "./styles.css";
 
 type FollowupCase = {
@@ -10,6 +15,7 @@ type FollowupCase = {
   state: string;
   source_episode_ref: string;
   case_version: number;
+  agent_status: string | null;
 };
 type AuditEvent = {
   id: string;
@@ -25,22 +31,10 @@ const triggerLabels: Record<string, string> = {
   RECALL_OVERDUE: "Overdue recall",
 };
 
-async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, {
-    ...init,
-    credentials: "same-origin",
-    headers: { "Content-Type": "application/json", ...init?.headers },
-  });
-  if (!response.ok) {
-    const body = await response.json().catch(() => ({}));
-    throw new Error(
-      typeof body.detail === "string"
-        ? body.detail
-        : `Request failed (${response.status})`,
-    );
-  }
-  return response.status === 204 ? (undefined as T) : response.json();
+function journeyFromHash() {
+  return window.location.hash.match(/^#\/cases\/([a-f0-9-]{36})\/journey$/i)?.[1] ?? null;
 }
+function openJourney(caseId: string) { window.location.hash = `/cases/${caseId}/journey`; }
 
 function App() {
   const [signedIn, setSignedIn] = useState(false);
@@ -52,9 +46,20 @@ function App() {
   const sessionEpoch = useRef(0);
   const [cases, setCases] = useState<FollowupCase[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
+  const [modelMode, setModelMode] = useState("mock");
+  const [demoResetEnabled, setDemoResetEnabled] = useState(false);
+  const [demoResetCaseIds, setDemoResetCaseIds] = useState<string[]>([]);
+  const [journeyCaseId, setJourneyCaseId] = useState<string | null>(journeyFromHash);
+  const [simulator, setSimulator] = useState(window.location.hash === "#/clinic-simulator");
   const [selected, setSelected] = useState<FollowupCase | null>(null);
   const [events, setEvents] = useState<AuditEvent[]>([]);
   const [loadingEvents, setLoadingEvents] = useState(false);
+
+  useEffect(() => {
+    const syncRoute = () => { setJourneyCaseId(journeyFromHash()); setSimulator(window.location.hash === "#/clinic-simulator"); };
+    window.addEventListener("hashchange", syncRoute);
+    return () => window.removeEventListener("hashchange", syncRoute);
+  }, []);
 
   async function refresh() {
     const epoch = sessionEpoch.current;
@@ -63,15 +68,19 @@ function App() {
     try {
       const [rows, system] = await Promise.all([
         api<FollowupCase[]>("/api/cases"),
-        api<{ agents: Agent[] }>("/api/system"),
+        api<{ agents: Agent[]; model_mode: string; demo_reset_enabled: boolean; demo_reset_case_ids: string[] }>("/api/system"),
       ]);
       if (epoch !== sessionEpoch.current) return;
       setCases(rows);
       setAgents(system.agents);
+      setModelMode(system.model_mode);
+      setDemoResetEnabled(system.demo_reset_enabled);
+      setDemoResetCaseIds(system.demo_reset_case_ids);
     } catch (e) {
       if (epoch === sessionEpoch.current) {
         setCases([]);
         setAgents([]);
+        setDemoResetEnabled(false);
         setSelected(null);
         setError((e as Error).message);
       }
@@ -184,7 +193,7 @@ function App() {
           <div className="intro-note">
             NUS-ISS · Show Me Your Agents
             <br />
-            Local development foundation
+            Local agent demonstration
           </div>
         </div>
         <section className="login-card" aria-labelledby="sign-in">
@@ -227,6 +236,9 @@ function App() {
       </main>
     );
 
+  if (journeyCaseId) return <CaseJourney caseId={journeyCaseId} onBack={() => { window.location.hash = ""; setJourneyCaseId(null); void refresh(); }} />;
+  if (simulator) return <ClinicSimulator onBack={() => { window.location.hash = ""; setSimulator(false); void refresh(); }} />;
+
   return (
     <div className="workspace">
       <aside className="sidebar">
@@ -235,9 +247,10 @@ function App() {
         </div>
         <p className="sidebar-label">CLINIC WORKSPACE</p>
         <div className="nav-current">◉ &nbsp; Follow-up overview</div>
+        <a className="sim-nav" href="#/clinic-simulator">Clinic simulator ↗<small>External test records and slots</small></a>
         <div className="sidebar-bottom">
-          <span className="tag">MILESTONE 01</span>
-          <p>Foundation ready for the agent journey.</p>
+          <span className="tag">MILESTONE 02A</span>
+          <p>Agent decisions, source evidence and owned handoffs.</p>
           <button className="text-button" onClick={logout}>
             Sign out
           </button>
@@ -256,6 +269,11 @@ function App() {
             {busy ? "Refreshing…" : "Refresh cases"}
           </button>
         </header>
+        {demoResetEnabled && <DemoReset caseIds={demoResetCaseIds} onReset={async () => {
+          sessionEpoch.current += 1;
+          setSelected(null); setEvents([]);
+          await refresh();
+        }} />}
         {error && (
           <p className="error" role="alert">
             {error}
@@ -264,11 +282,15 @@ function App() {
         <div className="notice">
           <span className="status-dot" />
           <div>
-            <strong>Local foundation · synthetic data</strong>
+            <strong>
+              Agent review · synthetic data ·{" "}
+              {modelLabel(modelMode)}
+            </strong>
             <p>
-              This milestone includes source detection and background
-              processing. Model reasoning, patient conversations and outbound
-              messaging are the next milestone.
+              Open a case to watch the Coordinator delegate, read clinic
+              evidence and respond to a demo reply. The patient simulator can
+              offer and book a recall slot, confirm a scheduled visit, and display an acknowledgement;
+              requests needing staff appear as handoffs. No real messages are sent.
             </p>
           </div>
         </div>
@@ -321,16 +343,23 @@ function App() {
                       <td className="capitalize">{c.specialty}</td>
                       <td>{triggerLabels[c.trigger]}</td>
                       <td>
-                        <span className="pill">Ready for agent</span>
+                        <span className="pill capitalize">
+                          {c.agent_status ?? "Ready for agent"}
+                        </span>
                       </td>
                       <td>
+                        <div className="case-actions">
                         <button
                           className="text-button"
                           onClick={() => setSelected(c)}
                         >
-                          View evidence →
+                          Open agent review →
                           <span className="sr-only"> for {c.patient}</span>
                         </button>
+                        <button className="text-button" onClick={() => openJourney(c.id)}>
+                          View full case journey →<span className="sr-only"> for {c.patient}</span>
+                        </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -377,12 +406,30 @@ function App() {
             )}
           </section>
         )}
+        {selected && (
+          <AgentPanel
+            key={selected.id}
+            caseId={selected.id}
+            modelMode={modelMode}
+            onJourney={() => openJourney(selected.id)}
+            onStatus={(status) =>
+              setCases((rows) =>
+                rows.map((row) =>
+                  row.id === selected.id && row.agent_status !== status
+                    ? { ...row, agent_status: status }
+                    : row,
+                ),
+              )
+            }
+          />
+        )}
         <section className="agents-section">
           <div className="section-heading">
             <div>
               <h2>The agent team</h2>
               <p>
-                Defined responsibilities for the next implementation milestone.
+                One Coordinator selects specialists. Each decision passes
+                through the policy gateway.
               </p>
             </div>
           </div>
@@ -390,7 +437,9 @@ function App() {
             {agents.map((a, i) => (
               <article className="agent-card" key={a.role}>
                 <span className="agent-number">0{i + 1}</span>
-                <span className="planned">Planned</span>
+                <span className="planned">
+                  {modelLabel(modelMode)}
+                </span>
                 <h3>{a.name}</h3>
                 <p>{a.goal}</p>
               </article>
@@ -398,7 +447,7 @@ function App() {
           </div>
         </section>
         <footer>
-          forget-lah · Patient Follow-up · Foundation v0.1.0{" "}
+          forget-lah · Patient Follow-up · Agent runtime v0.2.0{" "}
           <span>All patient records shown are synthetic.</span>
         </footer>
       </main>

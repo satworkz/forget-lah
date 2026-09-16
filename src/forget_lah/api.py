@@ -6,6 +6,8 @@ from contextlib import asynccontextmanager
 from datetime import UTC
 
 from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select, text
 
@@ -20,7 +22,12 @@ from forget_lah.db import (
     make_engine,
     session_factory,
 )
+from forget_lah.demo_reset import install_demo_routes, reset_enabled
+from forget_lah.runtime.models import AgentRun
+from forget_lah.runtime.routes import install_routes, latest_run
 from forget_lah.settings import Settings
+from forget_lah.simulator import install_simulator_routes
+from forget_lah.source import DEMO_CLINIC_ID
 
 
 class LoginInput(BaseModel):
@@ -73,13 +80,27 @@ def create_app(settings: Settings | None = None, engine=None) -> FastAPI:
 
     app = FastAPI(
         title="forget-lah",
-        version="0.1.0",
+        version="0.2.0",
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
         lifespan=lifespan,
     )
     limiter = LoginLimiter()
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_error(request: Request, exc: RequestValidationError):
+        if request.url.path.startswith("/api/simulator"):
+            issues = [
+                f"{'.'.join(str(p) for p in item['loc'][1:]) or 'Record'}: {item['msg']}"
+                for item in exc.errors()[:4]
+            ]
+            return JSONResponse(
+                {"detail": "Please check the form. " + "; ".join(issues)}, status_code=422
+            )
+        from fastapi.exception_handlers import request_validation_exception_handler
+
+        return await request_validation_exception_handler(request, exc)
 
     @app.middleware("http")
     async def local_security(request: Request, call_next):
@@ -114,14 +135,16 @@ def create_app(settings: Settings | None = None, engine=None) -> FastAPI:
 
     @app.get("/health/live")
     def live():
-        return {"status": "ok", "version": "0.1.0"}
+        return {"status": "ok", "version": "0.2.0"}
 
     @app.get("/health/ready")
     def ready():
         try:
             with factory() as db:
-                db.execute(text("SELECT version_num FROM alembic_version"))
+                if db.scalar(text("SELECT version_num FROM alembic_version")) != "0004":
+                    raise ValueError("Agent migration is required")
                 db.execute(select(Clinic.id).limit(1))
+                db.execute(select(AgentRun.id).limit(1))
             return {"status": "ready"}
         except Exception as exc:
             raise HTTPException(503, "Database or migrations unavailable") from exc
@@ -174,13 +197,26 @@ def create_app(settings: Settings | None = None, engine=None) -> FastAPI:
     @app.get("/api/system")
     def system(request: Request):
         with factory() as db:
-            authorise(db, request)
+            _, _, clinics = authorise(db, request)
+            demo_reset = reset_enabled(settings, clinics)
+            demo_case_ids = (
+                list(
+                    db.scalars(
+                        select(FollowupCase.id).where(FollowupCase.clinic_id == DEMO_CLINIC_ID)
+                    )
+                )
+                if demo_reset
+                else []
+            )
         return {
-            "milestone": "M1 foundation",
+            "demo_reset_enabled": demo_reset,
+            "demo_reset_case_ids": demo_case_ids,
+            "milestone": "M2a agent runtime",
             "data_mode": "synthetic",
-            "model_mode": "not_connected",
+            "model_mode": settings.agent_model_mode,
+            "model_configured": settings.model_configured,
             "outreach_enabled": False,
-            "agents": AGENT_CATALOG,
+            "agents": [{**agent, "status": settings.agent_model_mode} for agent in AGENT_CATALOG],
         }
 
     @app.get("/api/cases")
@@ -196,7 +232,7 @@ def create_app(settings: Settings | None = None, engine=None) -> FastAPI:
                 )
                 .where(FollowupCase.clinic_id.in_(clinics))
                 .order_by(FollowupCase.created_at)
-                .limit(100)
+                .limit(200)
             )
             return [
                 {
@@ -207,6 +243,7 @@ def create_app(settings: Settings | None = None, engine=None) -> FastAPI:
                     "state": case.state,
                     "source_episode_ref": case.source_episode_ref,
                     "case_version": case.case_version,
+                    "agent_status": (run.status if (run := latest_run(db, case.id)) else None),
                 }
                 for case, alias in rows
             ]
@@ -246,4 +283,7 @@ def create_app(settings: Settings | None = None, engine=None) -> FastAPI:
                 for e in events
             ]
 
+    install_routes(app, factory, settings, authorise)
+    install_demo_routes(app, factory, settings, authorise)
+    install_simulator_routes(app, factory, settings, authorise)
     return app

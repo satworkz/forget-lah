@@ -1,12 +1,12 @@
-# re-mind: database design and integrity
+# forget-lah: database design and integrity
 
 10 September 2026 | v2.0 | Proposed schema, not executed SQL or applied migrations
 
 ## 1. Database purpose
 
-Yes, re-mind needs PostgreSQL. It stores confirmed preferences, identity/consent evidence, imported source provenance, messages, pending jobs, agent checkpoints and handoffs. The model is not the database and does not retain authoritative state between calls.
+Yes, forget-lah needs PostgreSQL. It stores confirmed preferences, identity/consent evidence, imported source provenance, messages, pending jobs, agent checkpoints and handoffs. The model is not the database and does not retain authoritative state between calls.
 
-Use one PostgreSQL 17 instance for the hackathon, with `remind` and `mock_clinic` databases and separate roles. The application accesses the mock clinic only through its HTTP API. Runtime migration credentials are not given to ordinary API/worker processes. Imported records live in re-mind as published follow-up evidence, not as a second clinical chart.
+Use one PostgreSQL 17 instance for the hackathon, with `remind` and `mock_clinic` databases and separate roles. The application accesses the mock clinic only through its HTTP API. Runtime migration credentials are not given to ordinary API/worker processes. Imported records live in forget-lah as published follow-up evidence, not as a second clinical chart.
 
 Notation: PK = primary key; FK = foreign key; UUID = unique identifier; `?` = nullable; timestamptz = timestamp for an instant, handled in UTC; jsonb = bounded structured JSON. All fields not marked `?` are required. Field lists are logical contracts to implement in SQLAlchemy/Alembic. Use checked text enums consistently and forbid unsupported values.
 

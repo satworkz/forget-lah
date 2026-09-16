@@ -3,6 +3,11 @@ on: [push, pull_request]
 permissions:
   contents: read
 jobs:
+  linux-launcher:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash tests/test_dev_sh.sh
   backend:
     runs-on: ubuntu-latest
     services:

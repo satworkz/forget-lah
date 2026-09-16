@@ -1,4 +1,4 @@
-# re-mind: worked agent journeys
+# forget-lah: worked agent journeys
 
 10 September 2026 | v2.0 | Synthetic teaching examples, not executed patient interactions
 
@@ -157,7 +157,7 @@ The slot is 3 PM Singapore time. It is availability, not a reservation. The runt
 
 Staff uploads a strict CSV of synthetic schedules and a TXT note. Parser checks schema, size, timestamps, duplicate IDs and patient mapping. Staff previews the content, marks the exact patient-facing instruction as approved and publishes a version. Contact authority is separately enrolled.
 
-The imported source exposes read_schedule and read_approved_instructions. It exposes no search_slots/book/reschedule capability. Detector creates an eligible case and normal outreach begins. If Mr Lim confirms the published time, re-mind records attendance intent for staff; it does not claim to update another system.
+The imported source exposes read_schedule and read_approved_instructions. It exposes no search_slots/book/reschedule capability. Detector creates an eligible case and normal outreach begins. If Mr Lim confirms the published time, forget-lah records attendance intent for staff; it does not claim to update another system.
 
 If he requests Friday instead, Engagement records the requested window and creates an escalation for scheduling help. Staff member STAFF01 claims it. The case can record handed_to_staff, while the staff task remains open. Staff checks the clinic's real schedule, confirms with the patient and publishes the resulting appointment snapshot; only that evidence supports a later confirmed result. The UI never invents a slot inventory.
 
@@ -165,9 +165,9 @@ If a snapshot is stale, a newer import changes the appointment or the patient ca
 
 ## 8. Example C: PWA, voice and Singpass
 
-A patient opens the re-mind link, signs in using the enabled identity method and sees only linked follow-up cases. With actual Singpass staging enabled, the callback is verified and mapped to the existing enrolment. Without it, the demo says 'Demo identity' and uses synthetic accounts; no real Singpass success is implied.
+A patient opens the forget-lah link, signs in using the enabled identity method and sees only linked follow-up cases. With actual Singpass staging enabled, the callback is verified and mapped to the existing enrolment. Without it, the demo says 'Demo identity' and uses synthetic accounts; no real Singpass success is implied.
 
-The patient taps Talk on a supported device, reviews the transcription 'Please call me in Mandarin next time' and sends it. The same Engagement Agent proposes a preference change. re-mind asks for explicit confirmation, stores evidence and respects the chosen channel only when supported and permitted. On unsupported speech devices the text interface still works; browser speech may involve an external processor and requires consent.
+The patient taps Talk on a supported device, reviews the transcription 'Please call me in Mandarin next time' and sends it. The same Engagement Agent proposes a preference change. forget-lah asks for explicit confirmation, stores evidence and respects the chosen channel only when supported and permitted. On unsupported speech devices the text interface still works; browser speech may involve an external processor and requires consent.
 
 The patient can enable generic push notifications and explicitly export the verified appointment to the device calendar. Neither operation confirms attendance or reserves a slot. Denied notification permission falls back to another permitted channel; calendar copies can become stale after changes.
 

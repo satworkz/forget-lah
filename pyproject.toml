@@ -1,7 +1,7 @@
 [project]
 name = "forget-lah"
-version = "0.1.0"
-description = "Patient follow-up: local foundation for the NUS-ISS hackathon"
+version = "0.2.0"
+description = "Patient follow-up: bounded agent runtime for the NUS-ISS hackathon"
 requires-python = ">=3.12,<3.13"
 dependencies = [
   "fastapi>=0.115,<1", "uvicorn>=0.34,<1", "sqlalchemy>=2.0,<3",

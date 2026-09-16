@@ -1,11 +1,14 @@
-# Next milestone: a complete dental follow-up journey
+# Next milestone: the first authenticated patient journey
 
-1. Run this foundation in the actual project folder and verify Docker/CI. Preserve the current design constraints.
-2. Obtain the organiser's redacted API contract and configure the team key privately. Prove the largest realistic prompt → JSON proposal → permitted read tool → actual result → adapted model decision loop. Use direct HTTP and strict validation; do not assume native tool calls.
-3. Add full AgentStep and ToolResult unions, authoritative policy context and database evidence; then add agent run/step/delegation/checkpoint persistence. Only the Coordinator delegates. Test restart, stale results and permission revocation.
-4. Complete staff MFA and patient identity/consent enrolment; implement the patient text flow and a realistic mock booking API with atomic slot conflicts. Every appointment write requires current explicit confirmation and source success.
-5. Implement the dental journey through verified booking/attendance plus preparation acknowledgement or owned staff handoff. Add patient preferences with explicit confirmation. No clinical advice or urgency downgrade based on tone.
-6. Start external WhatsApp/voice/Singpass and organiser HTTPS deployment spikes while the local journey is built. Report access blockers and simulated/live status explicitly. Do not leave transport compatibility to the final week.
-7. Reuse the workflow for myopia and antenatal fixtures; add reviewed imports, speech/push/calendar and the remaining scoped channels. Complete the 60 evaluation scenarios and measured demo evidence.
+The bounded M2a agent runtime is now implemented. See [AGENT_RUNTIME.md](AGENT_RUNTIME.md) for what the team can run today.
 
-Recommended team pairing: lead owns agents/policy; data owner owns source contracts/migrations; UI/channels owner owns patient/staff experience; platform/quality owner owns deployment and reproducible tests, pairing with the lead on identity/security.
+1. Direct Claude is connected and one fresh dental agent review has passed; see [the live validation record](LIVE_CLAUDE_VALIDATION.md). Keep simulation for repeatable offline tests. In parallel, obtain the organiser's private endpoint details and rerun the connection/journey checks there using [CLAUDE_SETUP.md](CLAUDE_SETUP.md). The organiser gateway has not been live-verified.
+2. Evaluate real-model intent, specialist selection, source grounding, malformed responses and adversarial replies. Record source/model/config versions and actual usage. The engineering tests are not the proposed 60 model evaluation scenarios.
+3. Add staff MFA and patient identity/consent enrolment. Implement a simple patient text flow with signed, replay-resistant inbound events. Staff demo replies must never become identity proof.
+4. Add realistic source-owned booking APIs with atomic slot conflicts, idempotency and source success evidence. Re-read availability and require current explicit patient confirmation before any write. Keep the product focused on follow-up.
+5. Complete the dental journey through verified attendance/booking plus approved preparation acknowledgement, or an owned staff handoff. Add explicitly confirmed preferences and reachable escalation ownership.
+6. Reuse the framework for myopia and antenatal data, with clinician-reviewed instructions and escalation rules. Clinical assessment is outside the agent's authority; do not infer urgency from tone alone.
+7. Spike external messaging/voice, Singpass and organiser hosting access early. Add the scoped patient UI, reviewed uploads, push/calendar and remaining channels only after the first reliable journey. Report mock/live status explicitly.
+8. Automate deployment using Terraform and CI/CD after confirming the organiser's account/service constraints. Add secrets management, HTTPS, retention, monitoring, backups and rollout verification before public exposure.
+
+Team split: agent/policy owner; source/data owner; UI/channels owner; platform/quality owner. Pair on identity/security and rehearse using measured evidence.
