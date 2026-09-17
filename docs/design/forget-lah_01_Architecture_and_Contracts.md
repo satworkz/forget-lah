@@ -1,5 +1,9 @@
 # forget-lah: architecture and contracts
 
+**Current feature reference:** [Feature guide and patient memory](../FEATURE_GUIDE.md) documents implemented behavior, all demo capabilities, preference tests and remaining limitations. Migration `0006` extends time preferences to attributed patient concerns; this supersedes earlier time-only descriptions.
+
+Implementation addendum (16 September): [Adaptive follow-up](../ADAPTIVE_FOLLOWUP.md) adds Coordinator `ASSESS_BARRIERS`, deterministic filtering of source slots, preparation callbacks, an evidence-derived plan panel and explicitly consented time preferences in `patient_preference` (migration `0005`). The existing three-agent delegation and policy boundaries remain. Persistent preferences are editable memory, not model training. The detailed v2.1 design below contains future capabilities that are not all implemented.
+
 10 September 2026 | v2.1 | Proposed implementation | Read the requirements register and platform review first
 
 ## 1. Architecture decision

@@ -12,6 +12,7 @@ from forget_lah.runtime.models import (
     AgentStep,
     SimulatedMessage,
     StaffHandoff,
+    message_order,
 )
 from forget_lah.runtime.simulation import message_dict
 from forget_lah.service_identity import AUTOMATION_PRINCIPAL_ID
@@ -52,7 +53,12 @@ def decision_summary(step):
         return (
             "An application rule escalated the staff-flagged concern. This did not require Claude."
         )
+    if "CLARIFICATION_FIRST_NO_HANDOFF" in (step.policy or {}).get("reason_codes", []):
+        return "The agent proposed an ambiguity handoff. The application asked for clarification first and is waiting for the patient; no staff handoff was created."
     descriptions = {
+        "REVIEW_NEEDS": "Coordinator reviewed reported needs, saved scoped preferences with evidence, and applied communication restrictions before continuing.",
+        "CLARIFY": "Coordinator asked a clarifying question and saved a waiting checkpoint. No appointment was changed.",
+        "ASSESS_BARRIERS": "Coordinator identified practical constraints or preparation needs from the saved patient reply. The gateway checked the quoted evidence. These are not booking consent or verified clinical facts.",
         "REPORT_SYMPTOMS": "Coordinator identified a current patient symptom report. The gateway checked quoted evidence; the worker acknowledged the report and created a clinical callback task. Attendance intention is separate from a source confirmation.",
         "INTERPRET_ATTENDANCE": "Engagement interpreted acceptance of the existing appointment; the source API must still record confirmation."
         if decision.get("confirmed")
@@ -140,11 +146,49 @@ def case_journey(db, case, run_id=None):
                 origin="rule",
             )
             continue
+        if audit.event_type.split(":")[0] in {
+            "PATIENT_CONCERN_RECORDED",
+            "PATIENT_MEMORY_UPDATED",
+            "PATIENT_MEMORY_RETRACTED",
+        }:
+            add(
+                audit.id,
+                audit.created_at,
+                audit.event_type.split(":")[0].replace("_", " ").title(),
+                [
+                    stage(
+                        "Coordinator → Worker → PostgreSQL",
+                        "Patient memory change",
+                        {},
+                        audit.details,
+                    )
+                ],
+                "Saved from a simulator reply for future follow-ups; not model training or proof of patient consent.",
+                origin="rule",
+            )
+            continue
+        if audit.event_type.split(":")[0] in {"PREFERENCES_SAVED", "PREFERENCES_CLEARED"}:
+            add(
+                audit.id,
+                audit.created_at,
+                audit.event_type.split(":")[0].replace("_", " ").title(),
+                [
+                    stage(
+                        "Patient simulator → Staff API → PostgreSQL",
+                        "Explicit simulator preference update",
+                        {},
+                        audit.details,
+                    )
+                ],
+                "Preferences were explicitly saved or forgotten; no model training occurred.",
+                origin="rule",
+            )
+            continue
         detected = audit.event_type == "CASE_IDENTIFIED"
         add(
             audit.id,
             audit.created_at,
-            audit.event_type.replace("_", " ").title(),
+            audit.event_type.split(":")[0].replace("_", " ").title(),
             [
                 stage(
                     "Candidate detector → PostgreSQL"
@@ -336,7 +380,7 @@ def case_journey(db, case, run_id=None):
         for message in db.scalars(
             select(SimulatedMessage)
             .where(SimulatedMessage.run_id == run.id)
-            .order_by(SimulatedMessage.created_at)
+            .order_by(SimulatedMessage.created_at, message_order())
         ):
             add(
                 message.id,

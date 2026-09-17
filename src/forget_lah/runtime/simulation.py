@@ -5,8 +5,11 @@ from datetime import UTC, datetime, timedelta, timezone
 
 from sqlalchemy import select
 
-from forget_lah.db import utcnow
+from forget_lah.db import FollowupCase, utcnow
+from forget_lah.runtime.adaptation import effective_constraints, matching_slots, preferences_for
 from forget_lah.runtime.models import AgentDelegation, AgentEvent, AgentStep, SimulatedMessage
+from forget_lah.runtime.questions import question_response
+from forget_lah.runtime.responses import patient_message
 from forget_lah.source import DEMO_CLINIC_ID
 
 
@@ -306,6 +309,8 @@ def simulation_evidence(db, run):
         ):
             result["record_required"] = False
     result["record_ready"] = result["record_required"] and receipt is None
+    if run.checkpoint.get("barriers", {}).get("preparation_issue", "NONE") != "NONE":
+        result["record_ready"] = result["record_required"] = False
     result["selection_needs_refresh"] = bool(
         choice
         and context
@@ -426,7 +431,19 @@ def save_reminder(db, run, source):
         body = "Your clinic record shows a missed appointment. Please reply so we can help arrange follow-up with the clinic."
     else:
         body = "Your clinic record shows a routine follow-up is due. Please reply so we can help you arrange it with the clinic."
-    row = SimulatedMessage(
+    from forget_lah.runtime.memory import effective_memory
+
+    case = db.get(FollowupCase, run.case_id)
+    memory = effective_memory(db, case)
+    if memory.get("arrival_support") == "needs_clarification":
+        body += " You previously mentioned difficulty arriving on time. Would a different appointment time help?"
+    preferences = preferences_for(db, case)
+    if data.get("scheduled_at") and not matching_slots(
+        [{"id": "existing", "starts_at": data["scheduled_at"]}], preferences
+    ):
+        body = f"Your clinic still has an appointment scheduled for {appointment_time(data['scheduled_at'])}, which conflicts with your saved timing preference. Would you like help finding another time? Your appointment has not been changed."
+    row = patient_message(
+        run,
         clinic_id=run.clinic_id,
         case_id=run.case_id,
         run_id=run.id,
@@ -462,16 +479,30 @@ def save_acknowledgement(db, run):
         if context and context.tool_result["data"].get("source_status") == "scheduled":
             body = f"Your appointment has been moved in the clinic simulator from {appointment_time(context.tool_result['data']['scheduled_at'])} to {appointment_time(receipt.tool_result['data']['scheduled_at'])}. Thank you for confirming."
     notes = instructions.tool_result["data"]["instructions"]
-    if notes:
-        body += "\n\nClinic instructions:\n" + "\n".join(n["approved_text"] for n in notes)
+    quoted_answers = {
+        (a.get("instruction_id"), a.get("quote"))
+        for a in run.checkpoint.get("question_answers", [])
+        if a.get("outcome") == "ANSWERED"
+    }
+    remaining_notes = [
+        n for n in notes if (n["instruction_id"], n["approved_text"]) not in quoted_answers
+    ]
+    if remaining_notes:
+        body += "\n\nClinic instructions:\n" + "\n".join(
+            n["approved_text"] for n in remaining_notes
+        )
     selection = booking_choice(db, run) or {}
     attendance = attendance_interpretation(db, run)
     unsupported = selection.get("unsupported_question", "NONE")
     if attendance:
         unsupported = attendance.decision.get("unsupported_question", "NONE")
-    if limitation := unsupported_question_reply(unsupported):
+    if not run.checkpoint.get("patient_questions") and (
+        limitation := unsupported_question_reply(unsupported)
+    ):
         body += "\n\n" + limitation
-    blood_test_question = bool(re.search(r"\bblood tests?\b", reply.content, re.IGNORECASE))
+    blood_test_question = not run.checkpoint.get("patient_questions") and bool(
+        re.search(r"\bblood tests?\b", reply.content, re.IGNORECASE)
+    )
     if blood_test_question:
         if not notes:
             body += "\n\nNo clinic-approved instructions are recorded for this visit."
@@ -492,7 +523,10 @@ def save_acknowledgement(db, run):
                 "source_version": instructions.tool_result["source_version"],
             },
         }
-    row = SimulatedMessage(
+    if answer := question_response(run, reply, confirmation_step_id=receipt.id):
+        body += "\n\n" + answer
+    row = patient_message(
+        run,
         clinic_id=run.clinic_id,
         case_id=run.case_id,
         run_id=run.id,
@@ -504,6 +538,8 @@ def save_acknowledgement(db, run):
             "confirmation_step_id": receipt.id,
             "instruction_step_id": instructions.id,
             "patient_question_topic": "blood_test" if blood_test_question else None,
+            "question_review_step_id": run.checkpoint.get("question_review_step_id"),
+            "question_answers": run.checkpoint.get("question_answers", []),
             "unsupported_question": unsupported,
             "selection_step_id": selection.get("selection_step_id"),
             "attendance_step_id": attendance.id if attendance else None,
@@ -532,22 +568,44 @@ def save_options(db, run):
     context = latest_tool(steps, "read_followup_context", "engagement")
     instructions = latest_tool(steps, "get_approved_instructions", "preparation")
     slots = context.tool_result["data"]["available_slots"]
-    body = "These clinic slots are available now (nothing is booked yet):\n"
-    if context.tool_result["data"].get("source_status") == "scheduled":
-        body = "Your existing appointment is unchanged. These alternative clinic slots are available now:\n"
-    if booking_choice(db, run):
-        body = "The selected slot or clinic details changed before we could confirm it. No booking change was made by this request. I've requested clinic help with the change. These are the current alternatives for discussion with staff:\n"
-    body += "\n".join(
-        f"Option {i}: {appointment_time(s['starts_at'])} — {s['doctor']}"
-        for i, s in enumerate(slots, 1)
+    all_slots = slots
+    case = db.get(FollowupCase, run.case_id)
+    constraints = effective_constraints(run, preferences_for(db, case))
+    slots = matching_slots(slots, constraints)
+    mismatch = bool(all_slots and not slots)
+    scheduled = context.tool_result["data"].get("source_status") == "scheduled"
+    unchanged = (
+        "Your existing appointment is unchanged. " if scheduled else "Nothing has been booked. "
     )
-    if not slots:
-        body += "No available slots are currently listed. I've requested help from the clinic team."
+    if slots:
+        body = unchanged + "These alternative clinic slots are available now:\n"
+        if booking_choice(db, run):
+            body = (
+                unchanged
+                + "The selected slot or clinic details changed. These are the current alternatives:\n"
+            )
+        body += "\n".join(
+            f"Option {i}: {appointment_time(slot['starts_at'])} — {slot['doctor']}"
+            for i, slot in enumerate(slots, 1)
+        )
+    elif mismatch:
+        body = (
+            unchanged
+            + "None of the currently listed slots matches your requested times or saved preferences. Would another day or time work?"
+        )
+    else:
+        body = (
+            unchanged
+            + "The clinic currently lists no alternative slots. I've requested help from the clinic team to find a suitable time."
+        )
     # Preparation evidence still gates eligibility; general instructions are
     # delivered by save_acknowledgement after a verified source confirmation.
-    if slots and not booking_choice(db, run):
+    if slots:
         body += "\n\nWhich option works for you? We will check availability before confirming your choice or moving your existing appointment."
-    row = SimulatedMessage(
+    if answer := question_response(run, reply):
+        body += "\n\n" + answer
+    row = patient_message(
+        run,
         clinic_id=run.clinic_id,
         case_id=run.case_id,
         run_id=run.id,
@@ -557,6 +615,8 @@ def save_options(db, run):
         source_version=context.tool_result["source_version"],
         evidence={
             "slots": slots,
+            "constraint_mismatch": mismatch,
+            "applied_constraints": constraints,
             "selection_changed": bool(booking_choice(db, run)),
             "episode_version": context.tool_result["data"]["episode_version"],
             "source_step_id": context.id,
@@ -581,3 +641,42 @@ def message_dict(row):
         "delivery_status": "displayed_in_simulator",
         "synthetic": True,
     }
+
+
+def clarification_count(db, run):
+    return sum(
+        bool(m.evidence.get("general_clarification"))
+        for m in db.scalars(
+            select(SimulatedMessage).where(
+                SimulatedMessage.run_id == run.id,
+                SimulatedMessage.clinic_id == run.clinic_id,
+                SimulatedMessage.kind == "clarification",
+            )
+        )
+    )
+
+
+def clarification_allowed(db, run):
+    if (
+        not simulation_enabled(run)
+        or not saved_reply(db, run)
+        or clarification_count(db, run) >= 2
+        or reply_evidence(db, run)
+    ):
+        return False
+    event_id = run.checkpoint.get("latest_event", {}).get("id")
+    for step in db.scalars(
+        select(AgentStep).where(
+            AgentStep.run_id == run.id,
+            AgentStep.clinic_id == run.clinic_id,
+            AgentStep.tool_result.is_not(None),
+        )
+    ):
+        if step.observation.get("latest_event", {}).get("id") != event_id:
+            continue
+        result = step.tool_result
+        if result.get("status") == "failed" or "STAFF_REVIEW_REQUIRED" in result.get(
+            "data", {}
+        ).get("prerequisites", []):
+            return False
+    return True

@@ -1,8 +1,12 @@
 # forget-lah
 
+**Current feature reference:** [Feature guide and patient memory](docs/FEATURE_GUIDE.md) documents implemented behavior, all demo capabilities, preference tests and remaining limitations. Migration `0006` extends time preferences to attributed patient concerns; this supersedes earlier time-only descriptions.
+
 Patient follow-up with a clear next step. NUS-ISS Show Me Your Agents hackathon.
 
-**Current release: 0.2.0, local agent runtime (M2a). Synthetic records only.** The Coordinator now delegates to Engagement and Preparation, reads source evidence, waits for a fictional reply and reaches an owned staff handoff. Decisions are explicitly simulated by default. Direct Anthropic inference is connected and has been exercised with synthetic dental reviews. The organiser adapter still needs its private endpoint verification. See [live validation](docs/LIVE_CLAUDE_VALIDATION.md) for measured outcomes and limitations. No patient messages or appointment writes are enabled. See [implementation status](docs/IMPLEMENTATION_STATUS.md).
+**New:** [Adaptive follow-up and preference memory](docs/ADAPTIVE_FOLLOWUP.md) explains timing constraints, preparation callbacks, visit-readiness evidence and explicitly saved simulator preferences, with team demo steps.
+
+**Current release: 0.2.0, local agent runtime (M2a). Synthetic records only.** The Coordinator now delegates to Engagement and Preparation, reads source evidence, waits for a fictional reply and reaches an owned staff handoff. Decisions are explicitly simulated by default. Direct Anthropic inference is connected and has been exercised with synthetic dental reviews. The organiser adapter still needs its private endpoint verification. See [live validation](docs/LIVE_CLAUDE_VALIDATION.md) for measured outcomes and limitations. No real patient messages or real appointment writes are enabled; local simulator messages and synthetic source updates are supported. See [implementation status](docs/IMPLEMENTATION_STATUS.md).
 
 To connect your own Claude account, start with [Claude setup](docs/CLAUDE_SETUP.md). For the existing demo, start with [Run and understand the agents](docs/AGENT_RUNTIME.md) for the new buttons, three demo flows and technical explanation. Use the [team quick-start guide](docs/TEAM_START_HERE.md) for installing the foundation on a new computer, or the [documentation index](docs/README.md) for other references.
 
@@ -20,7 +24,7 @@ Open this project folder in VS Code. Open Terminal > New Terminal and use PowerS
 
 `setup` creates a private `.env` with random passwords. Open that file locally and use DEMO_STAFF_EMAIL and DEMO_STAFF_PASSWORD to sign in. Never commit or share `.env`. Existing setup credentials are preserved if you run setup again.
 
-Open **http://localhost:8080**. The first build downloads images and dependencies. The worker detects cases and automatically queues a review when foundation processing finishes; no start button or open browser is needed. Open a patient's agent review to watch it progress and follow [the demonstration steps](docs/AGENT_RUNTIME.md#2-try-the-three-demonstration-flows). Existing `.env` credentials and database records survive the automatic migrations through `0003`.
+Open **http://localhost:8080**. The first build downloads images and dependencies. The worker detects cases and automatically queues a review when foundation processing finishes; no start button or open browser is needed. Open a patient's agent review to watch it progress and follow [the demonstration steps](docs/AGENT_RUNTIME.md#2-try-the-three-demonstration-flows). Existing `.env` credentials and database records survive the automatic migrations through `0006`.
 
 ```powershell
 ./scripts/dev.ps1 status

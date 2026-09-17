@@ -83,7 +83,23 @@ class DelegateDecision(BoundDecision):
     goal: str = Field(min_length=1, max_length=200)
 
 
+class QuestionAnswer(StrictModel):
+    question_index: int = Field(ge=0, le=2)
+    outcome: Literal["ANSWERED", "CLINIC_REVIEW", "UNSUPPORTED"]
+    instruction_id: str | None = None
+    quote: str | None = Field(default=None, max_length=600)
+
+    @model_validator(mode="after")
+    def bound_answer(self):
+        if self.outcome == "ANSWERED" and (not self.instruction_id or not self.quote):
+            raise ValueError("Answered questions require an exact approved source quote")
+        if self.outcome != "ANSWERED" and (self.instruction_id or self.quote):
+            raise ValueError("Unanswered questions have no source answer")
+        return self
+
+
 class ReturnDecision(BoundDecision):
+    question_answers: list[QuestionAnswer] = Field(default_factory=list, max_length=3)
     step_type: Literal["RETURN"]
     reason_code: Literal[
         "SPECIALIST_REVIEW_FINISHED",
@@ -118,6 +134,129 @@ class ClinicalReportDecision(BoundDecision):
     reply_event_id: str = Field(min_length=36, max_length=36)
     symptom_quotes: list[str] = Field(min_length=1, max_length=3)
     attendance_quote: str | None = None
+    contact_stop_quote: str | None = Field(default=None, max_length=240)
+
+
+class ClarifyDecision(BoundDecision):
+    step_type: Literal["CLARIFY"]
+    reason_code: Literal["AMBIGUOUS_REPLY"]
+    reply_event_id: str = Field(min_length=36, max_length=36)
+    question: str = Field(min_length=10, max_length=240)
+    concern_quote: str | None = Field(default=None, max_length=200)
+    excluded_minutes: list[int] = Field(default_factory=list, max_length=12)
+    remember_exclusions: bool = False
+    evidence_quotes: list[str] = Field(default_factory=list, max_length=3)
+
+    @model_validator(mode="after")
+    def valid_memory(self):
+        if any(not 0 <= m <= 1439 for m in self.excluded_minutes):
+            raise ValueError("Excluded time out of range")
+        if self.remember_exclusions and (not self.excluded_minutes or not self.evidence_quotes):
+            raise ValueError("Lasting restriction requires time and quote evidence")
+        return self
+
+
+class MemoryChange(StrictModel):
+    key: Literal[
+        "excluded_weekdays",
+        "excluded_minutes",
+        "preferred_language",
+        "excluded_languages",
+        "contact_permission",
+        "arrival_support",
+    ]
+    value: str = Field(max_length=160)
+    scope: Literal["visit", "future"]
+    operation: Literal["set", "remove"] = "set"
+    quote: str = Field(min_length=1, max_length=240)
+
+    @model_validator(mode="after")
+    def valid_value(self):
+        if self.operation == "remove":
+            if self.key == "contact_permission":
+                raise ValueError("Contact permission requires explicit simulator control to resume")
+            return self
+        if self.key in {"excluded_weekdays", "excluded_minutes"}:
+            numbers = [int(v.strip()) for v in self.value.split(",")]
+            if (
+                not numbers
+                or len(numbers) > 12
+                or any(
+                    n < 0 or n > (6 if self.key == "excluded_weekdays" else 1439) for n in numbers
+                )
+            ):
+                raise ValueError("Invalid exclusion values")
+        if self.key == "contact_permission" and (self.value != "stopped" or self.scope != "future"):
+            raise ValueError("Stop contact is persistent; resume uses an explicit control")
+        if self.key == "preferred_language" and not re.fullmatch(
+            r"[a-z]{2,3}(?:-[A-Za-z]{2,8})?", self.value
+        ):
+            raise ValueError("Use a language tag or und for unknown")
+        if self.key == "excluded_languages" and not all(
+            re.fullmatch(r"[a-z]{2,3}", v) for v in self.value.split(",")
+        ):
+            raise ValueError("Invalid language tags")
+        if self.key == "arrival_support" and self.value != "needs_clarification":
+            raise ValueError("Clarify practical support; never label a patient as late")
+        return self
+
+
+class NeedsDecision(BoundDecision):
+    patient_questions: list[str] = Field(
+        default_factory=list,
+        max_length=3,
+        description="Every question the patient wants answered, copied from their message; separate from preferences and outgoing clarification.",
+    )
+    step_type: Literal["REVIEW_NEEDS"]
+    reason_code: Literal["PATIENT_NEEDS_REVIEWED"]
+    reply_event_id: str = Field(min_length=36, max_length=36)
+    updates: list[MemoryChange] = Field(max_length=5)
+    appointment_intent: Literal["UNSPECIFIED", "CHANGE", "CONFIRM"] = "UNSPECIFIED"
+    appointment_request_quote: str | None = Field(default=None, max_length=240)
+    question: str | None = Field(default=None, max_length=240)
+    concern_quote: str | None = Field(default=None, max_length=200)
+
+    @model_validator(mode="after")
+    def unique_keys(self):
+        if len({u.key for u in self.updates}) != len(self.updates):
+            raise ValueError("One change per key per decision")
+        if self.appointment_intent != "UNSPECIFIED" and not self.appointment_request_quote:
+            raise ValueError("Appointment intent needs supporting words")
+        return self
+
+
+class BarrierDecision(BoundDecision):
+    step_type: Literal["ASSESS_BARRIERS"]
+    reason_code: Literal["PATIENT_BARRIERS_REVIEWED"]
+    reply_event_id: str = Field(min_length=36, max_length=36)
+    evidence_quotes: list[str] = Field(min_length=1, max_length=3)
+    earliest_minute: int | None = Field(default=None, ge=0, le=1439)
+    latest_minute: int | None = Field(default=None, ge=0, le=1439)
+    weekdays: list[Literal[0, 1, 2, 3, 4, 5, 6]] = Field(default_factory=list, max_length=7)
+    requested_date: str | None = None
+    excluded_minutes: list[int] = Field(default_factory=list, max_length=12)
+    rejects_current_offer: bool = False
+    concern_quote: str | None = Field(default=None, max_length=200)
+    remember_exclusions: bool = False
+    preparation_issue: Literal["NONE", "INCOMPLETE", "NEEDS_EXPLANATION"] = "NONE"
+    next_action: Literal["SEARCH_SLOTS", "CLARIFY_TIME", "REVIEW_PREPARATION"]
+
+    @model_validator(mode="after")
+    def valid_constraints(self):
+        from datetime import date
+
+        if any(not 0 <= minute <= 1439 for minute in self.excluded_minutes):
+            raise ValueError("Excluded times must be minutes of day")
+        if self.remember_exclusions and not self.excluded_minutes:
+            raise ValueError("Lasting scheduling concern requires an excluded time")
+        if self.requested_date is not None:
+            date.fromisoformat(self.requested_date)
+        if self.earliest_minute is not None and self.latest_minute is not None:
+            if self.earliest_minute > self.latest_minute:
+                raise ValueError("Time window is reversed")
+        if self.next_action == "REVIEW_PREPARATION" and self.preparation_issue == "NONE":
+            raise ValueError("Preparation review requires an explicit issue")
+        return self
 
 
 class WaitDecision(BoundDecision):
@@ -161,7 +300,10 @@ Decision = Annotated[
     | CompleteSimulationDecision
     | SelectionDecision
     | AttendanceDecision
-    | ClinicalReportDecision,
+    | ClinicalReportDecision
+    | BarrierDecision
+    | ClarifyDecision
+    | NeedsDecision,
     # Synthetic success is distinct from owned staff handoff completion.
     Field(discriminator="step_type"),
 ]
@@ -216,6 +358,23 @@ TOOLS_BY_ROLE: dict[str, tuple[str, ...]] = {
 # The model receives this compact protocol; the complete machine-readable schema
 # is exported for developers. Identity, URLs, recipients and permissions are absent.
 DECISION_FORMATS = {
+    "REVIEW_NEEDS": {},
+    "CLARIFY": {
+        "reply_event_id": "saved reply ID",
+        "question": "one short administrative clarification question, no advice or promises",
+    },
+    "ASSESS_BARRIERS": {
+        "reply_event_id": "saved reply ID",
+        "evidence_quotes": ["exact patient substrings supporting constraints or preparation issue"],
+        "earliest_minute": "local SGT minute of day, or null",
+        "latest_minute": "local SGT minute of day, or null",
+        "weekdays": "Monday=0 through Sunday=6; empty means unrestricted",
+        "requested_date": "unambiguous YYYY-MM-DD or null; clarify ambiguous dates",
+        "excluded_minutes": "SGT minutes explicitly unavailable; not a before/after bound",
+        "rejects_current_offer": "true only when patient rejects all currently offered choices",
+        "preparation_issue": ["NONE", "INCOMPLETE", "NEEDS_EXPLANATION"],
+        "next_action": ["SEARCH_SLOTS", "CLARIFY_TIME", "REVIEW_PREPARATION"],
+    },
     "REPORT_SYMPTOMS": {
         "reply_event_id": "saved patient reply ID",
         "symptom_quotes": ["exact substring reporting current symptoms"],

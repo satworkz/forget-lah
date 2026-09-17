@@ -4,11 +4,14 @@ from forget_lah.db import Membership, Principal
 from forget_lah.runtime.contracts import (
     REQUIRED_EVIDENCE_BY_ROLE,
     AttendanceDecision,
+    BarrierDecision,
+    ClarifyDecision,
     ClinicalReportDecision,
     CompleteDecision,
     CompleteSimulationDecision,
     DelegateDecision,
     EscalateDecision,
+    NeedsDecision,
     ReturnDecision,
     SelectionDecision,
     ToolDecision,
@@ -16,7 +19,10 @@ from forget_lah.runtime.contracts import (
     tools_for,
 )
 from forget_lah.runtime.models import AgentDelegation, AgentStep, StaffHandoff
+from forget_lah.runtime.questions import validate_answers
 from forget_lah.runtime.simulation import (
+    clarification_allowed,
+    clarification_count,
     explicit_confirmation,
     latest_selection_offer,
     read_already_available,
@@ -64,6 +70,85 @@ def policy_for(db, run, case, step, decision):
         deny = "STALE_OR_WRONG_REQUEST"
     elif step.role != run.active_role:
         deny = "ROLE_CHANGED"
+    elif (
+        isinstance(decision, (ClarifyDecision, BarrierDecision))
+        and decision.concern_quote is not None
+        and (
+            not saved_reply(db, run)
+            or not decision.concern_quote.strip()
+            or decision.concern_quote not in saved_reply(db, run).content
+        )
+    ):
+        deny = "CONCERN_QUOTE_NOT_IN_PATIENT_REPLY"
+    elif isinstance(decision, ClarifyDecision) and any(
+        not q.strip()
+        or len(q) > 200
+        or not saved_reply(db, run)
+        or q not in saved_reply(db, run).content
+        for q in decision.evidence_quotes
+    ):
+        deny = "CONCERN_QUOTES_NOT_IN_PATIENT_REPLY"
+    elif isinstance(decision, NeedsDecision):
+        reply = saved_reply(db, run)
+        if (
+            not simulation_enabled(run)
+            or run.active_role != "coordinator"
+            or not reply
+            or reply.id != decision.reply_event_id
+        ):
+            deny = "MEMORY_REPLY_BINDING_REQUIRED"
+        elif any(
+            not q.strip() or len(q) > 600 or q not in reply.content
+            for q in decision.patient_questions
+        ):
+            deny = "QUESTION_NOT_IN_PATIENT_REPLY"
+        elif run.checkpoint.get("needs_reviewed") == reply.id:
+            deny = "NEEDS_ALREADY_REVIEWED"
+        elif any(not u.quote.strip() or u.quote not in reply.content for u in decision.updates) or (
+            decision.concern_quote is not None
+            and (not decision.concern_quote.strip() or decision.concern_quote not in reply.content)
+        ):
+            deny = "MEMORY_QUOTE_NOT_IN_PATIENT_REPLY"
+        elif decision.appointment_request_quote is not None and (
+            not decision.appointment_request_quote.strip()
+            or decision.appointment_request_quote not in reply.content
+        ):
+            deny = "APPOINTMENT_INTENT_QUOTE_NOT_IN_REPLY"
+        else:
+            reasons.append("REPORTED_NEEDS_BOUND_TO_REPLY")
+    elif isinstance(decision, ClarifyDecision):
+        reply = saved_reply(db, run)
+        if (
+            not simulation_enabled(run)
+            or run.active_role != "coordinator"
+            or not reply
+            or reply.id != decision.reply_event_id
+        ):
+            deny = "CLARIFICATION_REPLY_BINDING_REQUIRED"
+        elif clarification_count(db, run) >= 2:
+            deny = "CLARIFICATION_LIMIT_REACHED"
+        elif not clarification_allowed(db, run):
+            deny = "CLARIFICATION_NOT_APPLICABLE"
+        else:
+            reasons.append("CLARIFICATION_WITHOUT_APPOINTMENT_WRITE")
+    elif isinstance(decision, BarrierDecision):
+        reply = saved_reply(db, run)
+        if (
+            not simulation_enabled(run)
+            or run.active_role != "coordinator"
+            or not reply
+            or decision.reply_event_id != reply.id
+        ):
+            deny = "BARRIER_REPLY_BINDING_REQUIRED"
+        elif run.checkpoint.get("barriers", {}).get("reply_event_id") == reply.id:
+            deny = "BARRIER_ALREADY_REVIEWED"
+        elif any(
+            not q.strip() or len(q) > 200 or q not in reply.content
+            for q in decision.evidence_quotes
+        ):
+            deny = "BARRIER_QUOTES_NOT_IN_PATIENT_REPLY"
+        else:
+            reasons.append("PATIENT_CONSTRAINTS_BOUND_TO_SAVED_REPLY")
     elif isinstance(decision, ClinicalReportDecision):
         reply = saved_reply(db, run)
         if (
@@ -77,6 +162,11 @@ def policy_for(db, run, case, step, decision):
             not q.strip() or len(q) > 200 or q not in reply.content for q in decision.symptom_quotes
         ):
             deny = "SYMPTOM_QUOTES_NOT_IN_PATIENT_REPLY"
+        elif decision.contact_stop_quote is not None and (
+            not decision.contact_stop_quote.strip()
+            or decision.contact_stop_quote not in reply.content
+        ):
+            deny = "CONTACT_STOP_QUOTE_NOT_IN_PATIENT_REPLY"
         elif explicit_confirmation(reply.content) or any(
             explicit_confirmation(q)
             or q.strip().lower().rstrip("?.! ")
@@ -226,6 +316,8 @@ def policy_for(db, run, case, step, decision):
                 required.add("record_simulated_confirmation")
             if not deny and not required.issubset(evidence_tools):
                 deny = "SPECIALIST_EVIDENCE_INCOMPLETE"
+            if not deny and run.active_role == "preparation":
+                deny = validate_answers(db, run, decision)
     elif isinstance(decision, WaitDecision):
         if (
             simulation_enabled(run)
@@ -236,6 +328,8 @@ def policy_for(db, run, case, step, decision):
     elif isinstance(decision, EscalateDecision):
         if decision.reason_code == "CLINICAL_REVIEW_REQUIRED":
             deny = "CLINICAL_ESCALATION_REQUIRES_STAFF_FLAG"
+        elif decision.reason_code == "AMBIGUOUS_REPLY" and clarification_allowed(db, run):
+            reasons.append("CLARIFICATION_FIRST_NO_HANDOFF")
         else:
             reasons.append("ADMINISTRATIVE_HANDOFF_ONLY")
     elif isinstance(decision, CompleteSimulationDecision):
@@ -267,13 +361,13 @@ def policy_for(db, run, case, step, decision):
         "request_id": step.id,
         "case_id": case.id,
         "case_version": case.case_version,
-        "action": decision.step_type,
+        "action": "CLARIFY" if "CLARIFICATION_FIRST_NO_HANDOFF" in reasons else decision.step_type,
         "policy_version": "m2a-staff-clinical-flag-v2",
         "decision": "DENY" if deny else "ALLOW",
         "risk": "RED"
         if clinical or (isinstance(decision, ClinicalReportDecision) and not deny)
         else "AMBER"
-        if decision.step_type == "ESCALATE"
+        if decision.step_type == "ESCALATE" and "CLARIFICATION_FIRST_NO_HANDOFF" not in reasons
         else "GREEN",
         "reason_codes": [deny] if deny else reasons,
     }

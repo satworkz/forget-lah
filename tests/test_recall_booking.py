@@ -512,9 +512,14 @@ def test_rescheduling_stale_slot_offers_remaining_slots_without_changing_appoint
     event(runtime[1], case_id, "demo_reply", "Book option 1")
     drain(runtime, tools=tools)
     refreshed = view(runtime[1], case_id)
-    assert refreshed["run"]["status"] == "escalated", refreshed
-    assert refreshed["handoff"]["reason_code"] == "SLOT_SELECTION_CHANGED"
+    assert refreshed["run"]["status"] == "waiting", refreshed
+    assert refreshed["handoff"] is None
     message = refreshed["patient_simulator"]["messages"][-1]
-    assert "changed before we could confirm" in message["body"]
+    assert "selected slot or clinic details changed" in message["body"]
+    assert "appointment is unchanged" in message["body"]
     assert message["evidence"]["slots"] == offered[1:]
     assert episode_body(source, REF) == original and source_count(source_engine) == 0
+    event(runtime[1], case_id, "demo_reply", "Book option 1").raise_for_status()
+    drain(runtime, tools=tools)
+    assert view(runtime[1], case_id)["run"]["status"] == "completed"
+    assert source_count(source_engine) == 1

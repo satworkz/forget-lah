@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api, modelLabel, mutationHeaders } from "./client";
+import { PatientPreferences, type Preferences } from "./PatientPreferences";
 
 type Step = {
   id: string;
@@ -25,6 +26,8 @@ type Step = {
   latency_ms: number | null;
 };
 type View = {
+  preferences: Preferences;
+  plan?: { goal: string; learned: string[]; constraint_source: string; next_action: string; attendance: string; instructions: string; preparation: string; source_prerequisites: string[]; decision_step_id: string | null };
   case_version: number;
   auto_start: { enabled: boolean; authorised: boolean };
   run: {
@@ -56,7 +59,7 @@ type View = {
     accepted: boolean;
     owner: string | null;
     staff_task_status: string;
-    callback?: { status: string; question: string; resolution?: string } | null;
+    callback?: { status: string; question: string; topic?: string; resolution?: string } | null;
     clinical_review?: { status: string; patient_message: string; symptom_quotes: string[]; attendance_intent: string; attendance_quote?: string | null; resolution?: string } | null;
   } | null;
 };
@@ -155,7 +158,7 @@ export function AgentPanel({
 
   const run = view?.run;
   const conversation = view ? [
-    ...(view.patient_simulator?.messages ?? []).map(m => ({...m, text: m.body, label: m.kind === "reminder" ? "Clinic reminder · simulated" : m.kind === "options" ? "Available slots · simulated" : m.kind === "clarification" ? "Clinic question · simulated" : "Clinic acknowledgement · simulated"})),
+    ...(view.patient_simulator?.messages ?? []).map(m => ({...m, text: m.body, label: m.kind === "reminder" ? "Clinic reminder · simulated" : m.kind === "options" ? "Clinic availability update · simulated" : m.kind === "clarification" ? "Clinic question · simulated" : m.kind === "preference_saved" ? "Scheduling preference saved · simulated" : "Clinic acknowledgement · simulated"})),
     ...view.events.filter(e => e.kind === "demo_reply").map(e => ({...e, text: e.content, label: "Patient reply · simulated"})),
   ].sort((a,b) => a.created_at.localeCompare(b.created_at)) : [];
   async function freshSimulation() {
@@ -222,6 +225,19 @@ export function AgentPanel({
                 </span>
               </div>
               <p><strong>Assigned goal:</strong> {run.goal}</p>
+              {view.plan && <section className="agent-actions" aria-label="Follow-up plan and readiness">
+                <h3>Plan and visit readiness</h3>
+                <p>{view.plan.goal}</p>
+                {view.plan.learned.length > 0 && <p><strong>Patient told us:</strong> {view.plan.learned.join("; ")}</p>}
+                <p><strong>Scheduling preferences:</strong> {view.plan.constraint_source}</p>
+                <p><strong>Attendance:</strong> {view.plan.attendance}</p>
+                <p><strong>Instructions:</strong> {view.plan.instructions}</p>
+                <p><strong>Preparation:</strong> {view.plan.preparation}</p>
+                {view.plan.source_prerequisites.length > 0 && <p><strong>Clinic prerequisite record:</strong> {view.plan.source_prerequisites.map(readable).join(", ")}</p>}
+                <p><strong>Next:</strong> {view.plan.next_action}</p>
+                <p className="small">Summary of saved evidence, not a medical readiness assessment. See the full journey for decisions and tool results.</p>
+              </section>}
+              {view.patient_simulator?.available && <PatientPreferences key={`${caseId}-${view.preferences.updated_at ?? "none"}`} caseId={caseId} version={view.case_version} preferences={view.preferences} onSaved={() => reloadRef.current()} disabled={busy || ["queued", "running"].includes(run.status)} />}
               {view.patient_simulator?.available && ["waiting", "paused", "escalated", "completed"].includes(run.status) && !run.available_at && <div className="agent-actions">
                 <button className="secondary" disabled={busy} onClick={() => void freshSimulation()}>Start fresh simulator test</button>
                 <p className="small">Uses the current clinic records in a new review. Earlier reviews remain in the case journey.</p>
@@ -303,8 +319,8 @@ export function AgentPanel({
                   {view.handoff.reason_code === "SLOT_SELECTION_CHANGED" && <p>The selected option changed before confirmation. This request did not move the appointment. Review the current alternatives in the conversation and help the patient choose another time.</p>}
                   {view.handoff.reason_code === "NO_AVAILABLE_SLOTS" && <p>The clinic source currently lists no available slots. The existing appointment has not been changed. Staff can help arrange a suitable time.</p>}
                   {view.handoff.callback && <div>
-                    <p><strong>Attendance: Confirmed in the clinic simulator</strong></p>
-                    <p><strong>Blood-test question: {view.handoff.callback.status === "resolved" ? "Resolved by staff" : "Awaiting clinic response"}</strong></p>
+                    <p><strong>Attendance: {view.plan?.attendance ?? "Check source evidence"}</strong></p>
+                    <p><strong>{view.handoff.callback.topic === "preparation" ? "Preparation help" : "Blood-test question"}: {view.handoff.callback.status === "resolved" ? "Resolved by staff" : "Awaiting clinic response"}</strong></p>
                     <p>Patient asked: {view.handoff.callback.question}</p>
                     <p>Callback {view.handoff.callback.status}. Accepting ownership does not resolve the question.</p>
                     {view.handoff.callback.resolution && <p>Recorded contact outcome: {view.handoff.callback.resolution}</p>}
