@@ -18,6 +18,8 @@ from forget_lah.runtime.models import (
     AgentEvent,
     AgentRun,
     AgentStep,
+    PatientMemory,
+    PatientPreference,
     SimulatedMessage,
     StaffHandoff,
 )
@@ -38,6 +40,8 @@ RESET_MODELS = (
     AuditEvent,
     Job,
     FollowupCase,
+    PatientMemory,
+    PatientPreference,
     Patient,
 )
 

@@ -15,6 +15,18 @@ from sqlalchemy.orm import Mapped, mapped_column
 from forget_lah.db import Base, uid, utcnow
 
 
+class PatientPreference(Base):
+    __tablename__ = "patient_preference"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["clinic_id", "patient_id"], ["patient_ref.clinic_id", "patient_ref.id"]
+        ),
+    )
+    clinic_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    patient_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    preferences: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
 class AgentRun(Base):
     __tablename__ = "agent_run"
     __table_args__ = (
@@ -149,4 +161,38 @@ class SimulatedMessage(Base):
     body: Mapped[str] = mapped_column(String(2600))
     source_version: Mapped[str] = mapped_column(String(40))
     evidence: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+def message_order():
+    # Several messages from one decision can share the database clock tick.
+    from sqlalchemy import case
+
+    return case(
+        (SimulatedMessage.kind == "concern_acknowledgement", 0),
+        (SimulatedMessage.kind.in_(["preference_saved", "needs_acknowledgement"]), 1),
+        else_=2,
+    )
+
+
+class PatientMemory(Base):
+    __tablename__ = "patient_memory"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["clinic_id", "patient_id"], ["patient_ref.clinic_id", "patient_ref.id"]
+        ),
+        UniqueConstraint("step_id", "key"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    clinic_id: Mapped[str] = mapped_column(String(36), index=True)
+    patient_id: Mapped[str] = mapped_column(String(36), index=True)
+    case_id: Mapped[str] = mapped_column(String(36))
+    key: Mapped[str] = mapped_column(String(40))
+    value: Mapped[dict] = mapped_column(JSON)
+    scope: Mapped[str] = mapped_column(String(10))
+    status: Mapped[str] = mapped_column(String(16))
+    quote: Mapped[str] = mapped_column(String(240))
+    message_id: Mapped[str] = mapped_column(String(36))
+    step_id: Mapped[str] = mapped_column(String(36))
+    supersedes: Mapped[str | None] = mapped_column(String(36))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

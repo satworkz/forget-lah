@@ -7,16 +7,21 @@ from sqlalchemy import select
 
 from forget_lah.agents import StrictModel
 from forget_lah.auth import digest
-from forget_lah.db import FollowupCase, Principal, uid, utcnow
+from forget_lah.db import AuditEvent, FollowupCase, Patient, Principal, uid, utcnow
+from forget_lah.runtime.adaptation import plan_summary, preferences_for
 from forget_lah.runtime.engine import abort_delegation, as_utc, release
 from forget_lah.runtime.journey import case_journey
+from forget_lah.runtime.memory import memory_view
 from forget_lah.runtime.models import (
     AgentDelegation,
     AgentEvent,
     AgentRun,
     AgentStep,
+    PatientMemory,
+    PatientPreference,
     SimulatedMessage,
     StaffHandoff,
+    message_order,
 )
 from forget_lah.runtime.simulation import message_dict, simulation_enabled, simulation_evidence
 from forget_lah.runtime.startup import REVIEW_GOAL, SIMULATOR_GOAL, automation_authorised
@@ -43,6 +48,17 @@ class EventInput(StartInput):
 
 class StartRunInput(StartInput):
     fresh_simulation: bool = False
+
+
+class MemoryInput(StartInput):
+    resume_contact: bool = False
+
+
+class PreferenceInput(StartInput):
+    consent: bool
+    clear: bool = False
+    earliest_minute: int | None = Field(default=None, ge=0, le=1439)
+    latest_minute: int | None = Field(default=None, ge=0, le=1439)
 
 
 def latest_run(db, case_id):
@@ -86,6 +102,10 @@ def install_routes(app, factory, settings, authorise):
             case = scoped_case(db, case_id, clinics)
             run = latest_run(db, case.id)
             result = {
+                "preferences": {
+                    **preferences_for(db, case),
+                    **({"records": memory_view(db, case)} if memory_view(db, case) else {}),
+                },
                 "case_version": case.case_version,
                 "auto_start": {
                     "enabled": settings.agent_auto_start_enabled,
@@ -144,6 +164,7 @@ def install_routes(app, factory, settings, authorise):
                 }
                 for step in steps
             ]
+            result["plan"] = plan_summary(run, result["steps"])
             result["delegations"] = [
                 {
                     "id": d.id,
@@ -198,7 +219,7 @@ def install_routes(app, factory, settings, authorise):
                     for m in db.scalars(
                         select(SimulatedMessage)
                         .where(SimulatedMessage.run_id == run.id)
-                        .order_by(SimulatedMessage.created_at)
+                        .order_by(SimulatedMessage.created_at, message_order())
                     )
                 ]
                 if run
@@ -402,7 +423,11 @@ def install_routes(app, factory, settings, authorise):
                 run.checkpoint = {
                     **run.checkpoint,
                     "callback": callback,
-                    "outcome": "SIMULATED_CONFIRMATION_AND_CALLBACK_RESOLVED"
+                    "outcome": (
+                        "PREPARATION_REVIEW_RESOLVED_BY_STAFF"
+                        if callback.get("topic") == "preparation"
+                        else "SIMULATED_CONFIRMATION_AND_CALLBACK_RESOLVED"
+                    )
                     if body.kind == "resolve_callback"
                     else None,
                 }
@@ -453,11 +478,30 @@ def install_routes(app, factory, settings, authorise):
                         "reply_event_id", run.checkpoint["latest_event"]["id"]
                     ),
                 }
+            previous_response = (
+                {
+                    k: run.checkpoint[k]
+                    for k in (
+                        "response_parts",
+                        "needs_reviewed",
+                        "patient_questions",
+                        "appointment_intent",
+                        "question_answers",
+                        "question_review_step_id",
+                    )
+                    if k in run.checkpoint
+                }
+                if body.kind in {"pause", "retry"}
+                else {}
+            )
+            previous_barriers = run.checkpoint.get("barriers")
             run.checkpoint = {
+                **previous_response,
                 "latest_event": next_event,
                 "returned_specialists": [],
                 "delegation_start": 0,
                 "patient_simulator_enabled": simulation_enabled(run),
+                **({"barriers": previous_barriers} if previous_barriers else {}),
             }
             case.case_version += 1
             if body.kind == "pause":
@@ -466,3 +510,110 @@ def install_routes(app, factory, settings, authorise):
             else:
                 release(run, "queued", delay=0)
             return {"event_id": event_id, "status": run.status}
+
+    @app.post("/api/cases/{case_id}/preferences")
+    def save_preferences(case_id: str, body: PreferenceInput, request: Request):
+        with factory.begin() as db:
+            user, clinics = identity(db, request)
+            case = scoped_case(db, case_id, clinics, lock=True)
+            if case.clinic_id != DEMO_CLINIC_ID or not settings.simulation_configured:
+                raise HTTPException(403, "Preferences are available only in the patient simulator")
+            if case.case_version != body.expected_case_version:
+                raise HTTPException(409, "Case changed. Refresh and try again")
+            if not body.clear and not body.consent:
+                raise HTTPException(422, "Explicit simulated patient consent is required")
+            if (
+                body.earliest_minute is not None
+                and body.latest_minute is not None
+                and body.earliest_minute > body.latest_minute
+            ):
+                raise HTTPException(422, "The end time must follow the start time")
+            run = latest_run(db, case.id)
+            if run and run.status in {"queued", "running"}:
+                raise HTTPException(
+                    409, "Wait until processing finishes before changing preferences"
+                )
+            patient = db.scalar(
+                select(Patient)
+                .where(Patient.id == case.patient_id, Patient.clinic_id == case.clinic_id)
+                .with_for_update()
+            )
+            preference = db.get(PatientPreference, (case.clinic_id, case.patient_id))
+            if preference is None:
+                preference = PatientPreference(clinic_id=case.clinic_id, patient_id=patient.id)
+                db.add(preference)
+            preference.preferences = (
+                {}
+                if body.clear
+                else {
+                    "earliest_minute": body.earliest_minute,
+                    "latest_minute": body.latest_minute,
+                    "consent_source": "explicit_staff_operated_patient_simulator",
+                    "updated_at": utcnow().isoformat(),
+                    "recorded_by": user.id,
+                }
+            )
+            case.case_version += 1
+            db.add(
+                AuditEvent(
+                    clinic_id=case.clinic_id,
+                    case_id=case.id,
+                    event_type=("PREFERENCES_CLEARED" if body.clear else "PREFERENCES_SAVED")
+                    + f":{case.case_version}",
+                    details={
+                        "actor_id": user.id,
+                        "preferences": preference.preferences,
+                        "note": "Synthetic consent; not proof of real patient authorisation",
+                    },
+                )
+            )
+            return {"preferences": preference.preferences, "case_version": case.case_version}
+
+    @app.post("/api/cases/{case_id}/preferences/{memory_id}/remove")
+    def remove_memory(case_id: str, memory_id: str, body: MemoryInput, request: Request):
+        with factory.begin() as db:
+            user, clinics = identity(db, request)
+            case = scoped_case(db, case_id, clinics, lock=True)
+            if case.clinic_id != DEMO_CLINIC_ID or not settings.simulation_configured:
+                raise HTTPException(403, "Available only in the patient simulator")
+            if case.case_version != body.expected_case_version:
+                raise HTTPException(409, "Case changed. Refresh and try again")
+            run = latest_run(db, case.id)
+            if run and run.status in {"queued", "running"}:
+                raise HTTPException(409, "Wait until processing finishes")
+            db.scalar(
+                select(Patient)
+                .where(Patient.id == case.patient_id, Patient.clinic_id == case.clinic_id)
+                .with_for_update()
+            )
+            row = db.scalar(
+                select(PatientMemory).where(
+                    PatientMemory.id == memory_id,
+                    PatientMemory.clinic_id == case.clinic_id,
+                    PatientMemory.patient_id == case.patient_id,
+                    PatientMemory.status.in_(["active", "pending"]),
+                )
+            )
+            if row is None or (row.scope == "visit" and row.case_id != case.id):
+                raise HTTPException(404, "Preference not found")
+            if row.key == "contact_permission" and not body.resume_contact:
+                raise HTTPException(
+                    422, "Explicit simulated patient agreement to resume is required"
+                )
+            row.status = "retracted"
+            case.case_version += 1
+            db.add(
+                AuditEvent(
+                    clinic_id=case.clinic_id,
+                    case_id=case.id,
+                    event_type="PATIENT_MEMORY_RETRACTED:" + row.id.replace("-", ""),
+                    details={
+                        "actor_id": user.id,
+                        "memory_id": row.id,
+                        "key": row.key,
+                        "resume_contact": body.resume_contact,
+                        "source": "staff_operated_simulator",
+                    },
+                )
+            )
+            return {"case_version": case.case_version}

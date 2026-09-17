@@ -233,7 +233,7 @@ def test_role_budget_recovery_preserves_receipt_and_specialists(simulated_runtim
     after = view(runtime[1], case_id)
     assert after["run"]["status"] == "completed"
     assert after["run"]["step_count"] == before["run"]["step_count"] + 2
-    assert after["run"]["step_limit"] == before["run"]["step_limit"] == 24
+    assert after["run"]["step_limit"] == before["run"]["step_limit"] == runtime[2].agent_max_steps
     assert source_count(source_engine) == 1
     assert after["steps"][: len(before["steps"])] == before["steps"]
 
@@ -424,7 +424,8 @@ def test_unclear_negative_or_rescheduling_reply_never_writes(simulated_runtime, 
     messages = result["patient_simulator"]["messages"]
     assert all(m["kind"] in {"reminder", "options"} for m in messages)
     if len(messages) > 1:
-        assert "No available slots" in messages[-1]["body"]
+        assert "no alternative slots" in messages[-1]["body"]
+        assert "slots are available now" not in messages[-1]["body"]
         assert result["handoff"]["reason_code"] == "NO_AVAILABLE_SLOTS"
 
 

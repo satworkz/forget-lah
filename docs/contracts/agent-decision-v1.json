@@ -64,6 +64,247 @@
       "title": "AttendanceDecision",
       "type": "object"
     },
+    "BarrierDecision": {
+      "additionalProperties": false,
+      "properties": {
+        "request_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Request Id",
+          "type": "string"
+        },
+        "expected_case_version": {
+          "minimum": 1,
+          "title": "Expected Case Version",
+          "type": "integer"
+        },
+        "reason_code": {
+          "const": "PATIENT_BARRIERS_REVIEWED",
+          "title": "Reason Code",
+          "type": "string"
+        },
+        "step_type": {
+          "const": "ASSESS_BARRIERS",
+          "title": "Step Type",
+          "type": "string"
+        },
+        "reply_event_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Reply Event Id",
+          "type": "string"
+        },
+        "evidence_quotes": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 3,
+          "minItems": 1,
+          "title": "Evidence Quotes",
+          "type": "array"
+        },
+        "earliest_minute": {
+          "anyOf": [
+            {
+              "maximum": 1439,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Earliest Minute"
+        },
+        "latest_minute": {
+          "anyOf": [
+            {
+              "maximum": 1439,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Latest Minute"
+        },
+        "weekdays": {
+          "items": {
+            "enum": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5,
+              6
+            ],
+            "type": "integer"
+          },
+          "maxItems": 7,
+          "title": "Weekdays",
+          "type": "array"
+        },
+        "requested_date": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Requested Date"
+        },
+        "excluded_minutes": {
+          "items": {
+            "type": "integer"
+          },
+          "maxItems": 12,
+          "title": "Excluded Minutes",
+          "type": "array"
+        },
+        "rejects_current_offer": {
+          "default": false,
+          "title": "Rejects Current Offer",
+          "type": "boolean"
+        },
+        "concern_quote": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Concern Quote"
+        },
+        "remember_exclusions": {
+          "default": false,
+          "title": "Remember Exclusions",
+          "type": "boolean"
+        },
+        "preparation_issue": {
+          "default": "NONE",
+          "enum": [
+            "NONE",
+            "INCOMPLETE",
+            "NEEDS_EXPLANATION"
+          ],
+          "title": "Preparation Issue",
+          "type": "string"
+        },
+        "next_action": {
+          "enum": [
+            "SEARCH_SLOTS",
+            "CLARIFY_TIME",
+            "REVIEW_PREPARATION"
+          ],
+          "title": "Next Action",
+          "type": "string"
+        }
+      },
+      "required": [
+        "request_id",
+        "expected_case_version",
+        "reason_code",
+        "step_type",
+        "reply_event_id",
+        "evidence_quotes",
+        "next_action"
+      ],
+      "title": "BarrierDecision",
+      "type": "object"
+    },
+    "ClarifyDecision": {
+      "additionalProperties": false,
+      "properties": {
+        "request_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Request Id",
+          "type": "string"
+        },
+        "expected_case_version": {
+          "minimum": 1,
+          "title": "Expected Case Version",
+          "type": "integer"
+        },
+        "reason_code": {
+          "const": "AMBIGUOUS_REPLY",
+          "title": "Reason Code",
+          "type": "string"
+        },
+        "step_type": {
+          "const": "CLARIFY",
+          "title": "Step Type",
+          "type": "string"
+        },
+        "reply_event_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Reply Event Id",
+          "type": "string"
+        },
+        "question": {
+          "maxLength": 240,
+          "minLength": 10,
+          "title": "Question",
+          "type": "string"
+        },
+        "concern_quote": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Concern Quote"
+        },
+        "excluded_minutes": {
+          "items": {
+            "type": "integer"
+          },
+          "maxItems": 12,
+          "title": "Excluded Minutes",
+          "type": "array"
+        },
+        "remember_exclusions": {
+          "default": false,
+          "title": "Remember Exclusions",
+          "type": "boolean"
+        },
+        "evidence_quotes": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 3,
+          "title": "Evidence Quotes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "request_id",
+        "expected_case_version",
+        "reason_code",
+        "step_type",
+        "reply_event_id",
+        "question"
+      ],
+      "title": "ClarifyDecision",
+      "type": "object"
+    },
     "ClinicalReportDecision": {
       "additionalProperties": false,
       "properties": {
@@ -114,6 +355,19 @@
           ],
           "default": null,
           "title": "Attendance Quote"
+        },
+        "contact_stop_quote": {
+          "anyOf": [
+            {
+              "maxLength": 240,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Contact Stop Quote"
         }
       },
       "required": [
@@ -303,6 +557,218 @@
       "title": "EscalateDecision",
       "type": "object"
     },
+    "MemoryChange": {
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "enum": [
+            "excluded_weekdays",
+            "excluded_minutes",
+            "preferred_language",
+            "excluded_languages",
+            "contact_permission",
+            "arrival_support"
+          ],
+          "title": "Key",
+          "type": "string"
+        },
+        "value": {
+          "maxLength": 160,
+          "title": "Value",
+          "type": "string"
+        },
+        "scope": {
+          "enum": [
+            "visit",
+            "future"
+          ],
+          "title": "Scope",
+          "type": "string"
+        },
+        "operation": {
+          "default": "set",
+          "enum": [
+            "set",
+            "remove"
+          ],
+          "title": "Operation",
+          "type": "string"
+        },
+        "quote": {
+          "maxLength": 240,
+          "minLength": 1,
+          "title": "Quote",
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "value",
+        "scope",
+        "quote"
+      ],
+      "title": "MemoryChange",
+      "type": "object"
+    },
+    "NeedsDecision": {
+      "additionalProperties": false,
+      "properties": {
+        "request_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Request Id",
+          "type": "string"
+        },
+        "expected_case_version": {
+          "minimum": 1,
+          "title": "Expected Case Version",
+          "type": "integer"
+        },
+        "reason_code": {
+          "const": "PATIENT_NEEDS_REVIEWED",
+          "title": "Reason Code",
+          "type": "string"
+        },
+        "patient_questions": {
+          "description": "Every question the patient wants answered, copied from their message; separate from preferences and outgoing clarification.",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 3,
+          "title": "Patient Questions",
+          "type": "array"
+        },
+        "step_type": {
+          "const": "REVIEW_NEEDS",
+          "title": "Step Type",
+          "type": "string"
+        },
+        "reply_event_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "title": "Reply Event Id",
+          "type": "string"
+        },
+        "updates": {
+          "items": {
+            "$ref": "#/$defs/MemoryChange"
+          },
+          "maxItems": 5,
+          "title": "Updates",
+          "type": "array"
+        },
+        "appointment_intent": {
+          "default": "UNSPECIFIED",
+          "enum": [
+            "UNSPECIFIED",
+            "CHANGE",
+            "CONFIRM"
+          ],
+          "title": "Appointment Intent",
+          "type": "string"
+        },
+        "appointment_request_quote": {
+          "anyOf": [
+            {
+              "maxLength": 240,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Appointment Request Quote"
+        },
+        "question": {
+          "anyOf": [
+            {
+              "maxLength": 240,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Question"
+        },
+        "concern_quote": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Concern Quote"
+        }
+      },
+      "required": [
+        "request_id",
+        "expected_case_version",
+        "reason_code",
+        "step_type",
+        "reply_event_id",
+        "updates"
+      ],
+      "title": "NeedsDecision",
+      "type": "object"
+    },
+    "QuestionAnswer": {
+      "additionalProperties": false,
+      "properties": {
+        "question_index": {
+          "maximum": 2,
+          "minimum": 0,
+          "title": "Question Index",
+          "type": "integer"
+        },
+        "outcome": {
+          "enum": [
+            "ANSWERED",
+            "CLINIC_REVIEW",
+            "UNSUPPORTED"
+          ],
+          "title": "Outcome",
+          "type": "string"
+        },
+        "instruction_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Instruction Id"
+        },
+        "quote": {
+          "anyOf": [
+            {
+              "maxLength": 600,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Quote"
+        }
+      },
+      "required": [
+        "question_index",
+        "outcome"
+      ],
+      "title": "QuestionAnswer",
+      "type": "object"
+    },
     "ReturnDecision": {
       "additionalProperties": false,
       "properties": {
@@ -326,6 +792,14 @@
           ],
           "title": "Reason Code",
           "type": "string"
+        },
+        "question_answers": {
+          "items": {
+            "$ref": "#/$defs/QuestionAnswer"
+          },
+          "maxItems": 3,
+          "title": "Question Answers",
+          "type": "array"
         },
         "step_type": {
           "const": "RETURN",
@@ -524,6 +998,8 @@
   },
   "discriminator": {
     "mapping": {
+      "ASSESS_BARRIERS": "#/$defs/BarrierDecision",
+      "CLARIFY": "#/$defs/ClarifyDecision",
       "COMPLETE": "#/$defs/CompleteDecision",
       "COMPLETE_SIMULATED_CONFIRMATION": "#/$defs/CompleteSimulationDecision",
       "DELEGATE": "#/$defs/DelegateDecision",
@@ -532,6 +1008,7 @@
       "INTERPRET_SELECTION": "#/$defs/SelectionDecision",
       "REPORT_SYMPTOMS": "#/$defs/ClinicalReportDecision",
       "RETURN": "#/$defs/ReturnDecision",
+      "REVIEW_NEEDS": "#/$defs/NeedsDecision",
       "TOOL": "#/$defs/ToolDecision",
       "WAIT": "#/$defs/WaitDecision"
     },
@@ -567,6 +1044,15 @@
     },
     {
       "$ref": "#/$defs/ClinicalReportDecision"
+    },
+    {
+      "$ref": "#/$defs/BarrierDecision"
+    },
+    {
+      "$ref": "#/$defs/ClarifyDecision"
+    },
+    {
+      "$ref": "#/$defs/NeedsDecision"
     }
   ]
 }

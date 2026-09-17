@@ -1,5 +1,18 @@
 # Implementation status
 
+**17 September: response coherence.** New preference restrictions are checked against the saved source appointment's calculated Singapore weekday/time. Preference-only replies do not automatically mean reschedule. Empathy and memory updates are composed with one useful final reply; no-slots and no-matching-slots have distinct text. Explicit requests for alternatives bypass the negative-only clarification guard. See FEATURE_GUIDE.md for examples and boundaries.
+
+
+**Current feature reference:** [Feature guide and patient memory](FEATURE_GUIDE.md) documents implemented behavior, all demo capabilities, preference tests and remaining limitations. Migration `0006` extends time preferences to attributed patient concerns; this supersedes earlier time-only descriptions.
+
+**17 September: recurring concerns and empathy.** Reply-bound frustration quotes trigger an apology before clarification. Clearly recurring excluded appointment times can be saved as editable, clinic/patient-scoped operational memory. Future offers filter them and reminders recognise conflicts with existing appointments without changing bookings. This supersedes earlier statements that no conversation-derived scheduling preferences are saved; no identity/consent verification or model training is claimed.
+
+**General clarification:** Coordinator `CLARIFY` asks a reply-bound administrative question and waits. An early ambiguity escalation is routed to clarification; two general attempts per run are allowed before unresolved ambiguity may reach staff. The previous question is available on the next reply. Clinical reports and clinic-authority requests retain escalation. Existing escalated histories remain unchanged.
+
+**Natural-language scheduling refinement:** Coordinator sees bounded recent patient-facing context; typed unavailable times and offer rejection prevent repeated unsuitable offers. Negative-only availability asks a clarifying question. Current-visit corrections replace the prior constraint set; model interpretation remains fallible and source/policy checks still gate writes.
+
+**Adaptive follow-up (16 September):** reply-bound `ASSESS_BARRIERS` captures practical timing constraints and patient-reported preparation needs. Source slots are filtered in Singapore time; unmatched constraints ask for new availability. Preparation problems produce an acknowledged, owned AMBER callback without a confirmation write. The dashboard separates attendance, clinic evidence and outstanding readiness issues. Explicit simulator consent can save/change/forget time preferences for later reviews of the same clinic patient in migration `0005`; no automatic training or conversation-derived persistent preferences. The bounded run default is now 40 steps. See [adaptive follow-up testing and learning boundaries](ADAPTIVE_FOLLOWUP.md). This section supersedes older pending-preference statements for time preferences in the simulator only.
+
 ## M2a: local agent runtime — v0.2.0
 
 Implemented on top of M1: three logical agents in a persistent Python worker; Coordinator-only delegation; six strict decision types; role-specific source read tools; saved observations, decisions, gateway verdicts and tool results; specialist intent/evidence reports; durable waiting/resumption; staff pause/retry controls; escalation and named staff acceptance; a staff timeline; forward database migration `0002`; an organiser JSON HTTP adapter; an explicitly labelled deterministic simulation; bounded retries, steps, request sizes and a shared live-call budget.
@@ -71,3 +84,8 @@ The application is local and synthetic, with the web port bound to 127.0.0.1. Ex
 ## Verify and demonstrate
 
 Use [AGENT_RUNTIME.md](AGENT_RUNTIME.md) for the updated team walkthrough and [VALIDATION.md](VALIDATION.md) for recorded checks. GitHub Actions must be verified after a commit is pushed; local tests do not establish remote CI success. Engineering tests are separate from the planned 60 hackathon evaluation scenarios.
+
+
+### Per-turn patient question coverage
+
+Questions are separated from preferences in `REVIEW_NEEDS.patient_questions`. Preparation returns typed question coverage, checked against cited approved source text; confirmation is processed independently. Composed replies acknowledge unresolved clinic questions with a callback task. Legacy `other_concern` records remain auditable but are excluded from effective memory. See `FEATURE_GUIDE.md` for testing and boundaries.

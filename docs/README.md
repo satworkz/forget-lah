@@ -1,5 +1,7 @@
 # forget-lah documentation
 
+**Current feature reference:** [Feature guide and patient memory](FEATURE_GUIDE.md) documents implemented behavior, all demo capabilities, preference tests and remaining limitations. Migration `0006` extends time preferences to attributed patient concerns; this supersedes earlier time-only descriptions.
+
 **Want to change the test records?** Use [CLINIC_SIMULATOR.md](CLINIC_SIMULATOR.md) to edit schedules and notes, add slots and create fresh scenarios.
 
 **Connecting your own Claude account? Start with [CLAUDE_SETUP.md](CLAUDE_SETUP.md)** for account/key setup, the connection check and the remaining delivery steps.

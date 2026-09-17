@@ -1,3 +1,48 @@
+## 2026-09-17 — Patient questions separated from preference memory
+
+- Added typed per-turn questions and Preparation answer coverage. Gateway rejects missing/duplicate coverage and invented source quotations. Old `other_concern` records are excluded from effective planning memory, with audit history preserved.
+- Automated question tests cover confirmation with an approved answer, unanswered clinic question/callback, unsupported lookup, question without confirmation, and invalid evidence/coverage.
+- Full local suite: 268 passed, 15 skipped, one long-conversation request-size regression. Removed unnecessary prompt content; that regression passed on a targeted rerun. Final provider/question suite: 62 passed. Docker PostgreSQL plus question suite: 21 passed. Ruff passed; canonical JSON schema exported; web image built successfully (unchanged frontend build cached).
+- Four isolated live Anthropic scenarios passed: exact accompaniment question with an answering note; same question without an answering note; accompaniment question alone (no attendance write); confirmation plus traffic question (limitation, no staff handoff). Confirmation and callback persisted separately; one patient reply per turn. These tests used synthetic source data, not existing dashboard cases. Initial live runs exposed prompt-field confusion, a transient connection failure and request-size issues; corrected runs are the evidence for the result.
+- Scope: up to three questions per decision. Source quote validation cannot guarantee semantic relevance, and unknown medical questions require staff review. Organiser live endpoint remains unverified.
+
+## Calendar grounding and composed replies (17 September 2026)
+
+- Live Claude: exact “I already told staff not to schedule on Saturday” with source Friday 18 September produced one combined acknowledgement/clarification, with no booking write or handoff. The next reply confirming the Friday visit completed with one source confirmation receipt.
+- A Sunday restriction against a UTC timestamp that falls on Monday in Singapore produced the correct Monday clarification. An explicit request to move to available weekday slots with an empty source produced one truthful no-slots message and the NO_AVAILABLE_SLOTS handoff.
+- Final local memory/adaptation/provider/turn-response selection: 84 passed. Full Docker run: 272 passed, three failures were assertions for intentionally replaced wording. Those assertions were aligned with the new text while retaining source-write, availability and handoff checks; the final Docker selection covering those flows and all new turn-response tests passed (11 tests). The full 275-test suite was not repeated after the final explicit-change guard refinement.
+- Tests cover a nonconflicting excluded day, a nonconflicting excluded time, Singapore date rollover, absence of intermediate patient acknowledgements, combined response evidence, and an explicit change request that must not be overridden by a compatible existing appointment.
+- Ruff and formatting passed; TypeScript/Vite and backend/frontend Docker builds passed. Rebuilt containers are running, readiness is HTTP 200, and authenticated deployed views were checked. Historical messages were preserved; use Start fresh simulator test for a clean replay.
+
+## General patient memory validation (17 September 2026)
+
+- Full Docker regression suite: 270 tests passed, including the existing PostgreSQL checks. After the final audit-ID length and provider output-budget refinements, 73 focused memory/provider/PostgreSQL tests passed against the final source, including a new PostgreSQL memory revision/retraction test. The final source collects 271 tests; the entire 271-test collection was not repeated after those refinements.
+- Live Anthropic: all four requested examples passed (Saturday exclusion, English restriction, stop contact, recurring lateness). An independent routine attendance-plus-bring-instructions flow completed successfully after the new needs-review phase. These are synthetic measured examples, not a guarantee for arbitrary language.
+- Testing caught and fixed a provider grammar-size error, overlap with the legacy exclusion-saving path, and repeated audit-event uniqueness/length issues. A test with only excluded slots correctly asked for other availability. The language restriction produced the multilingual chooser; known Mandarin is covered by the fixed-acknowledgement/staff-handoff test.
+- Automated coverage includes source-quote binding, visit versus future scope, clinic isolation, superseded/retracted history, stop persistence into a fresh review, explicit resume requirements, language handling, and mixed symptom/stop-contact retention.
+- Ruff lint/format, TypeScript/Vite build and Docker builds passed. Application migrated to `0006`; readiness returned HTTP 200. Authenticated deployed case views and the preference-control bundle were checked for all three existing demo cases. Existing histories were preserved; no real patient contact or public deployment.
+- Remaining limits: full multilingual conversations, real channel opt-out enforcement and real patient consent verification are not implemented. Language restrictions block the English simulator flow and request staff assistance. See FEATURE_GUIDE.md.
+
+## Empathy and recurring concern memory (17 September 2026)
+
+- Live Claude: exact repeated 10 am complaint produced apology, saved excluded time, then clarification; a fresh follow-up recognised the source appointment conflict. A separate one-off complaint produced an apology without persistent exclusions.
+- Tests cover both barrier and clarification proposals, acknowledgement order, same-patient reuse, clinic isolation, forgetting, and conflict-aware reminders. Final adaptation/provider/request-size selection: 73 passed. The earlier broader selected Docker run found a request-size failure; compacted Coordinator context and instructions fixed it and the failing check was rerun successfully. That broader selection was not repeated in full after the final refinement.
+- Web TypeScript/Vite build and Ruff checks passed. Backend/frontend rebuilt locally; no case history reset and no real patient communication.
+
+## General clarification validation (16 September 2026)
+
+Live Claude produced a waiting clarification (no handoff or booking write) for three distinct ambiguous replies, including “ok, can I send my son?”. A follow-up specifying attendance instead of the patient correctly reached staff review without a source write.
+
+Full Docker suite: 258 tests ran, initially 256 passed and two source-review handoff tests failed because the new fallback was too broad. The fallback now excludes established confirmations, failed source operations and prerequisites requiring staff review. All six targeted boundary tests passed after correction, with both clarification tests repeated after the final policy check. The full suite was not repeated after this boundary correction. Ruff and request-size checks passed. Existing histories were preserved; backend rebuilt/restarted.
+
+# Natural-language scheduling validation (16 September 2026)
+
+- Added rejection/excluded-time filtering tests and end-to-end rule tests for negative-only clarification, including a model proposal to search without positive availability.
+- Full Docker regression run found one request-size regression. After compacting context/prompts, the affected provider, clinical-review, recall-booking and adaptation suites all passed; the full suite was not rerun after that prompt refinement.
+- Six live Claude interpretations passed: rejected time, competing commitment, rejection of all options, work conflict, positive time bound and corrected preference.
+- An isolated multi-turn live journey passed: reject 10 am, clarify, request after 3 pm, offer a real mock-source afternoon slot, accept naturally, verify one source booking receipt and completed acknowledgement. Initial attempt paused on an invalid model evidence ID; the gateway rejected it, and the rerun passed after clearer evidence-copying instructions. This is a measured example, not a guarantee against future model errors.
+- Ruff checks/formatting passed. Backend rebuilt and restarted; readiness returned HTTP 200. No existing case data was reset. Organiser live inference remains unverified; its request-size checks use a simulated transport.
+
 # forget-lah agent runtime validation
 
 ## Routine confirmation incorrectly classified as symptoms — 15 September 2026
@@ -196,3 +241,10 @@ Reproduce the full backend suite with `./scripts/dev.ps1 test`. Local Python-onl
 These 74 engineering checks are separate from the planned **60 hackathon evaluation scenarios**. Simulation proves application control flow and recovery, not model accuracy, inclusion outcomes or staff time savings. Real-model evaluation remains pending.
 
 Two third-party test-client deprecation warnings (Starlette/httpx and an AnyIO alias) were present without failing tests. No dependency upgrades were introduced to suppress them.
+# Adaptive follow-up validation — 16 September 2026
+
+- Full container suite: 253 tests passed with PostgreSQL enabled; no skips. Two existing dependency deprecation warnings remain. A subsequent 43-test adaptation/booking run passed against the updated source, including the organiser request-size check.
+- Ruff lint and formatting pass; web TypeScript/Vite build passes.
+- Live Claude against isolated synthetic databases: accompaniment constraint after 3 pm filtered out a morning slot, offered the afternoon slot, then accepted a natural reply and completed with one source receipt (run `4e012a09-25e6-4be6-8a2b-948860989988`, 23 steps). Incomplete-scan report produced preparation callback with no confirmation write (run `f03c9996-a6f8-4e41-901c-41eacd7125c4`, 8 steps). These are bounded examples, not a clinical accuracy benchmark.
+- Local bootstrap applied migration `0005`; API readiness returns 200. Authenticated reads verified the plan/preferences fields for all three existing cases and the served web bundle contains the new controls. Containers updated without resetting case history. No browser visual-layout certification or organiser live endpoint verification is claimed.
+- Windows/Ubuntu scripts and the shared Compose file are unchanged by this increment. Remote CI will run only after a push.

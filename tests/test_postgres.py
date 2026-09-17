@@ -202,7 +202,7 @@ def test_postgres_migration_preserves_existing_cases_and_creates_budget(postgres
     with factory() as db:
         assert set(db.scalars(select(FollowupCase.id))) == before
         assert len(before) == 3
-        assert db.scalar(text("SELECT version_num FROM alembic_version")) == "0004"
+        assert db.scalar(text("SELECT version_num FROM alembic_version")) == "0006"
         assert db.get(ModelBudget, "organiser").calls == 0
     # No differences between the explicit migration and mapped runtime schema.
     from alembic.autogenerate import compare_metadata
@@ -326,3 +326,44 @@ def test_postgres_shared_model_budget_is_atomic(postgres_schema, constraint, mod
     with factory() as db:
         assert db.get(ModelBudget, "organiser").calls == 1
         assert db.get(ModelBudget, "organiser").day == utcnow().date().isoformat()
+
+
+@pytest.mark.postgres
+def test_postgres_patient_memory_revisions_and_audit(postgres_schema):
+    from forget_lah.db import AuditEvent
+    from forget_lah.runtime.contracts import NeedsDecision
+    from forget_lah.runtime.memory import effective_memory, persist_needs
+    from forget_lah.runtime.models import PatientMemory
+
+    _, factory = postgres_schema
+    command.upgrade(Config("alembic.ini"), "head")
+    seed(factory, "test@forget-lah.example", "postgres-test-only-password")
+    detect(factory, DEMO_CLINIC_ID, candidates_from_payload(candidates()))
+    with factory.begin() as db:
+        case = db.scalar(select(FollowupCase).limit(1))
+        for value in ("5", "5,6"):
+            step = uid()
+            decision = NeedsDecision(
+                request_id=step,
+                expected_case_version=case.case_version,
+                step_type="REVIEW_NEEDS",
+                reason_code="PATIENT_NEEDS_REVIEWED",
+                reply_event_id=uid(),
+                updates=[
+                    dict(key="excluded_weekdays", value=value, scope="future", quote="fixture")
+                ],
+            )
+            persist_needs(db, case, decision, step)
+        assert effective_memory(db, case)["excluded_weekdays"] == [5, 6]
+        row = db.scalar(select(PatientMemory).where(PatientMemory.status == "active"))
+        row.status = "retracted"
+        db.add(
+            AuditEvent(
+                clinic_id=case.clinic_id,
+                case_id=case.id,
+                event_type="PATIENT_MEMORY_RETRACTED:" + row.id.replace("-", ""),
+                details={"memory_id": row.id},
+            )
+        )
+        db.flush()
+        assert not effective_memory(db, case)

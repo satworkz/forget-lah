@@ -6,16 +6,20 @@ from datetime import UTC, timedelta
 from sqlalchemy import and_, or_, select
 
 from forget_lah.db import FollowupCase, uid, utcnow
+from forget_lah.runtime.adaptation import preferences_for, remember_reported_exclusions
 from forget_lah.runtime.budget import reserve_call
 from forget_lah.runtime.clinic_tools import ClinicTools
 from forget_lah.runtime.contracts import (
     REQUIRED_EVIDENCE_BY_ROLE,
     AttendanceDecision,
+    BarrierDecision,
+    ClarifyDecision,
     ClinicalReportDecision,
     CompleteDecision,
     CompleteSimulationDecision,
     DelegateDecision,
     EscalateDecision,
+    NeedsDecision,
     ReturnDecision,
     SelectionDecision,
     ToolDecision,
@@ -24,17 +28,34 @@ from forget_lah.runtime.contracts import (
     parse_decision,
     tools_for,
 )
+from forget_lah.runtime.memory import (
+    LANGUAGE_QUESTION,
+    delivery_block,
+    effective_memory,
+    language_ack,
+    persist_needs,
+)
 from forget_lah.runtime.models import (
     AgentDelegation,
     AgentRun,
     AgentStep,
     SimulatedMessage,
     StaffHandoff,
+    message_order,
 )
 from forget_lah.runtime.policy import has_authority, policy_for
 from forget_lah.runtime.provider import ModelError, model_for
+from forget_lah.runtime.questions import question_response
+from forget_lah.runtime.responses import (
+    appointment_facts,
+    defer_response,
+    memory_ack,
+    patient_message,
+)
 from forget_lah.runtime.simulation import (
     booking_choice,
+    clarification_allowed,
+    clarification_count,
     current_tools,
     future_scheduled,
     latest_selection_offer,
@@ -236,7 +257,30 @@ def observation_for(db, run, case, step_id):
     simulation = simulation_evidence(db, run)
     if run.active_role == "engagement" and simulation.get("record_required"):
         required = (*required, "record_simulated_confirmation")
+    if run.active_role == "coordinator":
+        for tool in tools:
+            # Engagement inspects slot details; Coordinator receives the saved count.
+            tool["result"].get("data", {}).pop("available_slots", None)
     completed_tools = {t["result"]["tool_name"] for t in eligible}
+    conversation = []
+    if (
+        run.active_role == "coordinator"
+        and event.get("kind") == "demo_reply"
+        and not run.checkpoint.get("returned_specialists")
+        and run.checkpoint.get("barriers", {}).get("reply_event_id")
+        != event.get("reply_event_id", event.get("id"))
+    ):
+        messages = list(
+            db.scalars(
+                select(SimulatedMessage)
+                .where(
+                    SimulatedMessage.run_id == run.id, SimulatedMessage.clinic_id == run.clinic_id
+                )
+                .order_by(SimulatedMessage.created_at.desc(), message_order().desc())
+                .limit(1)
+            )
+        )
+        conversation = [{"kind": m.kind, "text": m.body[:450]} for m in reversed(messages)]
     return {
         "request_id": step_id,
         "expected_case_version": case.case_version,
@@ -244,6 +288,16 @@ def observation_for(db, run, case, step_id):
         "goal": delegation.goal if delegation else run.goal,
         "case": {"specialty": case.specialty, "trigger": case.trigger},
         "latest_event": event,
+        "recent_messages": conversation,
+        "clarification_count": clarification_count(db, run),
+        "patient_memory": effective_memory(db, case),
+        "patient_questions": run.checkpoint.get("patient_questions", []),
+        "appointment_intent": run.checkpoint.get("appointment_intent", "UNSPECIFIED"),
+        "appointment": appointment_facts(db, run)
+        if run.active_role == "coordinator" and not run.checkpoint.get("needs_reviewed")
+        else None,
+        "needs_reviewed": run.checkpoint.get("needs_reviewed")
+        == event.get("reply_event_id", event.get("id")),
         "tools": tools,
         "return_requirements": {
             "required_tools": list(required),
@@ -273,6 +327,12 @@ def observation_for(db, run, case, step_id):
             if not read_already_available(db, run, name)
         ],
         "simulation": simulation,
+        "barriers": run.checkpoint.get("barriers", {}),
+        "preferences": {
+            k: v
+            for k, v in preferences_for(db, case).items()
+            if k in {"earliest_minute", "latest_minute", "excluded_minutes"}
+        },
         "outreach_enabled": False,
         "booking_writes_enabled": False,
     }
@@ -382,6 +442,17 @@ def apply_initial_demo_wait(db, settings, run, case, step):
         pause(run, "POLICY_DENIED")
     else:
         if simulation_enabled(run) and settings.simulation_configured:
+            block = delivery_block(db, case, proactive=True)
+            if block:
+                step.observation["application_rule"].update(
+                    name="OUTREACH_SUPPRESSED", explanation=f"No reminder displayed: {block}"
+                )
+                run.checkpoint = {**run.checkpoint, "wait_reason": block}
+                if block == "LANGUAGE_SUPPORT_REQUIRED":
+                    request_handoff(db, run, block, risk="AMBER")
+                else:
+                    release(run, "waiting")
+                return True
             message = save_reminder(db, run, source)
             step.observation = {
                 **step.observation,
@@ -616,7 +687,187 @@ def apply_control(db, run, case, step, decision, settings):
     step.status = "completed"
     case.case_version += 1
     delay = settings.agent_min_interval_seconds
-    if isinstance(decision, ClinicalReportDecision):
+    if isinstance(decision, NeedsDecision):
+        persist_needs(db, case, decision, step.id)
+        run.checkpoint = {
+            **run.checkpoint,
+            "needs_reviewed": decision.reply_event_id,
+            "patient_questions": decision.patient_questions,
+            "appointment_intent": decision.appointment_intent,
+        }
+        memory = effective_memory(db, case)
+        stopped_now = any(
+            u.key == "contact_permission" and u.operation == "set" for u in decision.updates
+        )
+        language = memory.get("preferred_language", "en")
+        block = delivery_block(db, case)
+
+        def say(body, kind="needs_acknowledgement"):
+            db.add(
+                patient_message(
+                    run,
+                    clinic_id=case.clinic_id,
+                    case_id=case.id,
+                    run_id=run.id,
+                    event_id=decision.reply_event_id,
+                    kind=kind,
+                    body=body,
+                    source_version="patient-memory-v1",
+                    evidence={
+                        "decision_step_id": step.id,
+                        "reply_event_id": decision.reply_event_id,
+                    },
+                )
+            )
+            db.flush()
+
+        if stopped_now:
+            if not block:
+                say(
+                    "I've stopped automated reminders. Your appointment has not been changed. You can contact the clinic when you need help."
+                )
+            run.checkpoint = {**run.checkpoint, "wait_reason": "CONTACT_STOPPED"}
+            release(run, "waiting")
+            return
+        if block:
+            if language == "und" or (
+                language == "en" and "en" in memory.get("excluded_languages", [])
+            ):
+                say(LANGUAGE_QUESTION, "clarification")
+                run.checkpoint = {**run.checkpoint, "wait_reason": "AWAITING_LANGUAGE_PREFERENCE"}
+                release(run, "waiting")
+            else:
+                if language_ack(language):
+                    say(language_ack(language))
+                request_handoff(db, run, "LANGUAGE_SUPPORT_REQUIRED", risk="AMBER")
+            return
+        if decision.concern_quote:
+            defer_response(
+                run,
+                decision.reply_event_id,
+                "empathy",
+                "I'm sorry for the frustration this has caused.",
+                step.id,
+            )
+        if decision.updates:
+            defer_response(
+                run, decision.reply_event_id, "memory", memory_ack(decision.updates), step.id
+            )
+        question = decision.question
+        facts = appointment_facts(db, run)
+        restrictions = {u.key for u in decision.updates if u.operation == "set"} & {
+            "excluded_weekdays",
+            "excluded_minutes",
+        }
+        if facts and restrictions and decision.appointment_intent == "UNSPECIFIED":
+            from forget_lah.runtime.adaptation import matching_slots, preferences_for
+
+            if matching_slots([{"starts_at": facts["scheduled_at"]}], preferences_for(db, case)):
+                question = f"Your current appointment is on {facts['local_display']}, which does not conflict with that preference. Would you like to keep it, or choose another time?"
+                run.checkpoint = {**run.checkpoint, "appointment_clarification": facts}
+        if not question and any(
+            u.key == "arrival_support" and u.operation == "set" for u in decision.updates
+        ):
+            question = "What would help with the concern you mentioned for this appointment?"
+        if question:
+            say(question, "clarification")
+            run.checkpoint = {**run.checkpoint, "wait_reason": "AWAITING_PATIENT_REPLY"}
+            release(run, "waiting")
+        else:
+            release(run, "queued", delay=delay)
+        return
+    if isinstance(decision, (BarrierDecision, ClarifyDecision)) and decision.concern_quote:
+        defer_response(
+            run,
+            decision.reply_event_id,
+            "empathy",
+            "I'm sorry for the frustration this has caused. Thank you for telling me.",
+            step.id,
+        )
+    if isinstance(decision, (BarrierDecision, ClarifyDecision)) and decision.remember_exclusions:
+        remember_reported_exclusions(db, case, decision, step.id)
+        times = ", ".join(
+            f"{minute // 60:02d}:{minute % 60:02d}" for minute in decision.excluded_minutes
+        )
+        defer_response(
+            run,
+            decision.reply_event_id,
+            "memory",
+            f"I've noted that {times} SGT does not work for you. I'll avoid suggesting those times in future follow-ups.",
+            step.id,
+        )
+    if isinstance(decision, BarrierDecision):
+        # Each assessed reply is a complete revised constraint set.
+        # Explicit new availability can supersede a previous offer rejection.
+        rejected = []
+        if decision.rejects_current_offer:
+            offer = latest_selection_offer(db, run)
+            if offer:
+                rejected = list(
+                    dict.fromkeys(rejected + [s["id"] for s in offer.evidence.get("slots", [])])
+                )[-30:]
+        run.checkpoint = {
+            **run.checkpoint,
+            "barriers": {
+                **decision.model_dump(
+                    exclude={"request_id", "expected_case_version", "step_type", "reason_code"}
+                ),
+                "step_id": step.id,
+                "rejected_slot_ids": rejected,
+            },
+        }
+        negative_only = (
+            decision.next_action == "SEARCH_SLOTS"
+            and run.checkpoint.get("appointment_intent") != "CHANGE"
+            and (decision.excluded_minutes or decision.rejects_current_offer)
+            and decision.earliest_minute is None
+            and decision.latest_minute is None
+            and not decision.weekdays
+            and decision.requested_date is None
+        )
+        if decision.next_action == "CLARIFY_TIME" or negative_only:
+            db.add(
+                patient_message(
+                    run,
+                    clinic_id=run.clinic_id,
+                    case_id=run.case_id,
+                    run_id=run.id,
+                    event_id=decision.reply_event_id,
+                    kind="clarification",
+                    body="Which dates and times would work for you and anyone accompanying you? Please include the month if you have a particular date in mind. Your appointment has not been changed.",
+                    source_version="patient-constraints-v1",
+                    evidence={
+                        "decision_step_id": step.id,
+                        "clarification_reason": "AVAILABILITY_NOT_ESTABLISHED",
+                    },
+                )
+            )
+            run.checkpoint = {**run.checkpoint, "wait_reason": "AWAITING_PATIENT_REPLY"}
+            release(run, "waiting")
+        else:
+            release(run, "queued", delay=delay)
+    elif isinstance(decision, ClinicalReportDecision):
+        if decision.contact_stop_quote:
+            persist_needs(
+                db,
+                case,
+                NeedsDecision(
+                    request_id=decision.request_id,
+                    expected_case_version=decision.expected_case_version,
+                    step_type="REVIEW_NEEDS",
+                    reason_code="PATIENT_NEEDS_REVIEWED",
+                    reply_event_id=decision.reply_event_id,
+                    updates=[
+                        {
+                            "key": "contact_permission",
+                            "value": "stopped",
+                            "scope": "future",
+                            "quote": decision.contact_stop_quote,
+                        }
+                    ],
+                ),
+                step.id,
+            )
         reply = saved_reply(db, run)
         body = "Thank you for letting us know. "
         if decision.attendance_quote:
@@ -626,7 +877,10 @@ def apply_control(db, run, case, step, decision, settings):
             + "”; “".join(decision.symptom_quotes)
             + "”. I’ve flagged your message for clinical review and requested that the clinic team call you back as soon as possible."
         )
-        message = SimulatedMessage(
+        if decision.contact_stop_quote:
+            body += " Automated reminders have been stopped; this clinical review remains with the clinic."
+        message = patient_message(
+            run,
             clinic_id=run.clinic_id,
             case_id=run.case_id,
             run_id=run.id,
@@ -660,7 +914,8 @@ def apply_control(db, run, case, step, decision, settings):
             if limitation := unsupported_question_reply(decision.unsupported_question):
                 body += "\n\n" + limitation
             db.add(
-                SimulatedMessage(
+                patient_message(
+                    run,
                     clinic_id=run.clinic_id,
                     case_id=run.case_id,
                     run_id=run.id,
@@ -705,7 +960,8 @@ def apply_control(db, run, case, step, decision, settings):
             if limitation := unsupported_question_reply(decision.unsupported_question):
                 body += "\n\n" + limitation
             db.add(
-                SimulatedMessage(
+                patient_message(
+                    run,
                     clinic_id=run.clinic_id,
                     case_id=run.case_id,
                     run_id=run.id,
@@ -745,11 +1001,86 @@ def apply_control(db, run, case, step, decision, settings):
                 AgentDelegation.run_id == run.id, AgentDelegation.status == "active"
             )
         )
+        if run.active_role == "preparation":
+            run.checkpoint = {
+                **run.checkpoint,
+                "question_answers": [a.model_dump() for a in decision.question_answers],
+                "question_review_step_id": step.id,
+            }
         delegation.status, delegation.evidence_ids = "returned", decision.evidence_ids
         delegation.result_reason_code = decision.reason_code
         returned = run.checkpoint.get("returned_specialists", []) + [run.active_role]
         run.active_role = "coordinator"
         run.checkpoint = {**run.checkpoint, "returned_specialists": returned, "delegation_start": 0}
+        if (
+            delegation.target == "preparation"
+            and run.checkpoint.get("patient_questions")
+            and run.checkpoint.get("appointment_intent") == "UNSPECIFIED"
+        ):
+            prerequisite = latest_tool(current_tools(db, run), "check_prerequisites", "preparation")
+            if prerequisite and prerequisite.tool_result["data"].get("prerequisites") == [
+                "NOT_APPLICABLE"
+            ]:
+                reply = saved_reply(db, run)
+                body = question_response(run, reply)
+                if not run.checkpoint.get("callback"):
+                    body += "\n\nWould you like to confirm your attendance or discuss another appointment time?"
+                db.add(
+                    patient_message(
+                        run,
+                        clinic_id=run.clinic_id,
+                        case_id=run.case_id,
+                        run_id=run.id,
+                        event_id=reply.id,
+                        kind="question_answer",
+                        body=body,
+                        source_version="approved-question-review-v1",
+                        evidence={
+                            "question_review_step_id": step.id,
+                            "question_answers": run.checkpoint["question_answers"],
+                        },
+                    )
+                )
+                if run.checkpoint.get("callback"):
+                    request_handoff(db, run, "PATIENT_QUESTION_CALLBACK", risk="AMBER")
+                else:
+                    run.checkpoint = {**run.checkpoint, "wait_reason": "AWAITING_PATIENT_REPLY"}
+                    release(run, "waiting")
+                return
+        barrier = run.checkpoint.get("barriers", {})
+        if (
+            delegation.target == "preparation"
+            and barrier.get("preparation_issue", "NONE") != "NONE"
+        ):
+            question = "; ".join(barrier["evidence_quotes"])
+            db.add(
+                patient_message(
+                    run,
+                    clinic_id=run.clinic_id,
+                    case_id=run.case_id,
+                    run_id=run.id,
+                    event_id=saved_reply(db, run).id,
+                    kind="preparation_callback",
+                    body="Thank you for explaining what you need help with. I've requested a clinic callback about your preparation. Your appointment has not been changed. The clinic team will review the outstanding requirement with you.",
+                    source_version="patient-constraints-v1",
+                    evidence={
+                        "barrier_step_id": barrier["step_id"],
+                        "preparation_evidence_ids": decision.evidence_ids,
+                    },
+                )
+            )
+            run.checkpoint = {
+                **run.checkpoint,
+                "callback": {
+                    "status": "requested",
+                    "question": question,
+                    "topic": "preparation",
+                    "reply_event_id": saved_reply(db, run).id,
+                    "decision_step_id": step.id,
+                },
+            }
+            request_handoff(db, run, "PREPARATION_HELP_REQUIRED", risk="AMBER")
+            return
         release(run, "queued", delay=delay)
     elif isinstance(decision, WaitDecision):
         run.checkpoint = {**run.checkpoint, "wait_reason": decision.reason_code}
@@ -779,6 +1110,37 @@ def apply_control(db, run, case, step, decision, settings):
                     return
                 run.checkpoint = {**run.checkpoint, "next_source_retry": name}
         release(run, "waiting", delay=decision.wake_after_seconds or None)
+    elif isinstance(decision, ClarifyDecision) or (
+        isinstance(decision, EscalateDecision)
+        and decision.reason_code == "AMBIGUOUS_REPLY"
+        and clarification_allowed(db, run)
+    ):
+        reply = saved_reply(db, run)
+        question = (
+            decision.question
+            if isinstance(decision, ClarifyDecision)
+            else "Could you explain what you would like us to do about your appointment?"
+        )
+        db.add(
+            patient_message(
+                run,
+                clinic_id=run.clinic_id,
+                case_id=run.case_id,
+                run_id=run.id,
+                event_id=reply.id,
+                kind="clarification",
+                body=question,
+                source_version="clarification-v1",
+                evidence={
+                    "general_clarification": True,
+                    "decision_step_id": step.id,
+                    "reply_event_id": reply.id,
+                    "outcome": "WAITING_FOR_CLARIFICATION",
+                },
+            )
+        )
+        run.checkpoint = {**run.checkpoint, "wait_reason": "AWAITING_PATIENT_REPLY"}
+        release(run, "waiting")
     elif isinstance(decision, EscalateDecision):
         request_handoff(db, run, decision.reason_code, risk=step.policy["risk"])
     elif isinstance(decision, CompleteDecision):
@@ -865,6 +1227,15 @@ def execute_pending_tool(factory, settings, run_id, token, step_id, tools):
             "send_simulated_acknowledgement",
             "send_simulated_options",
         }
+        if simulation_action and delivery_block(db, case):
+            step.status, step.error_code = "rejected", "LANGUAGE_SUPPORT_REQUIRED"
+            step.policy = {
+                **step.policy,
+                "decision": "DENY",
+                "reason_codes": ["LANGUAGE_SUPPORT_REQUIRED"],
+            }
+            request_handoff(db, run, "LANGUAGE_SUPPORT_REQUIRED", risk="AMBER")
+            return False
         if simulation_action and not settings.simulation_configured:
             step.status, step.error_code = "rejected", "SIMULATOR_DISABLED"
             pause(run, "SIMULATOR_DISABLED")
@@ -973,7 +1344,7 @@ def execute_pending_tool(factory, settings, run_id, token, step_id, tools):
         step.tool_result, step.status = result.model_dump(), "completed"
         case.case_version += 1
         if (
-            tool_name == "send_simulated_acknowledgement"
+            tool_name in {"send_simulated_acknowledgement", "send_simulated_options"}
             and result.status == "succeeded"
             and run.checkpoint.get("callback")
         ):
@@ -987,9 +1358,7 @@ def execute_pending_tool(factory, settings, run_id, token, step_id, tools):
                 },
             }
         elif tool_name == "send_simulated_options" and result.status == "succeeded":
-            if message.evidence.get("selection_changed"):
-                request_handoff(db, run, "SLOT_SELECTION_CHANGED", risk="AMBER")
-            elif not message.evidence["slots"]:
+            if not message.evidence["slots"] and not message.evidence.get("constraint_mismatch"):
                 request_handoff(db, run, "NO_AVAILABLE_SLOTS", risk="AMBER")
             else:
                 run.checkpoint = {**run.checkpoint, "wait_reason": "AWAITING_PATIENT_REPLY"}
