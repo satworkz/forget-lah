@@ -17,7 +17,7 @@ def install_simulator_routes(app, factory, settings, authorise):
     def forward(request, method, path, body=None):
         with factory() as db:
             _, session, clinics = authorise(db, request)
-            if DEMO_CLINIC_ID not in clinics or settings.app_env not in {"local", "test"}:
+            if DEMO_CLINIC_ID not in clinics or settings.app_env not in {"local", "test", "demo"}:
                 raise HTTPException(403, "Simulator is available only for the local demo clinic")
             if method != "GET" and not secrets.compare_digest(
                 digest(request.headers.get("X-CSRF-Token", "")), session.csrf_hash

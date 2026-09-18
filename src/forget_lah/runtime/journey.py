@@ -220,10 +220,15 @@ def case_journey(db, case, run_id=None):
         automatic = run.started_by == AUTOMATION_PRINCIPAL_ID and run.start_key.startswith(
             "automatic:"
         )
+        reopened = run.start_key.startswith("automatic:reply:")
         add(
             run.id,
             run.created_at,
-            "Worker automatically queued this review" if automatic else "Staff started this review",
+            "Patient reply reopened this case"
+            if reopened
+            else "Worker automatically queued this review"
+            if automatic
+            else "Staff started this review",
             [
                 stage(
                     "Worker → PostgreSQL" if automatic else "Staff UI → FastAPI → PostgreSQL",
@@ -231,6 +236,7 @@ def case_journey(db, case, run_id=None):
                     {"expected_case_version": run.start_case_version},
                     {
                         "run_id": run.id,
+                        "reopened_from_run_id": run.checkpoint.get("reopened_from_run_id"),
                         "mode": run.mode,
                         "assigned_goal": run.goal,
                         "start_origin": "automatic" if automatic else "staff",
@@ -239,7 +245,9 @@ def case_journey(db, case, run_id=None):
                     "Saved run record; transport headers are not recorded",
                 )
             ],
-            "The worker registered this ready case under the clinic service identity. No staff click or Claude call was required; check the current status for progress or a configuration pause."
+            "A new patient reply started a separate review. Previous completed reviews are preserved; source evidence will be refreshed."
+            if reopened
+            else "The worker registered this ready case under the clinic service identity. No staff click or Claude call was required; check the current status for progress or a configuration pause."
             if automatic
             else "Staff requested a review. FastAPI saved it for the worker; this API request is not a model decision.",
             origin="rule" if automatic else None,
@@ -358,6 +366,7 @@ def case_journey(db, case, run_id=None):
                     {
                         "status": step.status,
                         "error_code": step.error_code,
+                        "validation_failures": step.validation_failures or [],
                         "model_attempts": step.attempts,
                         "reported_input_tokens": step.input_tokens,
                         "reported_output_tokens": step.output_tokens,

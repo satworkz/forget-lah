@@ -13,7 +13,7 @@ type Episode = {
 type Slot = { id: string; specialty: Specialty; starts_at: string; ends_at: string; doctor: string; available: boolean; version: number };
 type Snapshot = { episodes: Episode[]; slots: Slot[] };
 type CaseLink = { id: string; source_episode_ref: string; agent_status: string | null };
-type EpisodeForm = Omit<Episode, "patient_id"> & { request_id: string };
+type EpisodeForm = Episode & { request_id: string };
 type SlotForm = Slot & { request_id: string };
 const specialties: Specialty[] = ["dental", "myopia", "antenatal"];
 const labels = { dental: "Dental", myopia: "Myopia", antenatal: "Antenatal" };
@@ -21,7 +21,7 @@ const sgInput = (value: string | null) => value ? new Date(new Date(value).getTi
 const utc = (value: string | null) => value ? new Date(`${value}:00+08:00`).toISOString() : null;
 const dateAfter = (days: number) => new Date(Date.now() + 8 * 3600000 + days * 86400000).toISOString().slice(0, 10) + "T10:00";
 const displayDate = (value: string | null) => value ? new Date(value).toLocaleString("en-SG", { timeZone: "Asia/Singapore", dateStyle: "medium", timeStyle: "short" }) : "—";
-const blankEpisode = (): EpisodeForm => ({ request_id: crypto.randomUUID(), source_episode_ref: "", display_alias: "Test patient", specialty: "dental", record_type: "appointment", source_status: "scheduled", scheduled_at: dateAfter(2), due_at: "", has_future_booking: false, doctor_note: "", note_approved: false, prerequisite: "NOT_APPLICABLE", version: 0 });
+const blankEpisode = (): EpisodeForm => ({ request_id: crypto.randomUUID(), source_episode_ref: "", patient_id: "", display_alias: "Test patient", specialty: "dental", record_type: "appointment", source_status: "scheduled", scheduled_at: dateAfter(2), due_at: "", has_future_booking: false, doctor_note: "", note_approved: false, prerequisite: "NOT_APPLICABLE", version: 0 });
 const blankSlot = (): SlotForm => ({ request_id: crypto.randomUUID(), id: "", specialty: "dental", starts_at: dateAfter(3), ends_at: dateAfter(3).replace("10:00", "10:30"), doctor: "Demo doctor", available: true, version: 0 });
 
 export function ClinicSimulator({ onBack }: { onBack: () => void }) {
@@ -57,7 +57,7 @@ export function ClinicSimulator({ onBack }: { onBack: () => void }) {
     event.preventDefault(); setBusy(true); setError(""); setMessage("");
     const fields = { specialty: episode.specialty, record_type: episode.record_type, source_status: episode.source_status, scheduled_at: utc(episode.scheduled_at), due_at: utc(episode.due_at), has_future_booking: episode.has_future_booking, doctor_note: episode.doctor_note, note_approved: episode.note_approved, prerequisite: episode.prerequisite };
     try {
-      const result = await api<{ source_episode_ref: string }>(episode.source_episode_ref ? `/api/simulator/episodes/${encodeURIComponent(episode.source_episode_ref)}` : "/api/simulator/episodes", { method: episode.source_episode_ref ? "PUT" : "POST", headers: mutationHeaders(), body: JSON.stringify(episode.source_episode_ref ? { ...fields, expected_version: episode.version } : { ...fields, request_id: episode.request_id, display_alias: episode.display_alias }) });
+      const result = await api<{ source_episode_ref: string }>(episode.source_episode_ref ? `/api/simulator/episodes/${encodeURIComponent(episode.source_episode_ref)}` : "/api/simulator/episodes", { method: episode.source_episode_ref ? "PUT" : "POST", headers: mutationHeaders(), body: JSON.stringify(episode.source_episode_ref ? { ...fields, expected_version: episode.version } : { ...fields, request_id: episode.request_id, display_alias: episode.display_alias, patient_id: episode.patient_id || null }) });
       await load(result.source_episode_ref);
       setMessage("Saved in the clinic simulator. New eligible episodes appear in forget-lah after the worker's next scan (usually within 10 seconds). Existing case history is preserved.");
     } catch (e) { setError((e as Error).message); }
@@ -73,6 +73,11 @@ export function ClinicSimulator({ onBack }: { onBack: () => void }) {
     } catch (e) { setError((e as Error).message); }
     finally { setBusy(false); }
   }
+  const patients = [...new Map(snapshot.episodes.map((e) => [e.patient_id, e])).values()];
+  function newAppointment(patient: Episode) {
+    setEpisode({ ...blankEpisode(), patient_id: patient.patient_id, display_alias: patient.display_alias, specialty: patient.specialty });
+    setMessage("Adding a separate appointment for this patient. Choose the date and add any instructions for this visit. Earlier appointments and case history are preserved.");
+  }
   const caseLink = cases.find((c) => c.source_episode_ref === episode.source_episode_ref);
   return <main className="sim-page">
     <header className="sim-header"><div><button className="text-button" onClick={onBack}>← Back to forget-lah</button><p className="eyebrow">EXTERNAL TEST SYSTEM · SYNTHETIC DATA ONLY</p><h1>Clinic simulator</h1><p>Appointment schedules, available slots and patient notes in one place.</p></div><button className="secondary" onClick={reload} disabled={busy}>Reload saved data</button></header>
@@ -82,11 +87,13 @@ export function ClinicSimulator({ onBack }: { onBack: () => void }) {
     {episode.attendance_confirmation && <p className="sim-success">Patient confirmed attendance · simulated · {displayDate(episode.attendance_confirmation.confirmed_at)}. The appointment remains scheduled; actual attendance has not been recorded.</p>}
     {!ready && !error && <p role="status">Loading simulator…</p>}
     <fieldset disabled={busy || !ready} className="sim-fieldset"><div className="sim-grid">
-      <section className="panel sim-section"><div className="sim-heading"><div><p className="eyebrow">PATIENT RECORD + SCHEDULE</p><h2>{episode.source_episode_ref ? "Edit test episode" : "New test episode"}</h2></div><button className="secondary" onClick={() => { setEpisode(blankEpisode()); setMessage(""); }}>New episode</button></div>
-        <label className="sim-label">Open a saved episode<select value={episode.source_episode_ref} onChange={(e) => { const row = snapshot.episodes.find((r) => r.source_episode_ref === e.target.value); if (row) selectEpisode(row); else setEpisode(blankEpisode()); }}><option value="">New test episode</option>{snapshot.episodes.map((e) => <option key={e.source_episode_ref} value={e.source_episode_ref}>{e.display_alias} · {labels[e.specialty]} · {e.source_episode_ref.slice(-8)}</option>)}</select></label>
-        {episode.source_episode_ref && <div className="sim-record"><small>{episode.source_episode_ref} · revision {episode.version}</small><p>{caseLink ? `Existing review: ${caseLink.agent_status ?? "preparing"}.` : "No case loaded for this episode. Reload after the worker scans."} Editing does not restart an existing review.</p>{caseLink && <a href={`#/cases/${caseLink.id}/journey`}>Open saved case journey →</a>}<button className="text-button" onClick={() => { setEpisode((e) => ({ ...e, source_episode_ref: "", version: 0, request_id: crypto.randomUUID() })); setMessage("Copied into a fresh synthetic patient episode. Adjust dates and save to begin a new journey."); }}>Copy into a new test episode</button></div>}
+      <section className="panel sim-section"><div className="sim-heading"><div><p className="eyebrow">PATIENT RECORD + SCHEDULE</p><h2>{episode.source_episode_ref ? "Edit test episode" : episode.patient_id ? "New appointment for " + episode.display_alias : "New test episode"}</h2></div><button className="secondary" onClick={() => { setEpisode(blankEpisode()); setMessage(""); }}>New episode</button></div>
+        <label className="sim-label">Open a saved episode<select value={episode.source_episode_ref} onChange={(e) => { const row = snapshot.episodes.find((r) => r.source_episode_ref === e.target.value); if (row) selectEpisode(row); else setEpisode(blankEpisode()); }}><option value="">New test episode</option>{snapshot.episodes.map((e) => <option key={e.source_episode_ref} value={e.source_episode_ref}>{e.display_alias} · {displayDate(e.scheduled_at || e.due_at)} · {labels[e.specialty]} · {e.source_episode_ref.slice(-8)}</option>)}</select></label>
+        {episode.source_episode_ref && <div className="sim-record"><small>{episode.source_episode_ref} · revision {episode.version}</small><p>{caseLink ? `Existing review: ${caseLink.agent_status ?? "preparing"}.` : "No case loaded for this episode. Reload after the worker scans."} Editing does not restart an existing review.</p>{caseLink && <a href={`#/cases/${caseLink.id}/journey`}>Open saved case journey →</a>}<button className="secondary" onClick={() => newAppointment(episode)}>Add another appointment for this patient</button></div>}
         <form onSubmit={saveEpisode}>
-          <label className="sim-label">Patient alias<input value={episode.display_alias} maxLength={90} required disabled={!!episode.source_episode_ref} onChange={(e) => setEpisode({ ...episode, display_alias: e.target.value })} /></label>
+          {!episode.source_episode_ref && <label className="sim-label">Patient<select value={episode.patient_id} onChange={(e) => { const patient = patients.find((p) => p.patient_id === e.target.value); if (patient) newAppointment(patient); else { setEpisode(blankEpisode()); setMessage(""); } }}><option value="">Create a new test patient</option>{patients.map((p) => <option key={p.patient_id} value={p.patient_id}>{p.display_alias}</option>)}</select></label>}
+          {!episode.source_episode_ref && <p className="small">A new appointment gets its own follow-up case when scheduled within the next 7 days. Dates further ahead become eligible later. If this patient is connected to the WhatsApp test phone, new reminders are sent automatically while the reply window is active.</p>}
+          <label className="sim-label">Patient alias<input value={episode.display_alias} maxLength={90} required disabled={!!episode.source_episode_ref || !!episode.patient_id} onChange={(e) => setEpisode({ ...episode, display_alias: e.target.value })} /></label>
           <div className="sim-two"><label className="sim-label">Specialty<select value={episode.specialty} onChange={(e) => setEpisode({ ...episode, specialty: e.target.value as Specialty })}>{specialties.map((s) => <option key={s} value={s}>{labels[s]}</option>)}</select></label><label className="sim-label">Record type<select value={episode.record_type} onChange={(e) => preset(e.target.value === "recall" ? "overdue" : "upcoming")}><option value="appointment">Appointment</option><option value="recall">Routine recall</option></select></label></div>
           <div className="sim-presets" aria-label="Schedule examples"><span>Quick examples:</span><button type="button" className="secondary" onClick={() => preset("upcoming")}>Upcoming</button><button type="button" className="secondary" onClick={() => preset("missed")}>Missed</button><button type="button" className="secondary" onClick={() => preset("overdue")}>Overdue recall</button></div>
           <div className="sim-two"><label className="sim-label">Status<select value={episode.source_status} onChange={(e) => setEpisode({ ...episode, source_status: e.target.value })}>{(episode.record_type === "recall" ? ["due", "cancelled", "completed"] : ["scheduled", "no_show", "cancelled", "completed"]).map((s) => <option key={s} value={s}>{s === "no_show" ? "Missed (no-show)" : s[0].toUpperCase() + s.slice(1)}</option>)}</select></label><label className="sim-label">{episode.record_type === "recall" ? "Recall due" : "Appointment time"} (SGT)<input type="datetime-local" required value={(episode.record_type === "recall" ? episode.due_at : episode.scheduled_at) ?? ""} onChange={(e) => setEpisode({ ...episode, [episode.record_type === "recall" ? "due_at" : "scheduled_at"]: e.target.value })} /></label></div>
@@ -94,7 +101,7 @@ export function ClinicSimulator({ onBack }: { onBack: () => void }) {
           <label className="sim-label">Doctor note / preparation instruction<textarea rows={4} maxLength={400} value={episode.doctor_note} placeholder="For example: Bring your current spectacles." onChange={(e) => setEpisode({ ...episode, doctor_note: e.target.value })} /></label>
           <label className="sim-check"><input type="checkbox" checked={episode.note_approved} onChange={(e) => setEpisode({ ...episode, note_approved: e.target.checked })} /> Mark this text approved for the synthetic demonstration</label><p className="small">Only approved text is returned by the preparation-instructions API. This checkbox is a test fixture, not clinical approval.</p>
           <label className="sim-label">Prerequisite status<select value={episode.prerequisite} onChange={(e) => setEpisode({ ...episode, prerequisite: e.target.value })}><option value="NOT_APPLICABLE">No prerequisite to check</option><option value="STAFF_REVIEW_REQUIRED">Clinic staff must review a prerequisite</option></select></label>
-          <button className="primary">{episode.source_episode_ref ? "Save episode changes" : "Save new test episode"}</button>
+          <button className="primary">{episode.source_episode_ref ? "Save episode changes" : episode.patient_id ? "Save new appointment" : "Save new test episode"}</button>
         </form>
       </section>
       <section className="panel sim-section"><div className="sim-heading"><div><p className="eyebrow">APPOINTMENT AVAILABILITY</p><h2>{slot.id ? "Edit slot" : "Add available slot"}</h2></div>{slot.id && <button className="secondary" onClick={() => setSlot(blankSlot())}>New slot</button>}</div><p>Slots belong to the specialty. A clinic-context read returns up to 10 future available slots for that specialty.</p>
@@ -109,6 +116,6 @@ export function ClinicSimulator({ onBack }: { onBack: () => void }) {
         </div>
       </section>
     </div></fieldset>
-    <p className="sim-footnote">The simulator stores source records separately from forget-lah. Changes appear on the next source read; previously saved traces retain the evidence used at that time. A new test episode creates a separate synthetic patient record and case.</p>
+    <p className="sim-footnote">The simulator stores source records separately from forget-lah. Changes appear on the next source read; previously saved traces retain the evidence used at that time. A new appointment gets a separate case when eligible. Selecting an existing patient preserves their identity and saved preferences.</p>
   </main>;
 }

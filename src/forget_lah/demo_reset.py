@@ -1,4 +1,4 @@
-"""Explicitly enabled local demo reset. Never clears identities or usage accounting."""
+"""Explicitly enabled synthetic demo reset. Preserves identities and usage accounting."""
 
 import secrets
 from typing import Literal
@@ -11,6 +11,12 @@ from sqlalchemy import delete, select, text
 from sqlalchemy.exc import DBAPIError
 
 from forget_lah.auth import digest
+from forget_lah.channel_models import (
+    ChannelBinding,
+    ChannelInbox,
+    ChannelOutbox,
+    ChannelRoutingState,
+)
 from forget_lah.db import AuditEvent, FollowupCase, Job, Patient, utcnow
 from forget_lah.detector import save_candidate, trigger_for
 from forget_lah.runtime.models import (
@@ -31,6 +37,7 @@ DEMO_EPISODES = {
     "DEMO-ANTENATAL-VISIT-01": "20000000-0000-4000-8000-000000000003",
 }
 RESET_MODELS = (
+    ChannelRoutingState,
     SimulatedMessage,
     AgentDelegation,
     AgentEvent,
@@ -55,7 +62,7 @@ class ResetInput(BaseModel):
 def reset_enabled(settings, clinics):
     return (
         settings.demo_reset_enabled
-        and settings.app_env in {"local", "test"}
+        and settings.app_env in {"local", "test", "demo"}
         and DEMO_CLINIC_ID in clinics
     )
 
@@ -68,10 +75,18 @@ def validate_candidates(candidates):
         or len(refs) != len(candidates)
     ):
         raise ValueError("Expected a complete, unique local simulator snapshot")
+    synthetic_patients = set(DEMO_EPISODES.values())
+    for c in candidates:
+        if c.source_episode_ref.startswith("SIM-"):
+            original_patient = str(UUID(c.source_episode_ref[4:]))
+            if str(c.patient_id) == original_patient:
+                synthetic_patients.add(original_patient)
     for c in candidates:
         expected_patient = DEMO_EPISODES.get(c.source_episode_ref)
         if expected_patient is None and c.source_episode_ref.startswith("SIM-"):
-            expected_patient = str(UUID(c.source_episode_ref[4:]))
+            UUID(c.source_episode_ref[4:])
+            if str(c.patient_id) in synthetic_patients:
+                expected_patient = str(c.patient_id)
         if str(c.patient_id) != expected_patient or not c.display_alias.endswith("(demo)"):
             raise ValueError("Unexpected synthetic candidate")
 
@@ -80,7 +95,16 @@ def lock_reset_tables(db):
     if db.bind.dialect.name == "postgresql":
         # No network calls while locked. NOWAIT avoids a deadlock with a worker/API
         # transaction; the caller returns a retryable conflict without deleting data.
-        tables = ", ".join(model.__tablename__ for model in RESET_MODELS)
+        tables = ", ".join(
+            model.__tablename__
+            for model in (
+                ChannelBinding,
+                ChannelInbox,
+                ChannelOutbox,
+                ChannelRoutingState,
+                *RESET_MODELS,
+            )
+        )
         db.execute(text(f"LOCK TABLE {tables} IN ACCESS EXCLUSIVE MODE NOWAIT"))
     elif db.bind.dialect.name == "sqlite":
         # Test/local SQLite acquires its writer lock before reading the generation.
@@ -118,6 +142,32 @@ def reset_demo(db, expected_case_ids, candidates):
         raise HTTPException(
             409, "A review is queued or processing. Pause active reviews, then reset."
         )
+    if db.scalar(select(ChannelOutbox.id).where(ChannelOutbox.status == "sending").limit(1)):
+        raise HTTPException(409, "A WhatsApp dispatch is in progress. Wait before resetting.")
+    # Preserve explicit patient enrollment, never infer it from a name or phone.
+    enrolled = []
+    by_id = {case.id: case for case in cases}
+    for binding in db.scalars(
+        select(ChannelBinding).where(ChannelBinding.clinic_id == DEMO_CLINIC_ID)
+    ):
+        anchor = by_id.get(binding.case_id)
+        if binding.enabled and anchor:
+            enrolled.append((binding.id, anchor.patient_id, anchor.source_episode_ref))
+        binding.enabled = False
+    for message in db.scalars(
+        select(ChannelOutbox).where(ChannelOutbox.clinic_id == DEMO_CLINIC_ID)
+    ):
+        message.body = ""
+        if message.status == "queued":
+            message.status = "canceled"
+    for incoming in db.scalars(
+        select(ChannelInbox).where(ChannelInbox.clinic_id == DEMO_CLINIC_ID)
+    ):
+        incoming.body = ""
+        if incoming.status == "queued":
+            incoming.status = "reset"
+    # Provider SID tombstones remain to reject redelivery after reset. Old case IDs
+    # remain historical; only the binding moves to the same patient in the new generation.
     deleted = {}
     for model in RESET_MODELS:
         deleted[model.__tablename__] = db.execute(
@@ -131,7 +181,34 @@ def reset_demo(db, expected_case_ids, candidates):
         for c in candidates
         if (trigger := trigger_for(c, now))
     ]
-    return {"status": "reset", "case_ids": new_ids, "deleted": deleted}
+    restored = []
+    for binding_id, patient_id, episode_ref in enrolled:
+        matches = list(
+            db.scalars(
+                select(FollowupCase)
+                .where(
+                    FollowupCase.clinic_id == DEMO_CLINIC_ID,
+                    FollowupCase.patient_id == patient_id,
+                    FollowupCase.id.in_(new_ids),
+                )
+                .order_by(FollowupCase.created_at, FollowupCase.id)
+            )
+        )
+        if not matches:
+            continue  # Never connect a different patient if this one is no longer eligible.
+        anchor = next(
+            (case for case in matches if case.source_episode_ref == episode_ref), matches[0]
+        )
+        binding = db.get(ChannelBinding, binding_id)
+        binding.case_id, binding.enabled, binding.created_at = anchor.id, True, now
+        # inbound_at is real channel evidence, not reset time; preserve its expiry.
+        restored.append(anchor.id)
+    return {
+        "status": "reset",
+        "case_ids": new_ids,
+        "deleted": deleted,
+        "whatsapp_case_ids": restored,
+    }
 
 
 def install_demo_routes(app, factory, settings, authorise):

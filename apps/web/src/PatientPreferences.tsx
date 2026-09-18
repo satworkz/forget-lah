@@ -14,6 +14,12 @@ export function PatientPreferences({ caseId, version, preferences, onSaved, disa
   const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [language, setLanguage] = useState(String(preferences.records?.find(r => r.key === "preferred_language" && r.status === "active")?.value ?? "en"));
+  async function saveLanguage() {
+    setBusy(true); setError("");
+    try { await api(`/api/cases/${caseId}/language`, {method: "POST", headers: mutationHeaders(), body: JSON.stringify({expected_case_version: version, language})}); await onSaved(); }
+    catch (e) { setError((e as Error).message); } finally { setBusy(false); }
+  }
   async function save(clear: boolean) {
     setBusy(true); setError("");
     try {
@@ -40,6 +46,9 @@ export function PatientPreferences({ caseId, version, preferences, onSaved, disa
   }
   return <details className="agent-actions">
     <summary>Patient preferences and concerns</summary>
+    <label>Preferred patient language<select value={language} onChange={e => setLanguage(e.target.value)}><option value="en">English</option><option value="zh">中文 · Chinese</option><option value="ms">Bahasa Melayu · Malay</option><option value="ta">தமிழ் · Tamil</option></select></label>
+    <button className="secondary" disabled={disabled || busy} onClick={() => void saveLanguage()}>Save language preference</button>
+    <p className="small">Applies to new messages and future follow-ups. Requires multilingual mode on this deployment. Previous messages stay unchanged.</p>
     <p>Optional Singapore appointment times. A request for this visit overrides these preferences. Changing or forgetting them does not change any booking.</p>
     <p className="small">Synthetic conversation only. Recurring scheduling restrictions can be saved from the patient’s statement. This is editable memory, not model training.</p>
     {!!preferences.excluded_minutes?.length && <p><strong>Times to avoid:</strong> {preferences.excluded_minutes.map(clock).join(", ")} SGT</p>}

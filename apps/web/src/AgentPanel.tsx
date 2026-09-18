@@ -12,6 +12,7 @@ type Step = {
   goal: string;
   event_kind: string;
   error_code: string | null;
+  validation_failures?: unknown[];
   decision: Record<string, unknown> | null;
   policy: { decision: string; risk: string; reason_codes: string[] } | null;
   tool_result: {
@@ -51,8 +52,8 @@ type View = {
     status: string;
     evidence_ids: string[];
   }[];
-  events: { id: string; kind: string; content: string; created_at: string }[];
-  patient_simulator: { available: boolean; enabled: boolean; messages: { id: string; kind: string; body: string; created_at: string }[] };
+  events: { id: string; kind: string; content: string; created_at: string; channel?: string }[];
+  patient_simulator: { available: boolean; enabled: boolean; messages: { id: string; kind: string; body: string; created_at: string; delivery_status?: string | null }[] };
   handoff: {
     reason_code: string;
     risk: string;
@@ -158,8 +159,8 @@ export function AgentPanel({
 
   const run = view?.run;
   const conversation = view ? [
-    ...(view.patient_simulator?.messages ?? []).map(m => ({...m, text: m.body, label: m.kind === "reminder" ? "Clinic reminder · simulated" : m.kind === "options" ? "Clinic availability update · simulated" : m.kind === "clarification" ? "Clinic question · simulated" : m.kind === "preference_saved" ? "Scheduling preference saved · simulated" : "Clinic acknowledgement · simulated"})),
-    ...view.events.filter(e => e.kind === "demo_reply").map(e => ({...e, text: e.content, label: "Patient reply · simulated"})),
+    ...(view.patient_simulator?.messages ?? []).map(m => ({...m, text: m.body, label: m.delivery_status ? `Clinic · WhatsApp test · ${m.delivery_status}` : m.kind === "reminder" ? "Clinic reminder · simulated" : m.kind === "options" ? "Clinic availability update · simulated" : m.kind === "clarification" ? "Clinic question · simulated" : m.kind === "preference_saved" ? "Scheduling preference saved · simulated" : "Clinic acknowledgement · simulated"})),
+    ...view.events.filter(e => e.kind === "demo_reply").map(e => ({...e, text: e.content, label: e.channel === "whatsapp_test" ? "Patient reply · WhatsApp test phone" : "Patient reply · simulated"})),
   ].sort((a,b) => a.created_at.localeCompare(b.created_at)) : [];
   async function freshSimulation() {
     if (!view || busy) return;
@@ -187,8 +188,7 @@ export function AgentPanel({
         {reviewMode === "mock"
           ? "Decisions follow a deterministic demo script. Source reads, saved progress and permission checks really run."
           : "Decisions use the configured Claude provider. A failed model call pauses or retries; it never switches to simulation."}{" "}
-        All records and replies here are fictional. Simulated messages stay in this dashboard;
-        no real messages or booking changes are sent.
+        All clinic records are synthetic. Dashboard messages remain simulated unless explicitly connected to the WhatsApp test phone; delivery status is shown on each connected message.
       </p>
       {run && run.mode !== modelMode && (
         <p className="muted">
@@ -320,7 +320,7 @@ export function AgentPanel({
                   {view.handoff.reason_code === "NO_AVAILABLE_SLOTS" && <p>The clinic source currently lists no available slots. The existing appointment has not been changed. Staff can help arrange a suitable time.</p>}
                   {view.handoff.callback && <div>
                     <p><strong>Attendance: {view.plan?.attendance ?? "Check source evidence"}</strong></p>
-                    <p><strong>{view.handoff.callback.topic === "preparation" ? "Preparation help" : "Blood-test question"}: {view.handoff.callback.status === "resolved" ? "Resolved by staff" : "Awaiting clinic response"}</strong></p>
+                    <p><strong>{view.handoff.callback.topic === "preparation" ? "Preparation help" : "Patient question"}: {view.handoff.callback.status === "resolved" ? "Resolved by staff" : "Awaiting clinic response"}</strong></p>
                     <p>Patient asked: {view.handoff.callback.question}</p>
                     <p>Callback {view.handoff.callback.status}. Accepting ownership does not resolve the question.</p>
                     {view.handoff.callback.resolution && <p>Recorded contact outcome: {view.handoff.callback.resolution}</p>}
@@ -464,6 +464,13 @@ export function AgentPanel({
                     )}
                     {step.error_code && (
                       <p className="error">{readable(step.error_code)}</p>
+                    )}
+                    {!!step.validation_failures?.length && (
+                      <details>
+                        <summary>Inspect rejected proposal and validation errors</summary>
+                        <p className="small">These proposals were rejected before policy or tool execution.</p>
+                        <pre>{JSON.stringify(step.validation_failures, null, 2)}</pre>
+                      </details>
                     )}
                     {step.decision && (
                       <details>

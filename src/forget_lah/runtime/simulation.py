@@ -254,9 +254,14 @@ def simulation_evidence(db, run):
         and context.sequence > run.checkpoint.get("delegation_start", 0)
         and run.active_role == "engagement"
         and future_scheduled(context.tool_result["data"])
-        and reminder_source
-        and reminder_source.tool_result["data"].get("scheduled_at")
-        == context.tool_result["data"]["scheduled_at"]
+        and (
+            run.checkpoint.get("reopened_from_run_id")
+            or (
+                reminder_source
+                and reminder_source.tool_result["data"].get("scheduled_at")
+                == context.tool_result["data"]["scheduled_at"]
+            )
+        )
     ):
         result["attendance_review"] = {
             "reply_event_id": patient_reply.id,
@@ -482,10 +487,15 @@ def save_acknowledgement(db, run):
     quoted_answers = {
         (a.get("instruction_id"), a.get("quote"))
         for a in run.checkpoint.get("question_answers", [])
-        if a.get("outcome") == "ANSWERED"
+        if a.get("outcome") in {"ANSWERED", "GUIDANCE"}
     }
     remaining_notes = [
-        n for n in notes if (n["instruction_id"], n["approved_text"]) not in quoted_answers
+        n
+        for n in notes
+        if not any(
+            ident == n["instruction_id"] and quote and quote in n["approved_text"]
+            for ident, quote in quoted_answers
+        )
     ]
     if remaining_notes:
         body += "\n\nClinic instructions:\n" + "\n".join(
@@ -633,7 +643,16 @@ def message_dict(row):
     return {
         "id": row.id,
         "kind": row.kind,
-        "body": row.body,
+        "body": row.translation.get(
+            "body",
+            "Translation needs staff attention; this message has not been sent."
+            if row.translation.get("status") == "failed"
+            else "Translation is being prepared; this message has not been sent.",
+        )
+        if row.translation
+        else row.body,
+        "original_body": row.body,
+        "translation": row.translation,
         "created_at": at.isoformat(),
         "source_version": row.source_version,
         "evidence": row.evidence,

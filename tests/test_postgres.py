@@ -202,7 +202,7 @@ def test_postgres_migration_preserves_existing_cases_and_creates_budget(postgres
     with factory() as db:
         assert set(db.scalars(select(FollowupCase.id))) == before
         assert len(before) == 3
-        assert db.scalar(text("SELECT version_num FROM alembic_version")) == "0006"
+        assert db.scalar(text("SELECT version_num FROM alembic_version")) == "0009"
         assert db.get(ModelBudget, "organiser").calls == 0
     # No differences between the explicit migration and mapped runtime schema.
     from alembic.autogenerate import compare_metadata

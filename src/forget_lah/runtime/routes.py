@@ -7,6 +7,7 @@ from sqlalchemy import select
 
 from forget_lah.agents import StrictModel
 from forget_lah.auth import digest
+from forget_lah.channel_models import ChannelInbox, ChannelOutbox
 from forget_lah.db import AuditEvent, FollowupCase, Patient, Principal, uid, utcnow
 from forget_lah.runtime.adaptation import plan_summary, preferences_for
 from forget_lah.runtime.engine import abort_delegation, as_utc, release
@@ -52,6 +53,10 @@ class StartRunInput(StartInput):
 
 class MemoryInput(StartInput):
     resume_contact: bool = False
+
+
+class LanguageInput(StartInput):
+    language: Literal["en", "zh", "ms", "ta"]
 
 
 class PreferenceInput(StartInput):
@@ -158,6 +163,7 @@ def install_routes(app, factory, settings, authorise):
                     "policy": step.policy,
                     "tool_result": step.tool_result,
                     "error_code": step.error_code,
+                    "validation_failures": step.validation_failures or [],
                     "input_tokens": step.input_tokens,
                     "output_tokens": step.output_tokens,
                     "latency_ms": step.latency_ms,
@@ -186,6 +192,9 @@ def install_routes(app, factory, settings, authorise):
                     "kind": e.kind,
                     "content": e.content,
                     "created_at": as_utc(e.created_at).isoformat(),
+                    "channel": "whatsapp_test"
+                    if db.scalar(select(ChannelInbox.sid).where(ChannelInbox.event_id == e.id))
+                    else "patient_simulator",
                 }
                 for e in db.scalars(
                     select(AgentEvent)
@@ -215,7 +224,12 @@ def install_routes(app, factory, settings, authorise):
                 "available": settings.simulation_configured and case.clinic_id == DEMO_CLINIC_ID,
                 "enabled": bool(run and simulation_enabled(run)),
                 "messages": [
-                    message_dict(m)
+                    {
+                        **message_dict(m),
+                        "delivery_status": db.scalar(
+                            select(ChannelOutbox.status).where(ChannelOutbox.message_id == m.id)
+                        ),
+                    }
                     for m in db.scalars(
                         select(SimulatedMessage)
                         .where(SimulatedMessage.run_id == run.id)
@@ -485,6 +499,7 @@ def install_routes(app, factory, settings, authorise):
                         "response_parts",
                         "needs_reviewed",
                         "patient_questions",
+                        "patient_task_types",
                         "appointment_intent",
                         "question_answers",
                         "question_review_step_id",
@@ -510,6 +525,57 @@ def install_routes(app, factory, settings, authorise):
             else:
                 release(run, "queued", delay=0)
             return {"event_id": event_id, "status": run.status}
+
+    @app.post("/api/cases/{case_id}/language")
+    def save_language(case_id: str, body: LanguageInput, request: Request):
+        with factory.begin() as db:
+            user, clinics = identity(db, request)
+            case = scoped_case(db, case_id, clinics, lock=True)
+            if case.clinic_id != DEMO_CLINIC_ID or not settings.translation_configured:
+                raise HTTPException(403, "Multilingual demonstration is not enabled")
+            run = latest_run(db, case.id)
+            if case.case_version != body.expected_case_version or (
+                run and run.status in {"queued", "running"}
+            ):
+                raise HTTPException(409, "Case is changing; refresh after processing finishes")
+            for row in db.scalars(
+                select(PatientMemory).where(
+                    PatientMemory.clinic_id == case.clinic_id,
+                    PatientMemory.patient_id == case.patient_id,
+                    PatientMemory.key.in_(["preferred_language", "excluded_languages"]),
+                    PatientMemory.status.in_(["active", "pending"]),
+                )
+            ):
+                row.status = "superseded"
+            event_id = uid()
+            db.add(
+                PatientMemory(
+                    clinic_id=case.clinic_id,
+                    patient_id=case.patient_id,
+                    case_id=case.id,
+                    key="preferred_language",
+                    value={"value": body.language},
+                    scope="future",
+                    status="active",
+                    quote="Staff recorded the test patient's preferred language.",
+                    message_id=event_id,
+                    step_id=event_id,
+                )
+            )
+            db.add(
+                AuditEvent(
+                    clinic_id=case.clinic_id,
+                    case_id=case.id,
+                    event_type="PATIENT_LANGUAGE_SAVED:" + event_id,
+                    details={
+                        "actor_id": user.id,
+                        "language": body.language,
+                        "note": "Explicit staff test preference for current and future follow-ups; past messages unchanged.",
+                    },
+                )
+            )
+            case.case_version += 1
+            return {"case_version": case.case_version}
 
     @app.post("/api/cases/{case_id}/preferences")
     def save_preferences(case_id: str, body: PreferenceInput, request: Request):

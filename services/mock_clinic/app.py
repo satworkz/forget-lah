@@ -111,23 +111,30 @@ def create_app(settings=None, engine=None):
 
     @app.post("/internal/admin/episodes", status_code=201)
     def create_episode(body: CreateEpisode):
-        ref, patient_id = f"SIM-{body.request_id}", str(body.request_id)
+        ref = f"SIM-{body.request_id}"
+        patient_id = str(body.patient_id or body.request_id)
         try:
             with factory.begin() as db:
                 if db.bind.dialect.name == "postgresql":
                     db.execute(text("SELECT pg_advisory_xact_lock(76139002)"))
                 if db.scalar(select(func.count()).select_from(Episode)) >= 200:
                     raise HTTPException(409, "Local simulator limit is 200 episodes")
-                alias = body.display_alias
-                if not alias.endswith("(demo)"):
-                    alias += " (demo)"
-                db.add(Patient(id=patient_id, display_alias=alias))
+                if body.patient_id:
+                    if not db.get(Patient, patient_id):
+                        raise HTTPException(
+                            404, "Synthetic patient not found. Reload the simulator."
+                        )
+                else:
+                    alias = body.display_alias
+                    if not alias.endswith("(demo)"):
+                        alias += " (demo)"
+                    db.add(Patient(id=patient_id, display_alias=alias))
                 db.flush()
                 db.add(
                     Episode(
                         ref=ref,
                         patient_id=patient_id,
-                        **body.model_dump(exclude={"request_id", "display_alias"}),
+                        **body.model_dump(exclude={"request_id", "display_alias", "patient_id"}),
                     )
                 )
         except IntegrityError as exc:

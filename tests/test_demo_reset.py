@@ -17,10 +17,10 @@ from forget_lah.source import DEMO_CLINIC_ID, candidates_from_payload
 from services.mock_clinic.fixtures import candidates
 
 
-@pytest.fixture
-def reset_app(store, monkeypatch):
+@pytest.fixture(params=["test", "demo"])
+def reset_app(store, monkeypatch, request):
     engine, factory = store
-    settings = Settings(database_url="sqlite://", app_env="test", demo_reset_enabled=True)
+    settings = Settings(database_url="sqlite://", app_env=request.param, demo_reset_enabled=True)
     detect(factory, DEMO_CLINIC_ID, candidates_from_payload(candidates()))
     monkeypatch.setattr(
         "forget_lah.demo_reset.read_candidates", lambda _: candidates_from_payload(candidates())

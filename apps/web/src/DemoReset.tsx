@@ -31,10 +31,11 @@ export function DemoReset({ caseIds, onReset }: { caseIds: string[]; onReset: ()
     }}>Reset demo data</button>}
     {success && <p role="status">Case history was reset from the saved clinic source. Eligible episodes will be reviewed automatically.</p>}
     {open && <form className="demo-reset-confirm" onSubmit={reset} aria-labelledby="demo-reset-title">
-      <p className="eyebrow">LOCAL DEMO ONLY</p>
+      <p className="eyebrow">SYNTHETIC DEMO ONLY</p>
       <h2 id="demo-reset-title">Start with fresh demo data?</h2>
       <p>This permanently removes the demo clinic’s patient references, cases, reviews, decisions, replies and handoffs, then recreates eligible cases from the current clinic simulator records.</p>
       <p>Simulator schedules, slots and notes are preserved, as are your login, API settings and usage accounting. New automatic reviews may call Claude. Pause any queued or processing reviews first.</p>
+      <p>A connected WhatsApp test phone stays linked to the same patient’s recreated cases. New reminders are sent automatically while the WhatsApp reply window is active. A disconnected phone stays disconnected. Provider message identifiers are retained to prevent duplicate replies being replayed.</p>
       <label htmlFor="reset-confirmation">Type RESET to confirm</label>
       <input id="reset-confirmation" value={confirmation} onChange={e => setConfirmation(e.target.value)} autoComplete="off" disabled={busy} />
       <div className="agent-actions">
