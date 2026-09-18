@@ -444,19 +444,44 @@ def prompt_schema_for(observation):
     choices = schema.get("anyOf", [])
     if not choices:
         return schema
-    common = {key: choices[0]["properties"][key] for key in ("request_id", "expected_case_version")}
+    common = {
+        key: value
+        for key, value in choices[0]["properties"].items()
+        if all(
+            key in choice["required"] and choice["properties"].get(key) == value
+            for choice in choices
+        )
+    }
     for choice in choices:
         choice.pop("additionalProperties", None)
         for key in common:
             choice["properties"].pop(key, None)
         choice["required"] = [key for key in choice["required"] if key not in common]
-    return {
-        "type": "object",
-        "properties": common,
-        "required": list(common),
-        "anyOf": choices,
-        "unevaluatedProperties": False,
-    }
+
+    def compact(value):
+        if isinstance(value, list):
+            return [compact(item) for item in value]
+        if not isinstance(value, dict):
+            return value
+        # const/enum already constrain the type. Task descriptions repeat the
+        # instructions; retain their limits and every structural constraint.
+        result = {key: compact(item) for key, item in value.items()}
+        if "const" in result or "enum" in result:
+            result.pop("type", None)
+        description = result.get("description", "")
+        if " Limits:" in description:
+            result["description"] = "Limits:" + description.split(" Limits:", 1)[1]
+        return result
+
+    return compact(
+        {
+            "type": "object",
+            "properties": common,
+            "required": list(common),
+            "anyOf": choices,
+            "unevaluatedProperties": False,
+        }
+    )
 
 
 def prompt_for(observation: dict, repair: bool, *, native=False) -> str:

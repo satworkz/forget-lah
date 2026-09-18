@@ -151,3 +151,10 @@ Conversation history helps interpret short replies in any supported language, bu
 Retry identity: native model output schemas bind reply_event_id to the original saved patient reply, even when a staff retry/timer has a different event ID. Text-provider instructions carry the same distinction, and the gateway still verifies the binding. Retrying never manufactures a new patient response.
 
 Validation and rollout: the affected runtime, memory, channel, provider, question, simulation and adaptation suites passed (one PostgreSQL-only check skipped without TEST_DATABASE_URL); final provider schema checks passed. Live Anthropic Tamil language-switch/confirmation flows passed both normally and through pause/retry, each with one source confirmation and no handoff. AWS deployment completed, and Alex's original saved Tamil confirmation was resumed through audited staff retry. Source-confirmed outcome completed and the Tamil acknowledgement was delivered over WhatsApp. No reset or fabricated patient reply was used.
+
+
+### CI request-size regression
+
+The constraint-search/booking test now fixes the organiser HTTP request limit at the shipped 8,000 bytes instead of inheriting a private developer environment override. The text-gateway schema factors identical required fields across branches, omits redundant types already enforced by const/enum, and removes task-description duplication while preserving field limits. Native Anthropic schemas, patient context, canonical validation and policy checks are unchanged. The request-size guard still counts the complete UTF-8 HTTP body and rejects oversized requests before network access.
+
+Validation: full Linux/Python 3.12 backend suite with PostgreSQL and no private .env passed: 358 passed, 2 opt-in live-model tests skipped. Ruff and formatting checks passed. The largest serialized organiser request in the booking regression was 7,654 bytes, below the unchanged 8,000-byte cap. GitHub Actions must be rerun after these changes are pushed.

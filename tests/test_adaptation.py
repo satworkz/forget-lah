@@ -91,6 +91,7 @@ def test_constraint_search_and_booking(simulated_runtime):
 
     settings = runtime[2].model_copy(
         update={
+            "agent_request_max_bytes": 8000,  # CI/default limit, independent of private .env.
             "llm_gateway_url": "https://gateway.example",
             "llm_gateway_api_key": SecretStr("test-only"),
         }

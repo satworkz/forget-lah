@@ -465,3 +465,25 @@ def test_retry_schema_binds_original_patient_reply_not_wake_event():
             found = True
             assert prop == {"type": "string", "const": original}
     assert found
+
+
+def test_gateway_schema_compaction_preserves_fields_bindings_and_limits():
+    from forget_lah.runtime.provider import prompt_schema_for
+
+    obs = {
+        **observation(),
+        "simulation": {"enabled": True},
+        "latest_event": {"id": uid(), "kind": "demo_reply", "content": "Yes"},
+    }
+    native = response_schema_for(obs)["properties"]["decision"]["anyOf"]
+    compact = prompt_schema_for(obs)
+    assert compact["properties"]["reply_event_id"]["const"] == obs["latest_event"]["id"]
+    for original, branch in zip(native, compact["anyOf"], strict=True):
+        assert set(original["properties"]) == set(compact["properties"]) | set(branch["properties"])
+        assert set(original["required"]) == set(compact["required"]) | set(branch["required"])
+    needs = next(
+        b for b in compact["anyOf"] if b["properties"]["step_type"]["const"] == "REVIEW_NEEDS"
+    )
+    assert "items<=3" in needs["properties"]["preparation_plans"]["description"]
+    assert needs["properties"]["updates"]["items"]["additionalProperties"] is False
+    assert compact["unevaluatedProperties"] is False
