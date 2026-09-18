@@ -13,6 +13,7 @@ from sqlalchemy import select, text
 
 from forget_lah.agents import AGENT_CATALOG
 from forget_lah.auth import authenticate, digest, session_principal
+from forget_lah.channel import WEBHOOK, install_channel_routes
 from forget_lah.db import (
     AuditEvent,
     Clinic,
@@ -104,7 +105,7 @@ def create_app(settings: Settings | None = None, engine=None) -> FastAPI:
 
     @app.middleware("http")
     async def local_security(request: Request, call_next):
-        if request.method not in {"GET", "HEAD", "OPTIONS"}:
+        if request.method not in {"GET", "HEAD", "OPTIONS"} and request.url.path != WEBHOOK:
             if request.headers.get("origin") != settings.public_origin:
                 from fastapi.responses import JSONResponse
 
@@ -141,7 +142,7 @@ def create_app(settings: Settings | None = None, engine=None) -> FastAPI:
     def ready():
         try:
             with factory() as db:
-                if db.scalar(text("SELECT version_num FROM alembic_version")) != "0006":
+                if db.scalar(text("SELECT version_num FROM alembic_version")) != "0009":
                     raise ValueError("Agent migration is required")
                 db.execute(select(Clinic.id).limit(1))
                 db.execute(select(AgentRun.id).limit(1))
@@ -284,6 +285,7 @@ def create_app(settings: Settings | None = None, engine=None) -> FastAPI:
             ]
 
     install_routes(app, factory, settings, authorise)
+    install_channel_routes(app, factory, settings, authorise)
     install_demo_routes(app, factory, settings, authorise)
     install_simulator_routes(app, factory, settings, authorise)
     return app

@@ -45,6 +45,7 @@ class EpisodeInput(Strict):
 
 class CreateEpisode(EpisodeInput):
     request_id: UUID
+    patient_id: UUID | None = None
     display_alias: str = Field(min_length=1, max_length=90)
 
 

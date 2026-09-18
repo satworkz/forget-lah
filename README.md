@@ -1,5 +1,9 @@
 # forget-lah
 
+**Team testing release:** [Staff workspace, AWS reset, WhatsApp test-phone setup and four-language messages](docs/TEAM_CLOUD_TESTING.md). Staff pages are the default; Developer testing preserves detailed traces and simulator controls. All clinic records and appointment writes remain synthetic.
+
+**Hosted demo:** [Singapore AWS deployment](docs/AWS_DEMO.md) documents the HTTPS synthetic demo and separate cloud staff login. Local Windows and Ubuntu commands below remain unchanged.
+
 **Current feature reference:** [Feature guide and patient memory](docs/FEATURE_GUIDE.md) documents implemented behavior, all demo capabilities, preference tests and remaining limitations. Migration `0006` extends time preferences to attributed patient concerns; this supersedes earlier time-only descriptions.
 
 Patient follow-up with a clear next step. NUS-ISS Show Me Your Agents hackathon.

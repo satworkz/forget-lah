@@ -6,7 +6,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=None, extra="ignore")
-    app_env: Literal["local", "test"] = "local"
+    app_env: Literal["local", "test", "demo"] = "local"
     database_url: SecretStr
     public_origin: str = "http://localhost:8080"
     mock_clinic_url: str = "http://mock-clinic:8001"
@@ -14,6 +14,17 @@ class Settings(BaseSettings):
     mock_clinic_followup_key: SecretStr | None = None
     patient_simulator_enabled: bool = False
     demo_reset_enabled: bool = False
+    whatsapp_enabled: bool = False
+    multilingual_enabled: bool = False
+
+    @property
+    def translation_configured(self) -> bool:
+        return (
+            self.multilingual_enabled
+            and self.agent_model_mode == "anthropic"
+            and self.model_configured
+        )
+
     agent_auto_start_enabled: bool = True
     session_hours: int = 4
     demo_staff_email: str = "staff@forget-lah.example"

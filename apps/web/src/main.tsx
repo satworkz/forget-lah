@@ -4,6 +4,8 @@ import { CaseJourney } from "./CaseJourney";
 import { ClinicSimulator } from "./ClinicSimulator";
 import { DemoReset } from "./DemoReset";
 import { AgentPanel } from "./AgentPanel";
+import { StaffWorkspace } from "./StaffWorkspace";
+import { WhatsAppChannel } from "./WhatsAppChannel";
 import { api, modelLabel } from "./client";
 import "./styles.css";
 
@@ -51,12 +53,13 @@ function App() {
   const [demoResetCaseIds, setDemoResetCaseIds] = useState<string[]>([]);
   const [journeyCaseId, setJourneyCaseId] = useState<string | null>(journeyFromHash);
   const [simulator, setSimulator] = useState(window.location.hash === "#/clinic-simulator");
+  const [developer, setDeveloper] = useState(window.location.hash === "#/developer");
   const [selected, setSelected] = useState<FollowupCase | null>(null);
   const [events, setEvents] = useState<AuditEvent[]>([]);
   const [loadingEvents, setLoadingEvents] = useState(false);
 
   useEffect(() => {
-    const syncRoute = () => { setJourneyCaseId(journeyFromHash()); setSimulator(window.location.hash === "#/clinic-simulator"); };
+    const syncRoute = () => { setJourneyCaseId(journeyFromHash()); setSimulator(window.location.hash === "#/clinic-simulator"); setDeveloper(window.location.hash === "#/developer"); };
     window.addEventListener("hashchange", syncRoute);
     return () => window.removeEventListener("hashchange", syncRoute);
   }, []);
@@ -238,6 +241,7 @@ function App() {
 
   if (journeyCaseId) return <CaseJourney caseId={journeyCaseId} onBack={() => { window.location.hash = ""; setJourneyCaseId(null); void refresh(); }} />;
   if (simulator) return <ClinicSimulator onBack={() => { window.location.hash = ""; setSimulator(false); void refresh(); }} />;
+  if (!developer) return <StaffWorkspace onLogout={() => void logout()} />;
 
   return (
     <div className="workspace">
@@ -246,6 +250,7 @@ function App() {
           forget-lah<span>●</span>
         </div>
         <p className="sidebar-label">CLINIC WORKSPACE</p>
+        <a className="sim-nav" href="#/staff">Staff workspace ↗</a>
         <div className="nav-current">◉ &nbsp; Follow-up overview</div>
         <a className="sim-nav" href="#/clinic-simulator">Clinic simulator ↗<small>External test records and slots</small></a>
         <div className="sidebar-bottom">
@@ -290,10 +295,11 @@ function App() {
               Open a case to watch the Coordinator delegate, read clinic
               evidence and respond to a demo reply. The patient simulator can
               offer and book a recall slot, confirm a scheduled visit, and display an acknowledgement;
-              requests needing staff appear as handoffs. No real messages are sent.
+              requests needing staff appear as handoffs. An explicitly connected WhatsApp test phone receives new messages; all clinic updates remain synthetic.
             </p>
           </div>
         </div>
+        <WhatsAppChannel cases={cases} />
         <section className="metrics" aria-label="Follow-up totals">
           {(["RECALL_OVERDUE", "UPCOMING", "MISSED"] as const).map(
             (trigger) => (

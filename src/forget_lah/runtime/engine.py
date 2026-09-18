@@ -70,6 +70,7 @@ from forget_lah.runtime.simulation import (
     simulation_evidence,
     unsupported_question_reply,
 )
+from forget_lah.runtime.validation import validation_failure
 from forget_lah.service_identity import AUTOMATION_PRINCIPAL_ID
 
 
@@ -274,7 +275,11 @@ def observation_for(db, run, case, step_id):
             db.scalars(
                 select(SimulatedMessage)
                 .where(
-                    SimulatedMessage.run_id == run.id, SimulatedMessage.clinic_id == run.clinic_id
+                    SimulatedMessage.run_id.in_(
+                        [run.id, run.checkpoint.get("reopened_from_run_id", run.id)]
+                    ),
+                    SimulatedMessage.case_id == run.case_id,
+                    SimulatedMessage.clinic_id == run.clinic_id,
                 )
                 .order_by(SimulatedMessage.created_at.desc(), message_order().desc())
                 .limit(1)
@@ -292,6 +297,7 @@ def observation_for(db, run, case, step_id):
         "clarification_count": clarification_count(db, run),
         "patient_memory": effective_memory(db, case),
         "patient_questions": run.checkpoint.get("patient_questions", []),
+        "patient_task_types": run.checkpoint.get("patient_task_types", []),
         "appointment_intent": run.checkpoint.get("appointment_intent", "UNSPECIFIED"),
         "appointment": appointment_facts(db, run)
         if run.active_role == "coordinator" and not run.checkpoint.get("needs_reviewed")
@@ -442,7 +448,7 @@ def apply_initial_demo_wait(db, settings, run, case, step):
         pause(run, "POLICY_DENIED")
     else:
         if simulation_enabled(run) and settings.simulation_configured:
-            block = delivery_block(db, case, proactive=True)
+            block = delivery_block(db, case, proactive=True, settings=settings)
             if block:
                 step.observation["application_rule"].update(
                     name="OUTREACH_SUPPRESSED", explanation=f"No reminder displayed: {block}"
@@ -614,7 +620,10 @@ def prepare_step(factory, settings, run_id, token):
             elif (
                 pending.sequence == 1
                 and run.active_role == "coordinator"
-                and pending.observation["latest_event"]["kind"] == "started"
+                and (
+                    pending.observation["latest_event"]["kind"] == "started"
+                    or run.checkpoint.get("reopened_from_run_id")
+                )
             ):
                 decision = ToolDecision(
                     request_id=pending.id,
@@ -658,8 +667,16 @@ def prepare_step(factory, settings, run_id, token):
             "step_id": pending.id,
             "mode": run.mode,
             "phase": pending.status,
-            "observation": pending.observation,
-            "repair": pending.error_code == "MODEL_SCHEMA_INVALID",
+            "observation": {
+                **pending.observation,
+                **(
+                    {"validation_errors": pending.validation_failures[-1]["errors"]}
+                    if pending.error_code in {"MODEL_SCHEMA_INVALID", "MODEL_EVIDENCE_INVALID"}
+                    and pending.validation_failures
+                    else {}
+                ),
+            },
+            "repair": pending.error_code in {"MODEL_SCHEMA_INVALID", "MODEL_EVIDENCE_INVALID"},
             "binding": {
                 "clinic_id": case.clinic_id,
                 "patient_id": case.patient_id,
@@ -692,7 +709,9 @@ def apply_control(db, run, case, step, decision, settings):
         run.checkpoint = {
             **run.checkpoint,
             "needs_reviewed": decision.reply_event_id,
-            "patient_questions": decision.patient_questions,
+            "patient_questions": decision.patient_questions + decision.preparation_plans,
+            "patient_task_types": ["QUESTION"] * len(decision.patient_questions)
+            + ["PLAN"] * len(decision.preparation_plans),
             "appointment_intent": decision.appointment_intent,
         }
         memory = effective_memory(db, case)
@@ -700,9 +719,9 @@ def apply_control(db, run, case, step, decision, settings):
             u.key == "contact_permission" and u.operation == "set" for u in decision.updates
         )
         language = memory.get("preferred_language", "en")
-        block = delivery_block(db, case)
+        block = delivery_block(db, case, settings=settings)
 
-        def say(body, kind="needs_acknowledgement"):
+        def say(body, kind="needs_acknowledgement", source_message_id=None):
             db.add(
                 patient_message(
                     run,
@@ -716,6 +735,7 @@ def apply_control(db, run, case, step, decision, settings):
                     evidence={
                         "decision_step_id": step.id,
                         "reply_event_id": decision.reply_event_id,
+                        **({"source_message_id": source_message_id} if source_message_id else {}),
                     },
                 )
             )
@@ -741,6 +761,64 @@ def apply_control(db, run, case, step, decision, settings):
                     say(language_ack(language))
                 request_handoff(db, run, "LANGUAGE_SUPPORT_REQUIRED", risk="AMBER")
             return
+        language_changes = [
+            u for u in decision.updates if u.key in {"preferred_language", "excluded_languages"}
+        ]
+        known_language = any(
+            u.key == "preferred_language"
+            and u.operation == "set"
+            and u.value in {"en", "zh", "ms", "ta"}
+            for u in language_changes
+        )
+        if (
+            known_language
+            and len(language_changes) == len(decision.updates)
+            and not (decision.patient_questions or decision.preparation_plans)
+            and decision.appointment_intent == "UNSPECIFIED"
+        ):
+            # A resolved language request is not an appointment decision. Restate the
+            # last clinic message using the normal audited translation pipeline.
+            previous = None
+            for message in db.scalars(
+                select(SimulatedMessage)
+                .where(
+                    SimulatedMessage.clinic_id == case.clinic_id,
+                    SimulatedMessage.case_id == case.id,
+                    SimulatedMessage.event_id != decision.reply_event_id,
+                )
+                .order_by(SimulatedMessage.created_at.desc(), SimulatedMessage.id.desc())
+            ):
+                if message.kind in {"language_restatement", "channel_routing"}:
+                    continue
+                old_step = (
+                    db.get(AgentStep, message.evidence.get("decision_step_id"))
+                    if message.evidence.get("decision_step_id")
+                    else None
+                )
+                if (
+                    old_step
+                    and old_step.decision
+                    and old_step.decision.get("step_type") == "REVIEW_NEEDS"
+                    and any(
+                        u.get("key") == "preferred_language"
+                        for u in old_step.decision.get("updates", [])
+                    )
+                ):
+                    continue
+                previous = message
+                break
+            names = {"en": "English", "zh": "Chinese", "ms": "Malay", "ta": "Tamil"}
+            body = f"Of course. I'll respond in {names[language]}."
+            if previous:
+                body = (
+                    body + "\n\n" + previous.body
+                    if len(body) + 2 + len(previous.body) <= 2600
+                    else previous.body
+                )
+            say(body, "language_restatement", previous.id if previous else None)
+            run.checkpoint = {**run.checkpoint, "wait_reason": "AWAITING_PATIENT_REPLY"}
+            release(run, "waiting")
+            return
         if decision.concern_quote:
             defer_response(
                 run,
@@ -754,6 +832,8 @@ def apply_control(db, run, case, step, decision, settings):
                 run, decision.reply_event_id, "memory", memory_ack(decision.updates), step.id
             )
         question = decision.question
+        if known_language and len(language_changes) == len(decision.updates):
+            question = None
         facts = appointment_facts(db, run)
         restrictions = {u.key for u in decision.updates if u.operation == "set"} & {
             "excluded_weekdays",
@@ -765,8 +845,10 @@ def apply_control(db, run, case, step, decision, settings):
             if matching_slots([{"starts_at": facts["scheduled_at"]}], preferences_for(db, case)):
                 question = f"Your current appointment is on {facts['local_display']}, which does not conflict with that preference. Would you like to keep it, or choose another time?"
                 run.checkpoint = {**run.checkpoint, "appointment_clarification": facts}
-        if not question and any(
-            u.key == "arrival_support" and u.operation == "set" for u in decision.updates
+        if (
+            not question
+            and not (decision.patient_questions or decision.preparation_plans)
+            and any(u.key == "arrival_support" and u.operation == "set" for u in decision.updates)
         ):
             question = "What would help with the concern you mentioned for this appointment?"
         if question:
@@ -1024,7 +1106,7 @@ def apply_control(db, run, case, step, decision, settings):
                 reply = saved_reply(db, run)
                 body = question_response(run, reply)
                 if not run.checkpoint.get("callback"):
-                    body += "\n\nWould you like to confirm your attendance or discuss another appointment time?"
+                    body += "\n\nWill you attend your scheduled appointment?"
                 db.add(
                     patient_message(
                         run,
@@ -1143,6 +1225,29 @@ def apply_control(db, run, case, step, decision, settings):
         release(run, "waiting")
     elif isinstance(decision, EscalateDecision):
         request_handoff(db, run, decision.reason_code, risk=step.policy["risk"])
+        reply = saved_reply(db, run)
+        if (
+            reply
+            and run.checkpoint.get("latest_event", {}).get("channel") == "whatsapp_test"
+            and not db.scalar(
+                select(SimulatedMessage.id).where(
+                    SimulatedMessage.run_id == run.id, SimulatedMessage.event_id == reply.id
+                )
+            )
+        ):
+            db.add(
+                patient_message(
+                    run,
+                    clinic_id=run.clinic_id,
+                    case_id=run.case_id,
+                    run_id=run.id,
+                    event_id=reply.id,
+                    kind="acknowledgement",
+                    body="I've passed your request to the clinic team for help. Your request has not changed or cancelled the appointment.",
+                    source_version="staff-handoff-v1",
+                    evidence={"decision_step_id": step.id, "reason_code": decision.reason_code},
+                )
+            )
     elif isinstance(decision, CompleteDecision):
         run.checkpoint = {**run.checkpoint, "outcome": "OWNED_STAFF_HANDOFF"}
         release(run, "completed")
@@ -1171,7 +1276,11 @@ def store_proposal(factory, settings, run_id, token, step_id, reply):
         step.latency_ms = reply.latency_ms
         try:
             decision = parse_decision(reply.text, step.id, case.case_version)
-        except ValueError:
+        except ValueError as exc:
+            step.validation_failures = [
+                *(step.validation_failures or []),
+                validation_failure(reply.text, exc, step.attempts),
+            ][-2:]
             step.error_code = "MODEL_SCHEMA_INVALID"
             if step.attempts < 2:
                 release(run, "queued", delay=settings.agent_min_interval_seconds)
@@ -1183,6 +1292,32 @@ def store_proposal(factory, settings, run_id, token, step_id, reply):
         step.error_code = None
         step.policy = policy_for(db, run, case, step, decision)
         if step.policy["decision"] != "ALLOW":
+            # Repair only malformed current-reply evidence, never authority,
+            # consent, stale versions, role restrictions or tool permissions.
+            repairable = {
+                "QUESTION_NOT_IN_PATIENT_REPLY",
+                "MEMORY_QUOTE_NOT_IN_PATIENT_REPLY",
+                "APPOINTMENT_INTENT_QUOTE_NOT_IN_REPLY",
+            }
+            reasons = step.policy["reason_codes"]
+            if isinstance(decision, NeedsDecision) and set(reasons) <= repairable:
+                failure = validation_failure(reply.text, ValueError(), step.attempts)
+                failure["errors"] = [
+                    {
+                        "field": "REVIEW_NEEDS",
+                        "code": reason,
+                        "message": "All evidence quotes and task items must be exact text from latest_event.content only. Use history to interpret the reply, not to copy previous tasks. Reassess this reply and return the complete corrected decision.",
+                    }
+                    for reason in reasons
+                ]
+                step.validation_failures = [*(step.validation_failures or []), failure][-2:]
+                step.error_code = "MODEL_EVIDENCE_INVALID"
+                if step.attempts < 2:
+                    release(run, "queued", delay=settings.agent_min_interval_seconds)
+                else:
+                    step.status = "rejected"
+                    pause(run, "MODEL_EVIDENCE_INVALID")
+                return None
             step.status, step.error_code = "rejected", "POLICY_DENIED"
             pause(run, "POLICY_DENIED")
             return None
@@ -1227,7 +1362,7 @@ def execute_pending_tool(factory, settings, run_id, token, step_id, tools):
             "send_simulated_acknowledgement",
             "send_simulated_options",
         }
-        if simulation_action and delivery_block(db, case):
+        if simulation_action and delivery_block(db, case, settings=settings):
             step.status, step.error_code = "rejected", "LANGUAGE_SUPPORT_REQUIRED"
             step.policy = {
                 **step.policy,

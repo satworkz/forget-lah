@@ -1,0 +1,35 @@
+# Run from the project root with both Compose files and a private cloud env file.
+# Local compose.yaml and Windows/Ubuntu development commands remain unchanged.
+x-cloud-env: &cloud-env
+  APP_ENV: demo
+  PUBLIC_ORIGIN: https://${DEMO_HOST:?Set DEMO_HOST to the HTTPS hostname}
+  DEMO_RESET_ENABLED: ${DEMO_RESET_ENABLED:-false}
+  WHATSAPP_ENABLED: ${WHATSAPP_ENABLED:-false}
+  MULTILINGUAL_ENABLED: ${MULTILINGUAL_ENABLED:-false}
+  TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+  TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+  TWILIO_WHATSAPP_FROM: ${TWILIO_WHATSAPP_FROM:-}
+  TWILIO_WHATSAPP_TEST_TO: ${TWILIO_WHATSAPP_TEST_TO:-}
+
+services:
+  bootstrap:
+    environment: *cloud-env
+  api:
+    environment: *cloud-env
+  worker:
+    environment: *cloud-env
+  web:
+    image: forget-lah-web:cloud
+    ports: !override
+      - '80:80'
+      - '443:443'
+    environment:
+      DEMO_HOST: ${DEMO_HOST:?Set DEMO_HOST}
+    volumes:
+      - ./deploy/Caddyfile.cloud:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

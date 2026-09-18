@@ -214,6 +214,59 @@ def test_new_episode_detection_deduplication_and_reset_use_current_source(simula
     assert len(client.get("/internal/candidates").json()) == 4
 
 
+@pytest.mark.parametrize("existing_demo", [True, False])
+def test_another_appointment_keeps_patient_and_old_case(simulator, store, existing_demo):
+    from forget_lah.demo_reset import validate_candidates
+    from services.mock_clinic.store import Patient
+
+    client, engine = simulator
+    original = client.get(f"/internal/followup-context/{EPISODE}").json()
+    body = episode_body(client)
+    body.pop("expected_version")
+    body.update(request_id=str(uuid4()), display_alias="New test patient")
+    if not existing_demo:
+        result = client.post("/internal/admin/episodes", headers=ADMIN, json=body)
+        result.raise_for_status()
+        original = client.get(
+            "/internal/followup-context/" + result.json()["source_episode_ref"]
+        ).json()
+    factory = store[1]
+    detect(
+        factory, DEMO_CLINIC_ID, candidates_from_payload(client.get("/internal/candidates").json())
+    )
+    with factory() as db:
+        old_ids = set(db.scalars(select(FollowupCase.id)))
+    with session_factory(engine)() as db:
+        old_patients = set(db.scalars(select(Patient.id)))
+    body.update(
+        request_id=str(uuid4()),
+        patient_id=original["patient_id"],
+        display_alias="Must not rename existing patient",
+        scheduled_at=(datetime.now(UTC) + timedelta(days=4)).isoformat(),
+    )
+    result = client.post("/internal/admin/episodes", headers=ADMIN, json=body)
+    assert result.status_code == 201
+    ref = result.json()["source_episode_ref"]
+    new = client.get(f"/internal/followup-context/{ref}").json()
+    assert new["patient_id"] == original["patient_id"]
+    assert (
+        client.get("/internal/followup-context/" + original["source_episode_ref"]).json()
+        == original
+    )
+    with session_factory(engine)() as db:
+        assert set(db.scalars(select(Patient.id))) == old_patients
+        assert db.get(Patient, original["patient_id"]).display_alias != body["display_alias"]
+    rows = candidates_from_payload(client.get("/internal/candidates").json())
+    validate_candidates(rows)
+    assert detect(factory, DEMO_CLINIC_ID, rows) == 1
+    assert detect(factory, DEMO_CLINIC_ID, rows) == 0
+    with factory() as db:
+        assert old_ids < set(db.scalars(select(FollowupCase.id)))
+    assert client.post("/internal/admin/episodes", headers=ADMIN, json=body).status_code == 409
+    body.update(request_id=str(uuid4()), patient_id=str(uuid4()))
+    assert client.post("/internal/admin/episodes", headers=ADMIN, json=body).status_code == 404
+
+
 def test_console_requires_clinic_session_origin_csrf_and_internal_key(simulator, store):
     client, _ = simulator
     assert client.get("/internal/admin/snapshot").status_code == 403

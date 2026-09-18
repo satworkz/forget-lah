@@ -99,7 +99,7 @@ def policy_for(db, run, case, step, decision):
             deny = "MEMORY_REPLY_BINDING_REQUIRED"
         elif any(
             not q.strip() or len(q) > 600 or q not in reply.content
-            for q in decision.patient_questions
+            for q in decision.patient_questions + decision.preparation_plans
         ):
             deny = "QUESTION_NOT_IN_PATIENT_REPLY"
         elif run.checkpoint.get("needs_reviewed") == reply.id:

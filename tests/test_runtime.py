@@ -489,6 +489,48 @@ def test_invalid_model_output_repairs_once_then_pauses_without_raw_text(runtime)
     assert result["run"]["status"] == "paused"
     assert result["steps"][-1]["attempts"] == 2
     assert "untrusted secret" not in json.dumps(result)
+    failures = result["steps"][-1]["validation_failures"]
+    assert [f["attempt"] for f in failures] == [1, 2]
+    assert all(f["proposal"] is None for f in failures)
+
+
+def test_long_delegation_goal_is_repaired_with_field_feedback_and_preserved(runtime):
+    _, client, _ = runtime
+    case_id, _ = start(runtime)
+
+    class LongGoalModel(MockModel):
+        failed = False
+        repaired = False
+
+        def decide(self, observation, *, repair=False):
+            response = super().decide(observation, repair=repair)
+            value = json.loads(response.text)
+            if repair:
+                assert self.failed
+                assert observation["validation_errors"][0]["field"] == "DELEGATE.goal"
+                assert observation["validation_errors"][0]["code"] == "string_too_long"
+                assert "200" in observation["validation_errors"][0]["message"]
+                assert "proposal" not in observation
+                self.repaired = True
+            elif value["step_type"] == "DELEGATE" and not self.failed:
+                value["goal"] = "Review missed appointment and find suitable clinic follow-up. " * 5
+                self.failed = True
+                return ModelReply(json.dumps(value))
+            return response
+
+    model = LongGoalModel()
+    drain(runtime, model=model)
+    result = view(client, case_id)
+    assert model.repaired
+    assert result["run"]["status"] == "waiting"
+    step = next(s for s in result["steps"] if s["validation_failures"])
+    assert step["status"] == "completed" and step["attempts"] == 2
+    assert len(step["decision"]["goal"]) <= 200
+    failure = step["validation_failures"][0]
+    assert len(failure["proposal"]["goal"]) > 200
+    assert "input" not in failure["errors"][0]
+    journey = client.get(f"/api/cases/{case_id}/journey").json()
+    assert "string_too_long" in json.dumps(journey)
 
 
 def test_model_failure_never_falls_back_to_mock(runtime):

@@ -1,5 +1,15 @@
 # Clinic simulator — team testing guide
 
+**18 September: patient-level WhatsApp continuity (migration 0009).** Connect the team test phone once using any case for the patient. New cases for the same clinic/patient automatically join the connection; messages created after enrollment are collected once, including a new appointment reminder. Other patients are excluded. Existing pre-enrollment messages are not replayed. A valid reply to a completed case starts a fresh review under the service identity, links to the prior completed run, refreshes source evidence and preserves old history. Paused/escalated cases remain under their existing controls and receive an acknowledgement instead of silently discarding the reply.
+
+When multiple cases can match, signed WhatsApp reply context identifies the appointment. Otherwise an explicitly selected conversation focus is used; a message for another appointment clears that focus. If still ambiguous, the app saves the original request and asks which appointment using last-recorded date/time and a short case reference. Choosing an appointment only routes the original request; it is not booking/cancellation consent. Extra clarification text is retained. More than ten cases requires replying to the relevant original message or its reference. No model guesses appointment identity. Current clinic reads and policy still control all changes. An explicit cancellation request requires a staff handoff and acknowledgement because no source cancellation write exists.
+
+The Sandbox still requires an active inbound messaging window; outside the conservative 23-hour sending window, reminders remain queued until the test phone sends a new message. Approved outbound templates are not implemented. [Twilio reply context](https://www.twilio.com/en-us/changelog/whatsapp-inbound-messages-will-now-include-reply-context) may be absent for replies to messages older than seven days; unresolved identity prompts clarification. Old `needs_staff` replies are not replayed automatically after upgrade. No database reset is required.
+
+
+**18 September: another appointment for the same patient.** In Clinic simulator, open Alex (or any saved patient) and click **Add another appointment for this patient**, enter its date and visit-specific notes, then **Save new appointment**. Alternatively, choose **New episode** and select an existing patient. The source creates a new reference with the same patient identity, retaining previous appointments, cases and patient preferences. New notes start blank to avoid carrying obsolete visit instructions. Scheduled appointments within the next seven days are detected and start automatically; later appointments wait until eligible. Reload cases after the next worker scan. No reset is needed. The WhatsApp connection now covers this patient across appointments; see the continuity behavior above.
+
+
 This is a small, fictional **external clinic system** for testing forget-lah. It combines appointment schedules, available slots and patient notes. It is outside the patient-follow-up product scope; use synthetic data only.
 
 ## 1. Open it
@@ -38,13 +48,13 @@ Changes appear on the **next source-tool read**. Editing a source row does not w
 ## 4. Start a fresh scenario without deleting history
 
 1. Set up any slots first.
-2. Click **New episode**, or select a saved one and choose **Copy into a new test episode**.
-3. Enter a fictional alias, specialty, schedule and notes.
-4. Click **Save new test episode**.
+2. Click **New episode**, or select a saved one and choose **Add another appointment for this patient**.
+3. Choose an existing patient, or enter a fictional alias for a new test patient. Set the specialty, schedule and notes.
+4. Click **Save new appointment** for an existing patient, or **Save new test episode** for a new patient.
 5. Return to forget-lah, wait about 10 seconds and click **Refresh cases**.
 6. Open that patient's **View full case journey**.
 
-Each new episode has a new `SIM-...` reference and separate synthetic patient ID, even when you reuse an alias. This starts a fresh journey while preserving old cases. The local limits are 200 episodes and 500 slots.
+Each new episode has a new `SIM-...` reference. Selecting an existing patient retains their patient ID and saved preferences. Choosing Create a new test patient generates a separate patient ID, even if you reuse an alias. Both preserve old cases. The local limits are 200 episodes and 500 slots.
 
 | Scenario | Source settings | Expected detection |
 |---|---|---|

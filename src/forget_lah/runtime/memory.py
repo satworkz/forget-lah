@@ -99,13 +99,13 @@ def persist_needs(db, case, decision, step_id):
         )
 
 
-def delivery_block(db, case, *, proactive=False):
+def delivery_block(db, case, *, proactive=False, settings=None):
     memory = effective_memory(db, case)
     if proactive and memory.get("contact_permission") == "stopped":
         return "CONTACT_STOPPED"
-    if memory.get("preferred_language", "en") != "en" or "en" in memory.get(
-        "excluded_languages", []
-    ):
+    language = memory.get("preferred_language", "en")
+    supported = {"en", "zh", "ms", "ta"} if settings and settings.translation_configured else {"en"}
+    if language not in supported or language in memory.get("excluded_languages", []):
         return "LANGUAGE_SUPPORT_REQUIRED"
     return None
 

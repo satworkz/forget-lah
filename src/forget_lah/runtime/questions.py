@@ -25,8 +25,16 @@ def validate_answers(db, run, decision):
                     for n in step.tool_result["data"].get("instructions", [])
                 }
             )
+    types = run.checkpoint.get("patient_task_types", [])
     for answer in answers:
-        if answer.outcome == "ANSWERED" and (
+        task_type = (
+            types[answer.question_index] if answer.question_index < len(types) else "QUESTION"
+        )
+        if task_type == "PLAN" and answer.outcome not in {"GUIDANCE", "NOT_REQUIRED"}:
+            return "NEUTRAL_PLAN_REQUIRES_GUIDANCE_REVIEW"
+        if answer.outcome in {"GUIDANCE", "NOT_REQUIRED"} and task_type != "PLAN":
+            return "PLAN_OUTCOME_REQUIRES_PLAN"
+        if answer.outcome in {"ANSWERED", "GUIDANCE"} and (
             answer.instruction_id not in notes
             or not answer.quote.strip()
             or answer.quote not in notes[answer.instruction_id]
@@ -44,10 +52,17 @@ def question_response(run, reply, *, confirmation_step_id=None):
     parts, pending = [], []
     for index, question in enumerate(questions):
         answer = by_index.get(index, {"outcome": "CLINIC_REVIEW"})
-        if answer["outcome"] == "ANSWERED":
-            parts.append(
-                f"Regarding ‘{question}’, the clinic's instructions say: {answer['quote']}"
+        if answer["outcome"] in {"ANSWERED", "GUIDANCE"}:
+            text = (
+                f"Please keep your clinic's advice in mind: {answer['quote']}"
+                if answer["outcome"] == "GUIDANCE"
+                else f"Your clinic advises: {answer['quote']}"
             )
+            if text not in parts:
+                parts.append(text)
+        elif answer["outcome"] == "NOT_REQUIRED":
+            if "Thanks for letting us know your plans." not in parts:
+                parts.append("Thanks for letting us know your plans.")
         elif answer["outcome"] == "UNSUPPORTED":
             parts.append(f"Regarding ‘{question}’, sorry, I can't check that here.")
         else:

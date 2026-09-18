@@ -85,15 +85,15 @@ class DelegateDecision(BoundDecision):
 
 class QuestionAnswer(StrictModel):
     question_index: int = Field(ge=0, le=2)
-    outcome: Literal["ANSWERED", "CLINIC_REVIEW", "UNSUPPORTED"]
+    outcome: Literal["ANSWERED", "GUIDANCE", "NOT_REQUIRED", "CLINIC_REVIEW", "UNSUPPORTED"]
     instruction_id: str | None = None
     quote: str | None = Field(default=None, max_length=600)
 
     @model_validator(mode="after")
     def bound_answer(self):
-        if self.outcome == "ANSWERED" and (not self.instruction_id or not self.quote):
+        if self.outcome in {"ANSWERED", "GUIDANCE"} and (not self.instruction_id or not self.quote):
             raise ValueError("Answered questions require an exact approved source quote")
-        if self.outcome != "ANSWERED" and (self.instruction_id or self.quote):
+        if self.outcome not in {"ANSWERED", "GUIDANCE"} and (self.instruction_id or self.quote):
             raise ValueError("Unanswered questions have no source answer")
         return self
 
@@ -202,10 +202,15 @@ class MemoryChange(StrictModel):
 
 
 class NeedsDecision(BoundDecision):
+    preparation_plans: list[str] = Field(
+        default_factory=list,
+        max_length=3,
+        description="Neutral transport, accompaniment, food or medication plans; exact quotes. Never attendance/booking intent alone. Inability/refusal/help needs belong in patient_questions.",
+    )
     patient_questions: list[str] = Field(
         default_factory=list,
         max_length=3,
-        description="Every question the patient wants answered, copied from their message; separate from preferences and outgoing clarification.",
+        description="Questions or explicit unmet needs requiring help; exact reply quotes.",
     )
     step_type: Literal["REVIEW_NEEDS"]
     reason_code: Literal["PATIENT_NEEDS_REVIEWED"]
@@ -218,6 +223,15 @@ class NeedsDecision(BoundDecision):
 
     @model_validator(mode="after")
     def unique_keys(self):
+        for update in self.updates:
+            if update.key == "arrival_support" and any(
+                plan in update.quote or update.quote in plan for plan in self.preparation_plans
+            ):
+                raise ValueError(
+                    "A neutral preparation plan cannot also be an arrival-support need; remove that update or classify an explicit unmet need as patient_questions"
+                )
+        if len(self.patient_questions) + len(self.preparation_plans) > 3:
+            raise ValueError("At most three preparation tasks per reply")
         if len({u.key for u in self.updates}) != len(self.updates):
             raise ValueError("One change per key per decision")
         if self.appointment_intent != "UNSPECIFIED" and not self.appointment_request_quote:

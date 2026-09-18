@@ -8,12 +8,14 @@ import httpx
 from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import SQLAlchemyError
 
+from forget_lah.channel import channel_tick
 from forget_lah.db import AuditEvent, FollowupCase, Job, make_engine, session_factory, uid, utcnow
 from forget_lah.detector import detect
 from forget_lah.runtime.engine import claim_run, process_run
 from forget_lah.runtime.startup import queue_case_review, queue_ready_reviews
 from forget_lah.settings import Settings
 from forget_lah.source import DEMO_CLINIC_ID, read_candidates
+from forget_lah.translations import translate_one
 
 log = logging.getLogger("forget_lah.worker")
 
@@ -103,6 +105,8 @@ def main() -> None:
                     break
                 finish_job(factory, *claim, settings=settings)
             queue_ready_reviews(factory, settings)
+            translate_one(factory, settings)
+            channel_tick(factory, settings)
             for _ in range(3):
                 activation = claim_run(factory)
                 if not activation:

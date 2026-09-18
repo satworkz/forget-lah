@@ -214,3 +214,84 @@ def test_mixed_symptoms_and_stop_contact_are_both_retained(simulated_runtime):
     assert result["handoff"]["risk"] == "RED"
     assert any(r["key"] == "contact_permission" for r in result["preferences"]["records"])
     assert "reminders have been stopped" in result["patient_simulator"]["messages"][-1]["body"]
+
+
+@pytest.mark.parametrize("language", ["en", "zh", "ms", "ta"])
+def test_explicit_language_restates_previous_message_without_reasking(simulated_runtime, language):
+    from pydantic import SecretStr
+    from sqlalchemy import select
+    from test_patient_simulation import source_count
+
+    from forget_lah.runtime.models import AgentRun, SimulatedMessage
+
+    runtime, tools, _, engine = simulated_runtime
+    case, _ = start(runtime, "myopia")
+    drain(runtime, tools=tools)
+    before = view(runtime[1], case)["patient_simulator"]["messages"][-1]
+    runtime[2].multilingual_enabled = True
+    runtime[2].agent_model_mode = "anthropic"
+    runtime[2].anthropic_api_key = SecretStr("test-key")
+    with runtime[0].begin() as db:
+        db.scalar(select(AgentRun).where(AgentRun.case_id == case)).mode = "anthropic"
+    event(runtime[1], case, "demo_reply", "Please respond in my chosen language").raise_for_status()
+    drain(
+        runtime,
+        tools=tools,
+        model=NeedsModel(
+            [("preferred_language", language, "future")], question="Which language do you prefer?"
+        ),
+    )
+    result = view(runtime[1], case)
+    assert result["run"]["status"] == "waiting"
+    assert not result["handoff"]
+    assert source_count(engine) == 0
+    with runtime[0]() as db:
+        row = db.scalar(
+            select(SimulatedMessage).where(SimulatedMessage.kind == "language_restatement")
+        )
+        assert row.evidence["source_message_id"] == before["id"]
+        assert before["original_body"] in row.body
+        assert "Which language" not in row.body
+        if language == "en":
+            assert not row.translation
+        else:
+            assert row.translation == {"language": language, "status": "pending"}
+
+
+@pytest.mark.parametrize("text", ["ஆம்", "Yes", "是的", "Ya"])
+@pytest.mark.parametrize("repair_succeeds", [True, False])
+def test_historical_tasks_repair_once_without_mutating_evidence(
+    simulated_runtime, text, repair_succeeds
+):
+    class HistoricalModel(NeedsModel):
+        repaired = False
+
+        def decide(self, obs, **kwargs):
+            response = super().decide(obs, **kwargs)
+            value = json.loads(response.text)
+            if value["step_type"] == "REVIEW_NEEDS":
+                if kwargs.get("repair"):
+                    self.repaired = True
+                    assert obs["validation_errors"][0]["code"] == "QUESTION_NOT_IN_PATIENT_REPLY"
+                if not kwargs.get("repair") or not repair_succeeds:
+                    value["preparation_plans"] = ["I will go for a movie"]
+            return ModelReply(json.dumps(value))
+
+    model = HistoricalModel([], intent="CONFIRM")
+    case, result = setup_reply(simulated_runtime, text, model)
+    assert model.repaired
+    step = next(s for s in result["steps"] if s["validation_failures"])
+    assert step["attempts"] == 2
+    assert step["validation_failures"][0]["proposal"]["preparation_plans"] == [
+        "I will go for a movie"
+    ]
+    assert result["handoff"] is None
+    if repair_succeeds:
+        assert step["status"] == "completed"
+        assert step["decision"]["appointment_intent"] == "CONFIRM"
+        assert step["decision"]["preparation_plans"] == []
+    else:
+        from test_patient_simulation import source_count
+
+        assert result["run"]["pause_reason"] == "MODEL_EVIDENCE_INVALID"
+        assert source_count(simulated_runtime[3]) == 0

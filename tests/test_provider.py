@@ -87,7 +87,9 @@ def test_anthropic_wire_contract_is_distinct_but_returns_shared_reply():
         assert body["max_tokens"] == 512 and body["stream"] is False
         assert "tools" not in body and "options" not in body
         assert "private" not in body["messages"][0]["content"]
-        assert "Correct the shape once" in body["system"]
+        assert "Correct the decision once, including field limits" in body["system"]
+        assert "DELEGATE.goal" in body["system"]
+        assert "at most 200 characters" in body["system"]
         assert body["temperature"] == 0
         assert body["output_config"]["format"]["type"] == "json_schema"
         assert body["messages"][0]["content"].startswith("CONTEXT=")
@@ -96,7 +98,19 @@ def test_anthropic_wire_contract_is_distinct_but_returns_shared_reply():
 
     reply = AnthropicModel(
         settings(anthropic_workspace_id="workspace-test"), httpx.MockTransport(handler)
-    ).decide(observation(), repair=True)
+    ).decide(
+        observation()
+        | {
+            "validation_errors": [
+                {
+                    "field": "DELEGATE.goal",
+                    "code": "string_too_long",
+                    "message": "String should have at most 200 characters",
+                }
+            ]
+        },
+        repair=True,
+    )
     assert (reply.text, reply.input_tokens, reply.output_tokens) == ("{}", 80, 7)
     assert isinstance(model_for(settings(), "anthropic"), AnthropicModel)
 
@@ -349,6 +363,9 @@ def test_native_schema_uses_only_current_shapes_and_no_case_data():
 
 def test_delegation_schema_binds_target_to_reason():
     choices = response_schema_for(observation())["properties"]["decision"]["anyOf"]
+    for choice in choices:
+        if choice["properties"]["step_type"]["const"] == "DELEGATE":
+            assert "chars<=200" in choice["properties"]["goal"]["description"]
     pairs = {
         (c["properties"]["target"]["const"], c["properties"]["reason_code"]["const"])
         for c in choices
@@ -406,3 +423,45 @@ def test_anthropic_rejects_invalid_structured_envelope(text):
                 )
             ),
         ).decide(observation())
+
+
+def test_preparation_schema_distinguishes_neutral_plans_from_help_requests():
+    obs = {
+        **observation(),
+        "role": "preparation",
+        "patient_questions": ["I will walk", "I cannot find anyone to accompany me"],
+        "patient_task_types": ["PLAN", "QUESTION"],
+    }
+    schema = response_schema_for(obs)
+    branch = next(
+        b
+        for b in schema["properties"]["decision"]["anyOf"]
+        if b["properties"]["step_type"].get("const") == "RETURN"
+    )
+    variants = branch["properties"]["question_answers"]["items"]["anyOf"]
+    assert variants[0]["properties"]["outcome"]["enum"] == ["GUIDANCE", "NOT_REQUIRED"]
+    assert "CLINIC_REVIEW" in variants[1]["properties"]["outcome"]["enum"]
+    assert variants[1]["properties"]["question_index"]["const"] == 1
+
+
+def test_retry_schema_binds_original_patient_reply_not_wake_event():
+    original, retry = uid(), uid()
+    obs = {
+        **observation(),
+        "simulation": {"enabled": True},
+        "latest_event": {
+            "id": retry,
+            "reply_event_id": original,
+            "kind": "demo_reply",
+            "content": "ஆம்",
+            "wake_reason": "retry",
+        },
+    }
+    choices = response_schema_for(obs)["properties"]["decision"]["anyOf"]
+    found = False
+    for choice in choices:
+        prop = choice["properties"].get("reply_event_id")
+        if prop:
+            found = True
+            assert prop == {"type": "string", "const": original}
+    assert found

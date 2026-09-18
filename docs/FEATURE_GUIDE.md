@@ -1,5 +1,17 @@
 # Feature guide: forget-lah
 
+**18 September: patient-level WhatsApp continuity (migration 0009).** Connect the team test phone once using any case for the patient. New cases for the same clinic/patient automatically join the connection; messages created after enrollment are collected once, including a new appointment reminder. Other patients are excluded. Existing pre-enrollment messages are not replayed. A valid reply to a completed case starts a fresh review under the service identity, links to the prior completed run, refreshes source evidence and preserves old history. Paused/escalated cases remain under their existing controls and receive an acknowledgement instead of silently discarding the reply.
+
+When multiple cases can match, signed WhatsApp reply context identifies the appointment. Otherwise an explicitly selected conversation focus is used; the latest successfully sent appointment message establishes that focus. If still ambiguous, the app saves the original request and asks which appointment using last-recorded date/time and a short case reference. Choosing an appointment only routes the original request; it is not booking/cancellation consent. Extra clarification text is retained. More than ten cases requires replying to the relevant original message or its reference. No model guesses appointment identity. Current clinic reads and policy still control all changes. An explicit cancellation request requires a staff handoff and acknowledgement because no source cancellation write exists.
+
+The Sandbox still requires an active inbound messaging window; outside the conservative 23-hour sending window, reminders remain queued until the test phone sends a new message. Approved outbound templates are not implemented. [Twilio reply context](https://www.twilio.com/en-us/changelog/whatsapp-inbound-messages-will-now-include-reply-context) may be absent for replies to messages older than seven days; unresolved identity prompts clarification. Old `needs_staff` replies are not replayed automatically after upgrade. No database reset is required.
+
+
+**18 September: another appointment for the same patient.** In Clinic simulator, open Alex (or any saved patient) and click **Add another appointment for this patient**, enter its date and visit-specific notes, then **Save new appointment**. Alternatively, choose **New episode** and select an existing patient. The source creates a new reference with the same patient identity, retaining previous appointments, cases and patient preferences. New notes start blank to avoid carrying obsolete visit instructions. Scheduled appointments within the next seven days are detected and start automatically; later appointments wait until eligible. Reload cases after the next worker scan. No reset is needed. The WhatsApp connection now covers this patient across appointments; see the continuity behavior above.
+
+
+**18 September cloud milestone:** a separate staff workspace, developer reset controls, a restricted WhatsApp test-phone inbox/outbox and saved-language translation are implemented. Migration `0008` preserves channel delivery/replay evidence and original/translated messages. See [team cloud testing](TEAM_CLOUD_TESTING.md) for setup, operational limits and validation steps. This supersedes older statements below about all messages staying local or all non-English preferences requiring staff. Real phone round-trip verification remains separate from offline tests.
+
 Updated 17 September 2026. Start here for the current local demonstration. Older design PDFs contain planned capabilities; this guide distinguishes implementation from plans.
 
 ## What the product does
@@ -116,3 +128,60 @@ Existing conversation messages are history and are not rewritten by this update.
 
 
 Staff question callbacks use the neutral label **Patient question**, followed by the original patient wording. The heading is not a medical-topic classification. Preparation-help callbacks retain their distinct heading. This also corrects the display of existing callback records without changing their history.
+# WhatsApp integration status — 18 September
+
+The optional test-phone adapter validates credentials and sends an explicitly requested setup message. After upgrading and joining the legacy Sandbox, one custom message was confirmed delivered to the team phone. It does not yet deliver case messages or accept patient replies. See [setup and remaining work](WHATSAPP_SETUP.md). This is an integration milestone, not a completed messaging feature.
+
+
+## Singapore hosted demo (18 September)
+
+The existing developer/testing UI now has an HTTPS Lightsail deployment with fresh synthetic records and its own staff credentials. Direct Anthropic remains the provider. This does not implement the planned redesigned staff UI, multilingual messaging or WhatsApp case channel. See [AWS deployment guide](AWS_DEMO.md).
+
+
+## Decision validation and repair (18 September)
+
+Provider schemas now describe the canonical length, numeric and collection bounds that the provider cannot enforce natively. Local validation still rejects violations; decisions are never silently truncated or executed merely because a model returned them.
+
+A rejected decision gets one budgeted repair attempt with field-specific validation errors. Migration `0007` retains up to two failed attempts per step: structured JSON proposal, validation field/code/message, response byte count and digest. Unstructured invalid output is not retained, and rejected proposals are not put back into the model prompt. Successful repair keeps its failure evidence alongside the later validated decision.
+
+The developer review has **Inspect rejected proposal and validation errors**. The case journey includes the same evidence under the recorded step outcome. Both use the existing authenticated case scope. Earlier failures have no retrospective proposal details.
+
+Regression coverage includes an overlong delegation goal repaired within the existing 200-character limit, specific feedback reaching the provider, failure persistence after successful repair, and malformed non-JSON responses pausing after two attempts without storing the raw text. This fixes a reproduced Priya delegation failure after “can I come tomorrow?”; it does not invent clinic slots or authorize bookings.
+
+
+Live recovery verified on the Singapore cloud demo: Priya's existing paused review was retried through the authenticated application action after migration `0007`. All subsequent decisions succeeded. The clinic returned no alternative slots, so the app displayed “Nothing has been booked. The clinic currently lists no alternative slots. I've requested help from the clinic team to find a suitable time.” and created an unowned AMBER `NO_AVAILABLE_SLOTS` task. Existing conversation and failed-step history were preserved. Validation: 291 Linux tests passed, including PostgreSQL checks; Ruff and the frontend production build passed.
+
+
+### 18 September: appointment context and preparation plans
+A successful sent/delivered clinic message establishes the appointment context for a normal reply. The signed inbound webhook saves that context before worker processing, so a later outgoing message cannot reroute a queued reply. Explicit WhatsApp quoted-message context takes precedence. Failed/uncertain sends and appointment-selection prompts do not establish focus; genuinely unresolved identity still asks for clarification.
+
+Coordinator reviews preparation-related statements as well as questions (for example transport, accompaniment and food plans). These are visit tasks, not automatically saved preferences or arrival-support problems. Preparation reads approved instructions and returns an instruction ID plus an exact quote; the gateway validates the evidence. Attendance confirmation remains an independent task and the response combines it with applicable notes. No inferred driving permission, medical prohibition or invented instructions are added. Missing clinic answers still request staff review. The existing trace field `patient_questions` now also carries exact preparation-plan statements for compatibility.
+
+
+**Reset and WhatsApp continuity:** Reset preserves an enabled test-phone enrollment by clinic/patient identity, rebinds it to a recreated eligible case and queues newly generated reminders through the normal deduplicated outbox. Old queued deliveries are canceled; provider SID tombstones remain. Explicitly disconnected phones stay disconnected. The existing inbound messaging window is preserved, never renewed by reset. No eligible case for that patient means no automatic reconnection.
+
+
+### Preparation plans versus questions (18 September)
+Coordinator now separates neutral visit plans (`preparation_plans`) from actual questions and explicit unmet needs (`patient_questions`). Exact reply quotes and intent are saved. Runtime retains a combined indexed task list plus `patient_task_types` for compatibility; no new database migration is needed. Only Coordinator delegates.
+
+Preparation reasons about the purpose of approved notes rather than demanding matching travel words. For a neutral plan it may return `GUIDANCE` with an instruction ID and exact approved quote, or `NOT_REQUIRED` when no note applies. Both provider schema and gateway restrict these plan outcomes. Questions and explicit inability/refusal retain `ANSWERED`, `CLINIC_REVIEW`, and `UNSUPPORTED`; neutral plans cannot silently become a callback. Source evidence is still mandatory for guidance. Attendance is recorded independently from preparation review. Current symptoms retain their separate clinical escalation path.
+
+Examples: “the clinic is nearby, I can walk” receives the approved accompaniment instruction; “my daughter will walk home with me” receives relevant guidance without inventing a problem; “I cannot find anyone to accompany me” remains a help request. Missing instructions do not create permission or a medical restriction. Answers cite approved wording rather than generating new clinical advice.
+
+Patient reminders greet the recorded name (for example “Hello Alex,”); confirmation acknowledgements address that name too. The demo suffix is removed, titles are never inferred, and greetings enter the existing language-translation flow. Approved notes used in the answer are not repeated in a separate instruction block. Historical messages and existing handoffs are not silently rewritten.
+
+The paid live-flow test is opt-in: `RUN_LIVE_PREPARATION=1` with Anthropic credentials runs `tests/test_live_preparation.py` against isolated synthetic source/database fixtures, without WhatsApp delivery. It checks actual Coordinator, Engagement and Preparation model decisions through confirmation and a single evidence-grounded response. Normal test runs skip it.
+
+Ordinary WhatsApp messages no longer prepend internal case references; the greeting/content is first. Genuine routing clarifications still show appointment labels and selection references. A neutral plan cannot simultaneously be saved as an overlapping arrival-support concern; contradictory proposals must pass the existing bounded repair step before persistence.
+
+
+**Explicit language requests:** A supported named-language preference resolves the language choice immediately; contradictory clarification proposals cannot ask for it again. A language-only request produces one `language_restatement` of the most recent substantive clinic message, with the original message ID recorded as evidence and the usual budgeted translation/delivery path. Previous language-only acknowledgements and routing notices are skipped. Mixed requests continue through appointment/question handling in the chosen language, rather than replaying old context. Language changes do not authorize booking or attendance writes. Unspecified language refusals still clarify; unsupported languages and contact-stop rules retain their existing handling.
+
+
+### Current-reply evidence and technical pause recovery
+
+Conversation history helps interpret short replies in any supported language, but REVIEW_NEEDS task items and evidence quotes must come from the current patient reply. Historical tasks must not be copied as new statements. Invalid current-reply task, preference or attendance quotes receive one budgeted model correction attempt with bounded validation feedback. The original proposal is retained in developer evidence; it is never silently edited into consent. The corrected proposal passes all policy checks again before any source write. Authority, stale version, role and tool denials are not retryable through this correction path. Two invalid attempts pause for technical review without claiming a clinical handoff. Incoming replies during a technical pause are saved and receive an accurate pause acknowledgement; they do not bypass the pause or authorize an appointment write. Attendance follow-up now asks one clear yes/no question instead of combining confirmation and rescheduling alternatives.
+
+Retry identity: native model output schemas bind reply_event_id to the original saved patient reply, even when a staff retry/timer has a different event ID. Text-provider instructions carry the same distinction, and the gateway still verifies the binding. Retrying never manufactures a new patient response.
+
+Validation and rollout: the affected runtime, memory, channel, provider, question, simulation and adaptation suites passed (one PostgreSQL-only check skipped without TEST_DATABASE_URL); final provider schema checks passed. Live Anthropic Tamil language-switch/confirmation flows passed both normally and through pause/retry, each with one source confirmation and no handoff. AWS deployment completed, and Alex's original saved Tamil confirmation was resumed through audited staff retry. Source-confirmed outcome completed and the Tamil acknowledgement was delivered over WhatsApp. No reset or fabricated patient reply was used.
