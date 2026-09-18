@@ -320,7 +320,7 @@ export function AgentPanel({
                   {view.handoff.reason_code === "NO_AVAILABLE_SLOTS" && <p>The clinic source currently lists no available slots. The existing appointment has not been changed. Staff can help arrange a suitable time.</p>}
                   {view.handoff.callback && <div>
                     <p><strong>Attendance: {view.plan?.attendance ?? "Check source evidence"}</strong></p>
-                    <p><strong>{view.handoff.callback.topic === "preparation" ? "Preparation help" : "Blood-test question"}: {view.handoff.callback.status === "resolved" ? "Resolved by staff" : "Awaiting clinic response"}</strong></p>
+                    <p><strong>{view.handoff.callback.topic === "preparation" ? "Preparation help" : "Patient question"}: {view.handoff.callback.status === "resolved" ? "Resolved by staff" : "Awaiting clinic response"}</strong></p>
                     <p>Patient asked: {view.handoff.callback.question}</p>
                     <p>Callback {view.handoff.callback.status}. Accepting ownership does not resolve the question.</p>
                     {view.handoff.callback.resolution && <p>Recorded contact outcome: {view.handoff.callback.resolution}</p>}

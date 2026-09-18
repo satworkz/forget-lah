@@ -113,3 +113,6 @@ Test this in a fresh synthetic case:
 5. Check the full journey: `REVIEW_NEEDS.patient_questions`, Preparation's `RETURN.question_answers`, source evidence and the final displayed message. No question should be saved as a new `other_concern` preference.
 
 Existing conversation messages are history and are not rewritten by this update. Up to three independent questions are supported in one decision contract. The simulator displays messages locally; it does not send real patient messages or place callback calls.
+
+
+Staff question callbacks use the neutral label **Patient question**, followed by the original patient wording. The heading is not a medical-topic classification. Preparation-help callbacks retain their distinct heading. This also corrects the display of existing callback records without changing their history.
