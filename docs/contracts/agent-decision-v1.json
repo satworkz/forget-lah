@@ -160,6 +160,44 @@
           "default": null,
           "title": "Requested Date"
         },
+        "date_from": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Date From"
+        },
+        "date_to": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Date To"
+        },
+        "clarification_question": {
+          "anyOf": [
+            {
+              "maxLength": 240,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Clarification Question"
+        },
         "excluded_minutes": {
           "items": {
             "type": "integer"
@@ -567,7 +605,8 @@
             "preferred_language",
             "excluded_languages",
             "contact_permission",
-            "arrival_support"
+            "arrival_support",
+            "other_concern"
           ],
           "title": "Key",
           "type": "string"
@@ -629,8 +668,17 @@
           "title": "Reason Code",
           "type": "string"
         },
+        "preparation_plans": {
+          "description": "Neutral transport, accompaniment, food or medication plans; exact quotes. Never attendance/booking intent alone. Inability/refusal/help needs belong in patient_questions.",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 3,
+          "title": "Preparation Plans",
+          "type": "array"
+        },
         "patient_questions": {
-          "description": "Every question the patient wants answered, copied from their message; separate from preferences and outgoing clarification.",
+          "description": "Questions or explicit unmet needs requiring help; exact reply quotes.",
           "items": {
             "type": "string"
           },
@@ -730,6 +778,8 @@
         "outcome": {
           "enum": [
             "ANSWERED",
+            "GUIDANCE",
+            "NOT_REQUIRED",
             "CLINIC_REVIEW",
             "UNSUPPORTED"
           ],

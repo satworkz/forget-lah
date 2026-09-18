@@ -185,3 +185,25 @@ Conversation history helps interpret short replies in any supported language, bu
 Retry identity: native model output schemas bind reply_event_id to the original saved patient reply, even when a staff retry/timer has a different event ID. Text-provider instructions carry the same distinction, and the gateway still verifies the binding. Retrying never manufactures a new patient response.
 
 Validation and rollout: the affected runtime, memory, channel, provider, question, simulation and adaptation suites passed (one PostgreSQL-only check skipped without TEST_DATABASE_URL); final provider schema checks passed. Live Anthropic Tamil language-switch/confirmation flows passed both normally and through pause/retry, each with one source confirmation and no handoff. AWS deployment completed, and Alex's original saved Tamil confirmation was resumed through audited staff retry. Source-confirmed outcome completed and the Tamil acknowledgement was delivered over WhatsApp. No reset or fabricated patient reply was used.
+
+
+### Multilingual provider request budget
+
+The shared default HTTP request cap is now 32,000 UTF-8 bytes, including instructions, output schema, context and JSON envelope. The former 8,000-byte cap rejected a routine Tamil rescheduling request at 8,019 bytes. Settings, Compose and example configuration now agree; the AWS demo explicitly selects 32,000 bytes. Patient evidence is not truncated. Oversized requests still fail before network access; daily call budgets, output token limits, policy and source-write checks are unchanged. Both providers have multilingual and oversize regression tests. Provider booking regressions check the shipped 32,000-byte budget as the scheduling schema evolves.
+
+
+## Month preferences and broader scheduling concerns
+
+A patient can request a month or date range together with suitable times. “I prefer October and evening time” retains October and asks what evening start time suits the patient. Once clarified, only clinic-provided slots matching the Singapore-local range and time bounds are offered. A preference is not booking consent. If no matching slots exist, the app asks about alternatives rather than offering unrelated dates.
+
+Broader concerns do not need a new phrase-specific rule. Claude can save the patient's exact practical concern and ask a focused question, for example:
+
+| Patient concern | Useful clarification |
+| --- | --- |
+| I can't travel in hot sun | What times of day would make travel easier for you? |
+| I prefer less traffic | What travel times usually work best for you? |
+| Avoid office time | Which days and working hours should we avoid? |
+
+The app cannot check forecasts, traffic congestion or infer someone's work schedule. Such concerns remain pending reports until actionable times are clarified. Different concerns are retained separately. They apply to the current visit unless the patient explicitly describes an ongoing preference; future-scoped concerns can inform later follow-ups. Staff can inspect the original quote, scope and status under patient preferences. This is saved context, not model training, and an explicit appointment selection is still required before a source booking update.
+
+Structured needs and scheduling decisions have a bounded 2,048-token Anthropic response allowance for multilingual quotes and constraints; ordinary decisions retain 512 tokens and preparation answers retain 1,024. A truncated response is still rejected and cannot authorize a write.

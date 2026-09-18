@@ -1,7 +1,7 @@
 """One persisted decision per worker tick. Network calls never hold DB locks."""
 
 import json
-from datetime import UTC, timedelta
+from datetime import UTC, timedelta, timezone
 
 from sqlalchemy import and_, or_, select
 
@@ -294,6 +294,7 @@ def observation_for(db, run, case, step_id):
         "case": {"specialty": case.specialty, "trigger": case.trigger},
         "latest_event": event,
         "recent_messages": conversation,
+        "today_sgt": utcnow().astimezone(timezone(timedelta(hours=8))).date().isoformat(),
         "clarification_count": clarification_count(db, run),
         "patient_memory": effective_memory(db, case),
         "patient_questions": run.checkpoint.get("patient_questions", []),
@@ -851,6 +852,10 @@ def apply_control(db, run, case, step, decision, settings):
             and any(u.key == "arrival_support" and u.operation == "set" for u in decision.updates)
         ):
             question = "What would help with the concern you mentioned for this appointment?"
+        if decision.appointment_intent == "CHANGE":
+            # Persist the complete scheduling constraints before asking for missing
+            # details, so a later short answer retains the known date/time context.
+            question = None
         if question:
             say(question, "clarification")
             run.checkpoint = {**run.checkpoint, "wait_reason": "AWAITING_PATIENT_REPLY"}
@@ -906,6 +911,7 @@ def apply_control(db, run, case, step, decision, settings):
             and decision.latest_minute is None
             and not decision.weekdays
             and decision.requested_date is None
+            and decision.date_from is None
         )
         if decision.next_action == "CLARIFY_TIME" or negative_only:
             db.add(
@@ -916,7 +922,11 @@ def apply_control(db, run, case, step, decision, settings):
                     run_id=run.id,
                     event_id=decision.reply_event_id,
                     kind="clarification",
-                    body="Which dates and times would work for you and anyone accompanying you? Please include the month if you have a particular date in mind. Your appointment has not been changed.",
+                    body=(
+                        decision.clarification_question
+                        or "Which dates and times would work for you and anyone accompanying you?"
+                    )
+                    + " Your appointment has not been changed.",
                     source_version="patient-constraints-v1",
                     evidence={
                         "decision_step_id": step.id,

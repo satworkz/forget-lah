@@ -274,13 +274,15 @@ def test_long_recall_conversation_fits_provider_request_limit(simulated_runtime)
     assert view(runtime[1], case_id)["run"]["status"] == "completed"
     settings = Settings(
         app_env="test",
+        agent_request_max_bytes=32000,
+        _env_file=None,
         anthropic_api_key="test-only",
         llm_gateway_api_key="test-only",
         llm_gateway_url="https://gateway.example",
     )
 
     def respond(request):
-        assert len(request.content) <= 8000
+        assert len(request.content) <= settings.agent_request_max_bytes
         if request.url.host == "api.anthropic.com":
             return httpx.Response(
                 200,

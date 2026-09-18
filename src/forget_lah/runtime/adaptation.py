@@ -62,6 +62,10 @@ def matching_slots(slots, constraints):
             and local.date().isoformat() != constraints["requested_date"]
         ):
             continue
+        if constraints.get("date_from") and local.date().isoformat() < constraints["date_from"]:
+            continue
+        if constraints.get("date_to") and local.date().isoformat() > constraints["date_to"]:
+            continue
         result.append(slot)
     return result
 
