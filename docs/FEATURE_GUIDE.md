@@ -259,3 +259,8 @@ Preparation now explicitly assesses every approved note before authorizing an of
 ## Reply evidence and handoff recovery
 
 Harmless quote/whitespace differences are restored to exact saved patient text before validation. Attendance refusal and cancellation have distinct routing; cancellation requests clinic action without searching slots or claiming cancellation. General staff handoff acceptance completes deterministically; unresolved callbacks and clinical reviews remain open. Staff-wait messages reflect recorded ownership. See [Reply recovery](REPLY_RECOVERY.md).
+
+
+## Availability search without mandatory preferences
+
+Patient requests for alternatives can search without a date/time preference. The application corrects unsupported generic clarification proposals to source search while preserving real date/constraint clarification, doctor-note restrictions and booking consent. Current appointment times are not offered as alternatives. Processing remains bounded per new patient reply; retry does not reset that allowance and the daily paid-call cap is unchanged. See [Reply recovery](REPLY_RECOVERY.md) for the incident and regression coverage.

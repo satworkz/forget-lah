@@ -70,7 +70,8 @@ def normalize_review(review):
                 item["date_from"] = max(item.get("date_from") or lower, lower)
             if item["effect"] != "CLINIC_REVIEW":
                 item["effect"] = "DATE_WINDOW"
-        result.append(item)
+        if item not in result:
+            result.append(item)
     return result
 
 

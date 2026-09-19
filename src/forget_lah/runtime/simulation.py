@@ -603,7 +603,11 @@ def save_options(db, run):
     steps = current_tools(db, run)
     context = latest_tool(steps, "read_followup_context", "engagement")
     instructions = latest_tool(steps, "get_approved_instructions", "preparation")
-    slots = context.tool_result["data"]["available_slots"]
+    data = context.tool_result["data"]
+    slots = data["available_slots"]
+    if run.checkpoint.get("appointment_intent") == "CHANGE" and data.get("scheduled_at"):
+        current_time = datetime.fromisoformat(data["scheduled_at"])
+        slots = [s for s in slots if datetime.fromisoformat(s["starts_at"]) != current_time]
     all_slots = slots
     case = db.get(FollowupCase, run.case_id)
     constraints = effective_constraints(run, preferences_for(db, case))
@@ -640,7 +644,9 @@ def save_options(db, run):
             + "The clinic currently lists no alternative slots. I've requested help from the clinic team to find a suitable time."
         )
     if clinical_conflict:
-        explanation = "Your doctor's instructions say: " + " ".join(r["quote"] for r in restricted)
+        explanation = "Your doctor's instructions say: " + " ".join(
+            dict.fromkeys(r["quote"] for r in restricted)
+        )
         if slots:
             body = (
                 explanation
@@ -651,9 +657,21 @@ def save_options(db, run):
                 )
             )
         else:
+            unavailable_explanation = ""
+            if requested_slots and all(r["effect"] == "DATE_WINDOW" for r in restricted):
+                listed_times = "; ".join(
+                    dict.fromkeys(appointment_time(s["starts_at"]) for s in requested_slots)
+                )
+                unavailable_explanation = (
+                    "The listed alternatives are "
+                    + listed_times
+                    + ". These fall outside the timing allowed by your doctor's instructions. "
+                )
             body = (
                 explanation
-                + "\n\nI can't offer a time matching your request within these instructions. I've requested a call from the clinic team to help arrange a suitable appointment."
+                + "\n\n"
+                + unavailable_explanation
+                + "I can't offer a time matching your request within these instructions. I've requested a call from the clinic team to help arrange a suitable appointment."
             )
             if scheduled:
                 body += (

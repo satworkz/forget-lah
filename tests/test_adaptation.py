@@ -495,6 +495,7 @@ def test_specific_time_clarification_preserves_month(simulated_runtime):
                     earliest_minute=None,
                     next_action="CLARIFY_TIME",
                     clarification_question="What times outside office hours would suit you in October?",
+                    clarification_reason="UNRESOLVED_PREFERENCE",
                 )
             return ModelReply(json.dumps(d))
 

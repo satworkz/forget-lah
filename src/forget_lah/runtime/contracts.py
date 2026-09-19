@@ -286,6 +286,7 @@ class BarrierDecision(BoundDecision):
     concern_quote: str | None = Field(default=None, max_length=200)
     remember_exclusions: bool = False
     preparation_issue: Literal["NONE", "INCOMPLETE", "NEEDS_EXPLANATION"] = "NONE"
+    clarification_reason: Literal["NONE", "AMBIGUOUS_DATE", "UNRESOLVED_PREFERENCE"] = "NONE"
     next_action: Literal["SEARCH_SLOTS", "CLARIFY_TIME", "REVIEW_PREPARATION"]
 
     @model_validator(mode="after")
@@ -308,6 +309,8 @@ class BarrierDecision(BoundDecision):
         if self.earliest_minute is not None and self.latest_minute is not None:
             if self.earliest_minute > self.latest_minute:
                 raise ValueError("Time window is reversed")
+        if self.clarification_reason != "NONE" and not self.clarification_question:
+            raise ValueError("A real timing ambiguity needs a focused question")
         if self.next_action == "REVIEW_PREPARATION" and self.preparation_issue == "NONE":
             raise ValueError("Preparation review requires an explicit issue")
         return self
@@ -434,7 +437,8 @@ DECISION_FORMATS = {
         "requested_date": "unambiguous YYYY-MM-DD or null; clarify ambiguous dates",
         "date_from": "inclusive local YYYY-MM-DD range start, or null",
         "date_to": "inclusive local YYYY-MM-DD range end, or null",
-        "clarification_question": "one focused question about missing timing details, or null",
+        "clarification_question": "one focused question resolving a stated ambiguity, or null",
+        "clarification_reason": ["NONE", "AMBIGUOUS_DATE", "UNRESOLVED_PREFERENCE"],
         "excluded_minutes": "SGT minutes explicitly unavailable; not a before/after bound",
         "rejects_current_offer": "true only when patient rejects all currently offered choices",
         "preparation_issue": ["NONE", "INCOMPLETE", "NEEDS_EXPLANATION"],

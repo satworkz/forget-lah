@@ -51,6 +51,9 @@ def test_curly_apostrophe_preserves_exact_evidence_and_refusal(simulated_runtime
                 )
             return ModelReply(json.dumps(value))
 
+    from test_adaptation import add_slot
+
+    add_slot(simulated_runtime[2], 16)
     case, result = setup_reply(simulated_runtime, "No I can’t", RefusalModel([], intent="CHANGE"))
     assert result["run"]["status"] == "waiting"
     needs = next(
@@ -58,7 +61,7 @@ def test_curly_apostrophe_preserves_exact_evidence_and_refusal(simulated_runtime
     )
     assert needs["decision"]["appointment_request_quote"] == "No I can’t"
     assert needs["attempts"] == 1 and not needs["validation_failures"]
-    assert "dates and times" in result["patient_simulator"]["messages"][-1]["original_body"]
+    assert result["patient_simulator"]["messages"][-1]["evidence"]["slots"]
     assert source_count(simulated_runtime[3]) == 0
 
 

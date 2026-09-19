@@ -241,3 +241,12 @@ Deployed API/worker to AWS. Public readiness returned 200 and the running image 
 Harmless quote/whitespace differences are restored to exact saved patient text before validation. Attendance refusal and cancellation have distinct routing; cancellation requests clinic action without searching slots or claiming cancellation. General staff handoff acceptance completes deterministically; unresolved callbacks and clinical reviews remain open. Staff-wait messages reflect recorded ownership. See [Reply recovery](REPLY_RECOVERY.md).
 
 Validation: full Linux/PostgreSQL suite passed (427 passed, 12 optional tests skipped). All 29 channel tests passed after adding ownership-status coverage; nine focused evidence/refusal/cancellation/handoff tests passed. Live Claude handled both the original curly-apostrophe refusal and explicit cancellation with the correct intent and zero appointment writes. Ruff and formatting passed. Deployed API/worker to AWS; public readiness returned 200 and all three phone registrations were preserved.
+
+
+## Availability search without mandatory preferences
+
+Patient requests for alternatives can search without a date/time preference. The application corrects unsupported generic clarification proposals to source search while preserving real date/constraint clarification, doctor-note restrictions and booking consent. Current appointment times are not offered as alternatives. Processing remains bounded per new patient reply; retry does not reset that allowance and the daily paid-call cap is unchanged. See [Reply recovery](REPLY_RECOVERY.md) for the incident and regression coverage.
+
+Validation: 436 tests passed and 12 optional live tests skipped in the full Linux/PostgreSQL suite. The final six conversation-replay checks also passed with per-step provider request-size validation; all requests fit the unchanged 32 KB cap. Ruff, formatting and production web builds passed. This investigation used no paid model calls, no live-case retry and no test messages. Live natural-language interpretation is not claimed from the offline semantic replay.
+
+Deployed API, worker and web to AWS. Public readiness returned 200; all three phone registrations were preserved. Running-image checks verified the availability correction, per-reply budget and strict parser. Priya remains waiting at the same saved conversation step; no automatic message replay was performed.

@@ -457,6 +457,7 @@ def ingest_one(factory, settings=None, binding_id=None):
                 "content": reply_content,
                 "channel": "whatsapp_test",
             },
+            "turn_start_step": run.step_count,
             "returned_specialists": [],
             "delegation_start": 0,
             "patient_simulator_enabled": True,

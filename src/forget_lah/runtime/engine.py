@@ -600,7 +600,10 @@ def prepare_step(factory, settings, run_id, token):
             pause(run, "STALE_CHECKPOINT")
             return None
         if not pending:
-            if run.step_count >= settings.agent_max_steps:
+            if (
+                run.step_count - run.checkpoint.get("turn_start_step", 0)
+                >= settings.agent_max_steps
+            ):
                 pause(run, "STEP_BUDGET_EXHAUSTED")
                 return None
             # Per-event Coordinator limit and per-delegation specialist limit.
@@ -977,6 +980,20 @@ def apply_control(db, run, case, step, decision, settings):
             step.id,
         )
     if isinstance(decision, BarrierDecision):
+        effective_action = decision.next_action
+        if (
+            effective_action == "CLARIFY_TIME"
+            and decision.clarification_reason == "NONE"
+            and decision.preparation_issue == "NONE"
+            and run.checkpoint.get("appointment_intent") == "CHANGE"
+        ):
+            # Availability is a source fact, not a required patient preference.
+            # Preserve the model proposal separately from this policy correction.
+            effective_action = "SEARCH_SLOTS"
+            step.observation = {
+                **step.observation,
+                "application_rule": "OPTIONAL_PREFERENCES_DO_NOT_BLOCK_SEARCH",
+            }
         # Each assessed reply is a complete revised constraint set.
         # Explicit new availability can supersede a previous offer rejection.
         rejected = []
@@ -992,6 +1009,7 @@ def apply_control(db, run, case, step, decision, settings):
                 **decision.model_dump(
                     exclude={"request_id", "expected_case_version", "step_type", "reason_code"}
                 ),
+                "next_action": effective_action,
                 "step_id": step.id,
                 "rejected_slot_ids": rejected,
             },
@@ -1006,7 +1024,7 @@ def apply_control(db, run, case, step, decision, settings):
             and decision.requested_date is None
             and decision.date_from is None
         )
-        if decision.next_action == "CLARIFY_TIME" or negative_only:
+        if effective_action == "CLARIFY_TIME" or negative_only:
             db.add(
                 patient_message(
                     run,

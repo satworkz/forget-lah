@@ -38,6 +38,7 @@ type View = {
     active_role: string;
     goal: string;
     step_count: number;
+    turn_step_count?: number;
     step_limit: number;
     wait_reason: string | null;
     pause_reason: string | null;
@@ -221,7 +222,7 @@ export function AgentPanel({
                 <span className="pill capitalize">{run.status}</span>
                 <strong className="capitalize">{run.active_role}</strong>
                 <span>
-                  {run.step_count} steps used · maximum {run.step_limit}
+                  {run.turn_step_count ?? run.step_count} steps for this reply · maximum {run.step_limit}
                 </span>
               </div>
               <p><strong>Assigned goal:</strong> {run.goal}</p>

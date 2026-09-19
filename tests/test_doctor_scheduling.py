@@ -186,3 +186,69 @@ def test_multiple_requirements_in_one_note_do_not_drop_deadline(simulated_runtim
     assert result["run"]["status"] == "escalated"
     assert result["patient_simulator"]["messages"][-1]["evidence"]["slots"] == []
     assert source_count(engine) == 0
+
+
+@pytest.mark.parametrize("has_valid_alternative", [False, True])
+def test_existing_appointment_and_late_slots_are_not_valid_alternatives(
+    simulated_runtime, has_valid_alternative
+):
+    from test_availability_progress import AvailabilityReplay
+    from test_simulator import new_slot
+
+    runtime, tools, source, engine = simulated_runtime
+    body = episode_body(source)
+    current = datetime.fromisoformat(body["scheduled_at"])
+    bound = (current + timedelta(days=2)).date().isoformat()
+    note = "Bring your booklet. This mandatory appointment must be completed by " + bound + "."
+    body["doctor_note"] = note
+    source.put(
+        "/internal/admin/episodes/DEMO-MYOPIA-VISIT-01", headers=ADMIN, json=body
+    ).raise_for_status()
+    choices = [current, current + timedelta(days=10), current + timedelta(days=30)]
+    if has_valid_alternative:
+        choices.append(current + timedelta(days=1))
+    ids = []
+    for at in choices:
+        r = source.post(
+            "/internal/admin/slots",
+            headers=ADMIN,
+            json=new_slot(
+                specialty="myopia",
+                starts_at=at.isoformat(),
+                ends_at=(at + timedelta(minutes=30)).isoformat(),
+            ),
+        )
+        r.raise_for_status()
+        ids.append(r.json()["id"])
+    case, _ = start(runtime, "myopia")
+    drain(runtime, tools=tools)
+    event(runtime[1], case, "demo_reply", "What slots available?").raise_for_status()
+    drain(runtime, tools=tools, model=AvailabilityReplay(bound=bound))
+    result = view(runtime[1], case)
+    message = result["patient_simulator"]["messages"][-1]
+    assert source_count(engine) == 0
+    assert message["original_body"].count(note) == 1
+    if has_valid_alternative:
+        assert result["run"]["status"] == "waiting"
+        assert result["handoff"] is None
+        assert [s["id"] for s in message["evidence"]["slots"]] == [ids[-1]]
+    else:
+        assert result["run"]["status"] == "escalated"
+        assert message["evidence"]["slots"] == []
+        assert "These fall outside the timing" in message["original_body"]
+        assert "existing appointment" in message["original_body"]
+
+
+def test_identical_normalized_requirements_do_not_repeat_but_distinct_bounds_remain():
+    note = "Bring your booklet. Appointment must be before October 2026."
+    common = {"instruction_id": "same", "quote": note, "date_from": None, "date_to": None}
+    review = normalize_review(
+        [
+            {**common, "effect": "INFORMATION"},
+            {**common, "effect": "DATE_WINDOW", "date_to": "2026-09-30"},
+            {**common, "effect": "DATE_WINDOW", "date_from": "2026-09-15"},
+        ]
+    )
+    assert len(review) == 2
+    assert all(r["date_to"] == "2026-09-30" for r in review)
+    assert any(r["date_from"] == "2026-09-15" for r in review)
