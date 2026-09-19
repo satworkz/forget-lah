@@ -482,8 +482,8 @@ def test_specific_time_clarification_preserves_month(simulated_runtime):
                 from test_patient_memory import NeedsModel
 
                 return NeedsModel(
-                    [("other_concern", "October evenings", "visit")],
-                    question="What evening time suits you?",
+                    [("other_concern", "October outside office hours", "visit")],
+                    question="What times are outside your office hours?",
                     intent="CHANGE",
                 ).decide(obs, **kwargs)
             response = super().decide(obs, **kwargs)
@@ -494,21 +494,24 @@ def test_specific_time_clarification_preserves_month(simulated_runtime):
                     date_to="2026-10-31",
                     earliest_minute=None,
                     next_action="CLARIFY_TIME",
-                    clarification_question="What time in the evening would suit you in October?",
+                    clarification_question="What times outside office hours would suit you in October?",
                 )
             return ModelReply(json.dumps(d))
 
     runtime, tools, _, engine = simulated_runtime
     case, _ = start(runtime, "myopia")
     drain(runtime, tools=tools)
-    event(runtime[1], case, "demo_reply", "I prefer October and evening time").raise_for_status()
+    event(
+        runtime[1], case, "demo_reply", "I prefer October outside my office hours"
+    ).raise_for_status()
     drain(runtime, tools=tools, model=MonthModel())
     result = view(runtime[1], case)
     assert result["run"]["status"] == "waiting"
     assert result["handoff"] is None
     assert source_count(engine) == 0
     assert (
-        "evening would suit you in October" in result["patient_simulator"]["messages"][-1]["body"]
+        "office hours would suit you in October"
+        in result["patient_simulator"]["messages"][-1]["body"]
     )
     from sqlalchemy import select
 
@@ -518,3 +521,39 @@ def test_specific_time_clarification_preserves_month(simulated_runtime):
         barrier = db.scalar(select(AgentRun).where(AgentRun.case_id == case)).checkpoint["barriers"]
         assert barrier["date_from"] == "2026-10-01"
         assert barrier["date_to"] == "2026-10-31"
+
+
+def test_refining_time_search_does_not_reinterpret_old_offer(simulated_runtime):
+    from test_patient_memory import NeedsModel
+
+    class RefinementModel(BarrierModel):
+        def decide(self, obs, **kwargs):
+            e = obs["latest_event"]
+            if obs["role"] == "coordinator" and not obs["needs_reviewed"]:
+                return NeedsModel([], intent="CHANGE").decide(obs, **kwargs)
+            if obs["role"] == "coordinator" and obs.get("barriers", {}).get(
+                "reply_event_id"
+            ) != e.get("reply_event_id", e["id"]):
+                value = json.loads(super().decide({**obs, "barriers": {}}, **kwargs).text)
+                value["earliest_minute"] = 1080
+                return ModelReply(json.dumps(value))
+            if obs["role"] == "engagement":
+                assert "selection_offer" not in obs["simulation"]
+                assert "attendance_review" not in obs["simulation"]
+            return super().decide(obs, **kwargs)
+
+    runtime, tools, source, engine = simulated_runtime
+    add_slot(source, 17)
+    later = add_slot(source, 19)
+    case, _ = start(runtime, "myopia")
+    drain(runtime, tools=tools)
+    event(runtime[1], case, "demo_reply", "Only after 3 pm").raise_for_status()
+    drain(runtime, tools=tools, model=BarrierModel())
+    event(runtime[1], case, "demo_reply", "After 6 pm please").raise_for_status()
+    drain(runtime, tools=tools, model=RefinementModel())
+    result = view(runtime[1], case)
+    assert result["run"]["status"] == "waiting" and not result["handoff"]
+    offer = result["patient_simulator"]["messages"][-1]
+    assert offer["kind"] == "options"
+    assert [s["id"] for s in offer["evidence"]["slots"]] == [later]
+    assert source_count(engine) == 0

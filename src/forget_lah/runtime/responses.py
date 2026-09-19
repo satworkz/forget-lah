@@ -41,6 +41,45 @@ def appointment_facts(db, run):
     return None
 
 
+def restatement_content(db, run):
+    """Reuse substantive current-review content, never accumulated acknowledgements."""
+    messages = db.scalars(
+        select(SimulatedMessage)
+        .where(
+            SimulatedMessage.run_id == run.id,
+            SimulatedMessage.case_id == run.case_id,
+            SimulatedMessage.clinic_id == run.clinic_id,
+        )
+        .order_by(SimulatedMessage.created_at.desc(), SimulatedMessage.id.desc())
+    )
+    for message in messages:
+        if message.kind in {
+            "language_restatement",
+            "comprehension_restatement",
+            "channel_routing",
+            "needs_acknowledgement",
+            "clarification",
+        }:
+            continue
+        body = message.evidence.get("content_body", message.body)
+        # Older messages retain the exact prefixed parts in their evidence.
+        if "content_body" not in message.evidence:
+            parts = message.evidence.get("response_parts", [])
+            prefix = "\n\n".join(p["text"] for p in parts)
+            if prefix and body.startswith(prefix + "\n\n"):
+                body = body[len(prefix) + 2 :]
+        if message.kind == "reminder":
+            body = message.body.replace(
+                "Please reply so we can help arrange follow-up with the clinic.",
+                "Would you like help booking another appointment?",
+            )
+        return body, message.id
+    return (
+        "We contacted you about your clinic follow-up. Would you like help arranging an appointment?",
+        None,
+    )
+
+
 def defer_response(run, event_id, key, text, step_id):
     pending = run.checkpoint.get("response_parts", {})
     if pending.get("event_id") != event_id:

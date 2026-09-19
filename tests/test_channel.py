@@ -565,3 +565,206 @@ def test_patient_message_is_not_prefixed_with_internal_case_reference(channel):
         original = db.get(SimulatedMessage, outgoing.message_id)
         assert outgoing.body == original.body
         assert "Appointment reference:" not in outgoing.body
+
+
+SECOND_PHONE = "whatsapp:+6590000002"
+
+
+def register_second(channel):
+    client, factory, settings, _, _ = channel
+    with factory.begin() as db:
+        case = db.scalar(select(FollowupCase).where(FollowupCase.specialty == "antenatal"))
+        run = queue_case_review(db, case, settings)
+        run.status, run.available_at = "waiting", None
+        case_id, run_id = case.id, run.id
+    headers = {"Origin": settings.public_origin, "X-CSRF-Token": client.cookies["forget_lah_csrf"]}
+    r = client.post(
+        "/api/channels/whatsapp/binding",
+        headers=headers,
+        json={
+            "case_id": case_id,
+            "enabled": True,
+            "recipient": SECOND_PHONE.removeprefix("whatsapp:"),
+        },
+    )
+    r.raise_for_status()
+    return case_id, run_id, r.json()["id"], headers
+
+
+def test_team_phones_route_collect_and_send_independently(channel):
+    client, factory, settings, first_case, first_run = channel
+    second_case, second_run, _, _ = register_second(channel)
+    assert post(client, settings, body="First patient reply").status_code == 200
+    assert (
+        post(
+            client, settings, sid="SM" + "4" * 32, From=SECOND_PHONE, body="Second patient reply"
+        ).status_code
+        == 200
+    )
+    ingest_one(factory)
+    with factory() as db:
+        assert (
+            db.get(AgentRun, first_run).checkpoint["latest_event"]["content"]
+            == "First patient reply"
+        )
+        assert (
+            db.get(AgentRun, second_run).checkpoint["latest_event"]["content"]
+            == "Second patient reply"
+        )
+    first_msg = message(factory, first_case, first_run)
+    second_msg = message(factory, second_case, second_run)
+    collect_messages(factory)
+    collect_messages(factory)
+
+    class Sender:
+        calls = []
+
+        def send_text(self, recipient, body):
+            self.calls.append(recipient)
+            return MessageReceipt("SM" + str(len(self.calls)) * 32, "delivered", None)
+
+    sender = Sender()
+    dispatch_one(factory, sender)
+    dispatch_one(factory, sender)
+    dispatch_one(factory, sender)
+    assert set(sender.calls) == {RECIPIENT, SECOND_PHONE} and len(sender.calls) == 2
+    with factory() as db:
+        rows = {r.message_id: r for r in db.scalars(select(ChannelOutbox))}
+        assert rows[first_msg].recipient == RECIPIENT
+        assert rows[second_msg].recipient == SECOND_PHONE
+        assert len(rows) == 2
+
+
+def test_disconnect_and_expired_window_do_not_block_other_phone(channel):
+    client, factory, settings, case, run = channel
+    second_case, second_run, second_id, headers = register_second(channel)
+    post(client, settings)
+    post(client, settings, sid="SM" + "4" * 32, From=SECOND_PHONE)
+    message(factory, case, run)
+    message(factory, second_case, second_run)
+    collect_messages(factory)
+    with factory.begin() as db:
+        db.get(ChannelBinding, "whatsapp-test-phone").inbound_at = utcnow() - timedelta(days=2)
+
+    class Sender:
+        calls = []
+
+        def send_text(self, recipient, body):
+            self.calls.append(recipient)
+            return MessageReceipt("SM" + "5" * 32, "delivered", None)
+
+    sender = Sender()
+    dispatch_one(factory, sender)
+    assert sender.calls == [SECOND_PHONE]
+    client.post(
+        "/api/channels/whatsapp/binding",
+        headers=headers,
+        json={"case_id": second_case, "enabled": False, "binding_id": second_id},
+    ).raise_for_status()
+    with factory() as db:
+        assert db.get(ChannelBinding, "whatsapp-test-phone").enabled
+        assert (
+            db.scalar(select(ChannelOutbox).where(ChannelOutbox.case_id == case)).status == "queued"
+        )
+        assert db.get(ChannelInbox, "SM" + "4" * 32).status == "disconnected"
+    assert post(client, settings, sid="SM" + "6" * 32, From=SECOND_PHONE).status_code == 409
+    assert (
+        post(client, settings, sid="SM" + "7" * 32, From="whatsapp:+6590000099").status_code == 403
+    )
+
+
+def test_team_registration_rejects_duplicate_patient_and_invalid_phone(channel):
+    client, factory, settings, case, _ = channel
+    second_case, _, ident, headers = register_second(channel)
+    for number, target, status in [
+        ("+6590000003", case, 409),
+        (SECOND_PHONE, case, 409),
+        ("90000003", second_case, 422),
+    ]:
+        assert (
+            client.post(
+                "/api/channels/whatsapp/binding",
+                headers=headers,
+                json={"case_id": target, "enabled": True, "recipient": number},
+            ).status_code
+            == status
+        )
+    assert (
+        client.post(
+            "/api/channels/whatsapp/binding",
+            headers={"Origin": settings.public_origin},
+            json={"case_id": second_case, "enabled": False, "binding_id": ident},
+        ).status_code
+        == 403
+    )
+    assert len(client.get("/api/channels/whatsapp").json()["bindings"]) == 2
+
+
+def test_reset_preserves_all_registered_patients(channel):
+    client, factory, settings, _, _ = channel
+    register_second(channel)
+    post(client, settings)
+    post(client, settings, sid="SM" + "4" * 32, From=SECOND_PHONE)
+    with factory.begin() as db:
+        before = {
+            b.recipient: (db.get(FollowupCase, b.case_id).patient_id, b.inbound_at)
+            for b in db.scalars(select(ChannelBinding))
+        }
+        reset_demo(
+            db, list(db.scalars(select(FollowupCase.id))), candidates_from_payload(candidates())
+        )
+    with factory() as db:
+        after = {
+            b.recipient: (db.get(FollowupCase, b.case_id).patient_id, b.inbound_at)
+            for b in db.scalars(select(ChannelBinding))
+            if b.enabled
+        }
+        assert before == after and len(after) == 2
+
+
+def test_team_dispatch_is_paced_across_all_phones(channel, monkeypatch):
+    from forget_lah.channel import channel_tick
+
+    client, factory, settings, case, run = channel
+    second_case, second_run, _, _ = register_second(channel)
+    post(client, settings)
+    post(client, settings, sid="SM" + "4" * 32, From=SECOND_PHONE)
+    message(factory, case, run)
+    message(factory, second_case, second_run)
+    calls = []
+
+    class Sender:
+        def __init__(self, config, *, allowed_recipients):
+            assert set(allowed_recipients) == {RECIPIENT, SECOND_PHONE}
+
+        def send_text(self, recipient, body):
+            calls.append(recipient)
+            return MessageReceipt("SM" + str(len(calls)) * 32, "delivered", None)
+
+    monkeypatch.setattr("forget_lah.channel.WhatsAppClient", Sender)
+    channel_tick(factory, settings)
+    channel_tick(factory, settings)
+    assert len(calls) == 1
+    with factory.begin() as db:
+        db.get(ChannelRoutingState, "whatsapp-send-clock").data = {
+            "reserved_at": utcnow().timestamp() - 4
+        }
+    channel_tick(factory, settings)
+    assert len(calls) == 2 and set(calls) == {RECIPIENT, SECOND_PHONE}
+
+
+def test_new_registration_waits_for_next_transport_allowlist(channel):
+    client, factory, settings, case, run = channel
+    post(client, settings)
+    message(factory, case, run)
+    collect_messages(factory)
+
+    class NotYetAllowed:
+        allowed_recipients = frozenset()
+
+        def send_text(self, recipient, body):
+            pytest.fail("Stale allowlist must not dispatch or fail the queued message")
+
+    dispatch_one(factory, NotYetAllowed())
+    with factory() as db:
+        assert db.scalar(select(ChannelOutbox)).status == "queued"

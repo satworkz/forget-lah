@@ -90,3 +90,18 @@ def test_status_receipt_includes_failed_delivery():
 
     receipt = WhatsAppClient(config(), transport=httpx.MockTransport(respond)).message_status(sid)
     assert receipt.status == "failed" and receipt.error_code == 63016
+
+
+def test_registered_allowlist_replaces_legacy_recipient():
+    recipient = "whatsapp:+15550000003"
+
+    def respond(request):
+        assert parse_qs(request.content.decode())["To"] == [recipient]
+        return httpx.Response(201, json={"sid": "SM" + "3" * 32, "status": "queued"})
+
+    client = WhatsAppClient(
+        config(), transport=httpx.MockTransport(respond), allowed_recipients=[recipient]
+    )
+    assert client.send_text(recipient, "Team test").status == "queued"
+    with pytest.raises(WhatsAppError, match="TEST_RECIPIENT_NOT_ALLOWED"):
+        client.send_text(config().twilio_whatsapp_test_to, "Must not send")

@@ -1,5 +1,8 @@
 # WhatsApp integration: account validation milestone
 
+**Current: simultaneous team testing is supported.** Register one phone per demo patient in **Developer testing → WhatsApp team test phones**. The section at the end gives the setup steps and supersedes older single-phone limits.
+
+
 **18 September: patient-level WhatsApp continuity (migration 0009).** Connect the team test phone once using any case for the patient. New cases for the same clinic/patient automatically join the connection; messages created after enrollment are collected once, including a new appointment reminder. Other patients are excluded. Existing pre-enrollment messages are not replayed. A valid reply to a completed case starts a fresh review under the service identity, links to the prior completed run, refreshes source evidence and preserves old history. Paused/escalated cases remain under their existing controls and receive an acknowledgement instead of silently discarding the reply.
 
 When multiple cases can match, signed WhatsApp reply context identifies the appointment. Otherwise an explicitly selected conversation focus is used; the latest successfully sent appointment message establishes that focus. If still ambiguous, the app saves the original request and asks which appointment using last-recorded date/time and a short case reference. Choosing an appointment only routes the original request; it is not booking/cancellation consent. Extra clarification text is retained. More than ten cases requires replying to the relevant original message or its reference. No model guesses appointment identity. Current clinic reads and policy still control all changes. An explicit cancellation request requires a staff handoff and acknowledgement because no source cancellation write exists.
@@ -68,3 +71,19 @@ Coordinator reviews preparation-related statements as well as questions (for exa
 **Reset and WhatsApp continuity:** Reset preserves an enabled test-phone enrollment by clinic/patient identity, rebinds it to a recreated eligible case and queues newly generated reminders through the normal deduplicated outbox. Old queued deliveries are canceled; provider SID tombstones remain. Explicitly disconnected phones stay disconnected. The existing inbound messaging window is preserved, never renewed by reset. No eligible case for that patient means no automatic reconnection.
 
 **Reconnect window fix:** Re-enrolling the same configured phone preserves its verified inbound timestamp, including an expired timestamp; connecting a different recipient clears it. Reset preserves that timestamp too. The 20 channel tests pass. For the affected demo, the missing timestamp was recovered from an authenticated Twilio inbound record for the configured sender/recipient, without replaying the patient message or resetting data.
+
+
+## Simultaneous team WhatsApp testing (19 September)
+
+Multiple team phones can now be registered from **Developer testing → WhatsApp team test phones**. Each phone must represent a different synthetic patient; multiple appointments for that same patient stay under their phone. The existing configured phone is preserved. Additional numbers are stored in the database and do not require environment edits or redeployment.
+
+1. Each teammate joins the same Twilio Sandbox using the displayed `join ...` phrase.
+2. Enter their international WhatsApp number (for example `+6591234567`) and select their demo patient. Click **Connect test phone**.
+3. After connecting, the teammate sends a message to the Sandbox to open their own reply window. New messages then use that phone. Pre-enrollment reminders are not replayed; a fresh review can generate a new reminder.
+4. Check the registered-phone card for connection and reply-window status. Disconnect affects only that phone. To assign it to another patient, disconnect first and register the number with the other patient.
+
+Phone enrollment is an explicit staff action protected by clinic access, Origin and CSRF checks. Incoming messages still require a valid Twilio signature, the configured account/sender, and an enabled registered number. Unknown numbers cannot enter case processing. The transport send allowlist is built from active registrations. Each registration has isolated conversation focus, incoming binding evidence, and inbound-window timestamps. Delivery is paced across the shared Sandbox sender; one closed window does not block the other phones.
+
+Reset preserves all active same-patient registrations and their original window expiry, but clears all demo histories/preferences for everyone. Coordinate resets with teammates. Sandbox membership and the service reply window remain separate: rejoin when membership expires and send a new inbound message when the reply window expires. This adds test-phone enrollment, not production patient identity verification.
+
+Migration `0010` uniquely identifies a recipient within a clinic while retaining the original binding. No demo data reset is required.

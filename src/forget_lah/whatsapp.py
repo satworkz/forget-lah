@@ -33,8 +33,13 @@ class MessageReceipt:
 
 
 class WhatsAppClient:
-    def __init__(self, settings: WhatsAppSettings, *, transport=None):
+    def __init__(self, settings: WhatsAppSettings, *, transport=None, allowed_recipients=None):
         self.settings, self.transport = settings, transport
+        self.allowed_recipients = frozenset(
+            allowed_recipients
+            if allowed_recipients is not None
+            else [settings.twilio_whatsapp_test_to]
+        )
 
     def _request(self, method, resource, *, data=None):
         sid = self.settings.twilio_account_sid
@@ -103,7 +108,7 @@ class WhatsAppClient:
         return MessageReceipt(value["sid"], status, error if isinstance(error, int) else None)
 
     def send_text(self, recipient, body):
-        if recipient != self.settings.twilio_whatsapp_test_to:
+        if recipient not in self.allowed_recipients:
             raise WhatsAppError("TEST_RECIPIENT_NOT_ALLOWED")
         if not isinstance(body, str) or not body.strip() or len(body) > 1600:
             raise WhatsAppError("MESSAGE_BODY_INVALID")

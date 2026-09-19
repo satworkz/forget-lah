@@ -10,7 +10,14 @@ from sqlalchemy import select, text
 
 from forget_lah.source import DEMO_CLINIC_ID
 from services.mock_clinic.contracts import Strict
-from services.mock_clinic.store import Confirmation, Episode, Slot, confirmation_dict, envelope
+from services.mock_clinic.store import (
+    Confirmation,
+    Episode,
+    Slot,
+    can_book_followup,
+    confirmation_dict,
+    envelope,
+)
 
 
 class ConfirmInput(Strict):
@@ -27,6 +34,7 @@ class BookInput(ConfirmInput):
 
 
 def install_confirmation_routes(app, factory, settings):
+    @app.post("/internal/followup/{episode}/book-followup")
     @app.post("/internal/followup/{episode}/book-recall")
     @app.post("/internal/followup/{episode}/reschedule")
     def book(episode: str, body: BookInput, request: Request):
@@ -89,11 +97,7 @@ def install_confirmation_routes(app, factory, settings):
                     and starts != scheduled
                 )
                 if rescheduling
-                else (
-                    row.record_type == "recall"
-                    and row.source_status == "due"
-                    and not row.has_future_booking
-                )
+                else can_book_followup(row, now)
             )
             if (
                 row.version != body.expected_version

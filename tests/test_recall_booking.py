@@ -161,9 +161,10 @@ def prepare_recall(source):
     return slot
 
 
-@pytest.mark.parametrize("rescheduling", [False, True])
+@pytest.mark.parametrize("kind", ["recall", "reschedule", "missed"])
 @pytest.mark.parametrize("selection", ["Book option 1", "option 1 ok for me"])
-def test_recall_offer_then_explicit_booking_completes(simulated_runtime, rescheduling, selection):
+def test_recall_offer_then_explicit_booking_completes(simulated_runtime, kind, selection):
+    rescheduling = kind == "reschedule"
     runtime, tools, source, source_engine = simulated_runtime
     prepare_recall(source)
     if rescheduling:
@@ -174,6 +175,16 @@ def test_recall_offer_then_explicit_booking_completes(simulated_runtime, resched
             due_at=None,
             scheduled_at=(datetime.now(UTC) + timedelta(days=1)).isoformat(),
             has_future_booking=True,
+        )
+        source.put(f"/internal/admin/episodes/{REF}", headers=ADMIN, json=body).raise_for_status()
+    if kind == "missed":
+        body = episode_body(source, REF)
+        body.update(
+            record_type="appointment",
+            source_status="no_show",
+            due_at=None,
+            scheduled_at=(datetime.now(UTC) - timedelta(days=1)).isoformat(),
+            has_future_booking=False,
         )
         source.put(f"/internal/admin/episodes/{REF}", headers=ADMIN, json=body).raise_for_status()
     original = episode_body(source, REF)
@@ -525,3 +536,29 @@ def test_rescheduling_stale_slot_offers_remaining_slots_without_changing_appoint
     drain(runtime, tools=tools)
     assert view(runtime[1], case_id)["run"]["status"] == "completed"
     assert source_count(source_engine) == 1
+
+
+@pytest.mark.parametrize(
+    "status,future_booking,days,expected",
+    [
+        ("no_show", False, -1, True),
+        ("no_show", True, -1, False),
+        ("no_show", False, 1, False),
+        ("cancelled", False, -1, False),
+        ("completed", False, -1, False),
+        ("scheduled", False, -1, False),
+    ],
+)
+def test_missed_followup_capability_is_narrow(status, future_booking, days, expected):
+    from types import SimpleNamespace
+
+    from services.mock_clinic.store import can_book_followup
+
+    now = datetime.now(UTC)
+    row = SimpleNamespace(
+        record_type="appointment",
+        source_status=status,
+        has_future_booking=future_booking,
+        scheduled_at=now + timedelta(days=days),
+    )
+    assert can_book_followup(row, now) is expected

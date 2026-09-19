@@ -207,3 +207,40 @@ Broader concerns do not need a new phrase-specific rule. Claude can save the pat
 The app cannot check forecasts, traffic congestion or infer someone's work schedule. Such concerns remain pending reports until actionable times are clarified. Different concerns are retained separately. They apply to the current visit unless the patient explicitly describes an ongoing preference; future-scoped concerns can inform later follow-ups. Staff can inspect the original quote, scope and status under patient preferences. This is saved context, not model training, and an explicit appointment selection is still required before a source booking update.
 
 Structured needs and scheduling decisions have a bounded 2,048-token Anthropic response allowance for multilingual quotes and constraints; ordinary decisions retain 512 tokens and preparation answers retain 1,024. A truncated response is still rejected and cannot authorize a write.
+
+
+## Booking follow-up after a missed appointment
+
+A past source appointment marked no_show, with no existing future booking, now advertises the same synthetic new-booking capability as a due recall. The clinic source validates the accepted slot, patient/clinic binding, episode and slot versions, prerequisites and future availability in one transaction. Replays return the same receipt; conflicting writes remain rejected. Cancelled/completed visits and future-dated no_show records do not become bookable through this change. The past appointment is never confirmed as attended.
+
+The general book-followup source endpoint supports recalls and missed visits; book-recall remains a compatibility alias. Natural-language acceptance is still interpreted against the saved offer by Claude, including Malay “ya, sahkan”. Priya's reported failure was a missing source capability, not a failed Malay interpretation. Historical escalated reviews remain historical; a fresh simulator review uses the updated capability without resetting patient preferences.
+
+
+## Simultaneous team WhatsApp testing (19 September)
+
+Multiple team phones can now be registered from **Developer testing → WhatsApp team test phones**. Each phone must represent a different synthetic patient; multiple appointments for that same patient stay under their phone. The existing configured phone is preserved. Additional numbers are stored in the database and do not require environment edits or redeployment.
+
+1. Each teammate joins the same Twilio Sandbox using the displayed `join ...` phrase.
+2. Enter their international WhatsApp number (for example `+6591234567`) and select their demo patient. Click **Connect test phone**.
+3. After connecting, the teammate sends a message to the Sandbox to open their own reply window. New messages then use that phone. Pre-enrollment reminders are not replayed; a fresh review can generate a new reminder.
+4. Check the registered-phone card for connection and reply-window status. Disconnect affects only that phone. To assign it to another patient, disconnect first and register the number with the other patient.
+
+Phone enrollment is an explicit staff action protected by clinic access, Origin and CSRF checks. Incoming messages still require a valid Twilio signature, the configured account/sender, and an enabled registered number. Unknown numbers cannot enter case processing. The transport send allowlist is built from active registrations. Each registration has isolated conversation focus, incoming binding evidence, and inbound-window timestamps. Delivery is paced across the shared Sandbox sender; one closed window does not block the other phones.
+
+Reset preserves all active same-patient registrations and their original window expiry, but clears all demo histories/preferences for everyone. Coordinate resets with teammates. Sandbox membership and the service reply window remain separate: rejoin when membership expires and send a new inbound message when the reply window expires. This adds test-phone enrollment, not production patient identity verification.
+
+Migration `0010` uniquely identifies a recipient within a clinic while retaining the original binding. No demo data reset is required.
+
+
+## Conversation comprehension and language repair
+
+The Coordinator can propose a comprehension repair with an exact quote from the current patient reply. The gateway validates that quote. A standalone request to explain or use another language restores substantive content from the current review, skipping earlier clarification loops and language acknowledgements. A missed-appointment reminder explains the missed visit and asks whether the patient wants help booking another appointment. The normal audited translation pipeline renders the combined response in the patient language.
+
+Language restatements no longer add a second language acknowledgement or copy saved preference acknowledgements. Existing combined messages are unwrapped using their recorded response-part evidence. Independent appointment acceptance and clinical questions continue through their existing paths; a comprehension request alone never confirms or changes a booking. Historical delivered messages are retained unchanged.
+
+
+## Search named appointment periods before clarification
+
+Morning, afternoon and evening requests are interpreted by Claude as search constraints rather than practical concerns. The demo search convention is morning before noon, afternoon noon to before 5 pm, and evening from 5 pm, in Singapore time. These windows are not clinic opening-hour claims: only source-provided available slots are offered. Existing dates, month ranges and saved exclusions continue to constrain the search. A patient selects an offered slot before any booking write. Unspecified work schedules, heat and traffic preferences still require usable timing details; no conditions are invented. Clarification for a missed visit no longer claims an existing appointment was left unchanged. This supersedes the earlier requirement to clarify every evening request.
+
+When the current reply has been assessed as a new slot search, Engagement no longer routes it into attendance confirmation or selection of a previous offer. This lets a refinement such as after 6 pm refresh the available slots while preserving the requested month.

@@ -320,3 +320,75 @@ def test_open_ended_scheduling_concern_is_saved_without_invented_exclusions(
     assert record["key"] == "other_concern" and record["quote"] == text
     assert record["scope"] == "visit" and record["status"] == "pending"
     assert question in result["patient_simulator"]["messages"][-1]["body"]
+
+
+@pytest.mark.parametrize("language", ["en", "zh", "ms", "ta"])
+def test_confusion_restates_purpose_without_duplicate_language_ack(simulated_runtime, language):
+    from pydantic import SecretStr
+    from sqlalchemy import select
+    from test_patient_simulation import source_count
+
+    from forget_lah.runtime.models import AgentRun, SimulatedMessage
+
+    class ConfusedModel(NeedsModel):
+        def decide(self, obs, **kwargs):
+            result = super().decide(obs, **kwargs)
+            value = json.loads(result.text)
+            if value["step_type"] == "REVIEW_NEEDS":
+                value["comprehension_quote"] = obs["latest_event"]["content"]
+            return ModelReply(json.dumps(value))
+
+    from datetime import UTC, datetime, timedelta
+
+    from test_simulator import ADMIN, episode_body
+
+    runtime, tools, source, engine = simulated_runtime
+    body = episode_body(source, "DEMO-ANTENATAL-VISIT-01")
+    body.update(
+        source_status="no_show", scheduled_at=(datetime.now(UTC) - timedelta(days=2)).isoformat()
+    )
+    source.put(
+        "/internal/admin/episodes/DEMO-ANTENATAL-VISIT-01", headers=ADMIN, json=body
+    ).raise_for_status()
+    case, _ = start(runtime, "antenatal")
+    drain(runtime, tools=tools)
+    runtime[2].multilingual_enabled = True
+    runtime[2].agent_model_mode = "anthropic"
+    runtime[2].anthropic_api_key = SecretStr("test-key")
+    with runtime[0].begin() as db:
+        run = db.scalar(select(AgentRun).where(AgentRun.case_id == case))
+        run.mode = "anthropic"
+        # Reproduce the legacy clarification carrying a prefixed memory acknowledgement.
+        db.add(
+            SimulatedMessage(
+                clinic_id=run.clinic_id,
+                case_id=case,
+                run_id=run.id,
+                event_id="old-reply",
+                kind="clarification",
+                source_version="test",
+                body="I'll respond in Tamil. I'll remember this for future follow-ups.\n\nWhat help do you want?",
+                evidence={
+                    "response_parts": [
+                        {"text": "I'll respond in Tamil. I'll remember this for future follow-ups."}
+                    ]
+                },
+            )
+        )
+    for reply in ("I do not understand", "I cannot understand English"):
+        event(runtime[1], case, "demo_reply", reply).raise_for_status()
+        drain(
+            runtime, tools=tools, model=ConfusedModel([("preferred_language", language, "future")])
+        )
+        result = view(runtime[1], case)
+        message = result["patient_simulator"]["messages"][-1]
+        body = message["original_body"]
+        assert "missed appointment" in body
+        assert "Would you like help booking another appointment?" in body
+        assert "Sorry for the confusion" in body
+        assert "I'll respond" not in body and "What help" not in body
+        assert result["run"]["status"] == "waiting" and not result["handoff"]
+        assert message["translation"] == (
+            {"language": language, "status": "pending"} if language != "en" else None
+        )
+    assert source_count(engine) == 0

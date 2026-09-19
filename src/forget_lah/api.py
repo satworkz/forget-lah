@@ -142,7 +142,7 @@ def create_app(settings: Settings | None = None, engine=None) -> FastAPI:
     def ready():
         try:
             with factory() as db:
-                if db.scalar(text("SELECT version_num FROM alembic_version")) != "0009":
+                if db.scalar(text("SELECT version_num FROM alembic_version")) != "0010":
                     raise ValueError("Agent migration is required")
                 db.execute(select(Clinic.id).limit(1))
                 db.execute(select(AgentRun.id).limit(1))

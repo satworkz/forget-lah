@@ -68,7 +68,7 @@ class ClinicTools:
         endpoint = (
             "reschedule"
             if operation.get("reschedule")
-            else "book-recall"
+            else "book-followup"
             if booking
             else "confirm-attendance"
         )

@@ -109,6 +109,11 @@ def policy_for(db, run, case, step, decision):
             and (not decision.concern_quote.strip() or decision.concern_quote not in reply.content)
         ):
             deny = "MEMORY_QUOTE_NOT_IN_PATIENT_REPLY"
+        elif decision.comprehension_quote is not None and (
+            not decision.comprehension_quote.strip()
+            or decision.comprehension_quote not in reply.content
+        ):
+            deny = "COMPREHENSION_QUOTE_NOT_IN_REPLY"
         elif decision.appointment_request_quote is not None and (
             not decision.appointment_request_quote.strip()
             or decision.appointment_request_quote not in reply.content
