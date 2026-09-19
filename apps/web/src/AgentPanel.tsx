@@ -346,7 +346,7 @@ export function AgentPanel({
                     </>}
                   </div>}
                   {view.handoff.reason_code === "CAPABILITY_UNAVAILABLE" && <p>
-                    {view.patient_simulator?.enabled ? "This scenario needs clinic help. Check the tool evidence for an unavailable action, changed slot or preparation issue. The simulator supports recall bookings, attendance confirmations and rescheduling future appointments through the clinic API." : "This older review used read-only capabilities. Start a fresh simulator test to exercise attendance confirmation and acknowledgement."}
+                    {view.patient_simulator?.enabled ? "This scenario needs clinic help. Check the tool evidence for an unavailable action, changed slot or preparation issue. The simulator supports recall and missed-appointment follow-up bookings, attendance confirmations and rescheduling future appointments through the clinic API." : "This older review used read-only capabilities. Start a fresh simulator test to exercise attendance confirmation and acknowledgement."}
                   </p>}
                   {view.handoff.accepted ? (
                     <p>

@@ -237,6 +237,13 @@ def simulation_evidence(db, run):
     offer = latest_selection_offer(db, run)
     result["has_offer"] = offer is not None
     patient_reply = saved_reply(db, run)
+    barriers = run.checkpoint.get("barriers", {})
+    refining_search = bool(
+        patient_reply
+        and run.checkpoint.get("appointment_intent") == "CHANGE"
+        and barriers.get("reply_event_id") == patient_reply.id
+        and barriers.get("next_action") == "SEARCH_SLOTS"
+    )
     reminder = db.scalar(
         select(SimulatedMessage).where(
             SimulatedMessage.run_id == run.id,
@@ -248,6 +255,7 @@ def simulation_evidence(db, run):
     )
     if (
         not offer
+        and not refining_search
         and patient_reply
         and not reply
         and context
@@ -270,6 +278,7 @@ def simulation_evidence(db, run):
         }
     if (
         offer
+        and not refining_search
         and context
         and context.sequence > run.checkpoint.get("delegation_start", 0)
         and not choice

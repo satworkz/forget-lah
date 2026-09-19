@@ -772,51 +772,22 @@ def apply_control(db, run, case, step, decision, settings):
             for u in language_changes
         )
         if (
-            known_language
+            (known_language or decision.comprehension_quote)
             and len(language_changes) == len(decision.updates)
             and not (decision.patient_questions or decision.preparation_plans)
             and decision.appointment_intent == "UNSPECIFIED"
         ):
-            # A resolved language request is not an appointment decision. Restate the
-            # last clinic message using the normal audited translation pipeline.
-            previous = None
-            for message in db.scalars(
-                select(SimulatedMessage)
-                .where(
-                    SimulatedMessage.clinic_id == case.clinic_id,
-                    SimulatedMessage.case_id == case.id,
-                    SimulatedMessage.event_id != decision.reply_event_id,
-                )
-                .order_by(SimulatedMessage.created_at.desc(), SimulatedMessage.id.desc())
-            ):
-                if message.kind in {"language_restatement", "channel_routing"}:
-                    continue
-                old_step = (
-                    db.get(AgentStep, message.evidence.get("decision_step_id"))
-                    if message.evidence.get("decision_step_id")
-                    else None
-                )
-                if (
-                    old_step
-                    and old_step.decision
-                    and old_step.decision.get("step_type") == "REVIEW_NEEDS"
-                    and any(
-                        u.get("key") == "preferred_language"
-                        for u in old_step.decision.get("updates", [])
-                    )
-                ):
-                    continue
-                previous = message
-                break
-            names = {"en": "English", "zh": "Chinese", "ms": "Malay", "ta": "Tamil"}
-            body = f"Of course. I'll respond in {names[language]}."
-            if previous:
-                body = (
-                    body + "\n\n" + previous.body
-                    if len(body) + 2 + len(previous.body) <= 2600
-                    else previous.body
-                )
-            say(body, "language_restatement", previous.id if previous else None)
+            from forget_lah.runtime.responses import restatement_content
+
+            body, source_id = restatement_content(db, run)
+            if decision.comprehension_quote:
+                body = "Sorry for the confusion. " + body
+            kind = (
+                "comprehension_restatement"
+                if decision.comprehension_quote
+                else "language_restatement"
+            )
+            say(body, kind, source_id)
             run.checkpoint = {**run.checkpoint, "wait_reason": "AWAITING_PATIENT_REPLY"}
             release(run, "waiting")
             return
@@ -926,7 +897,11 @@ def apply_control(db, run, case, step, decision, settings):
                         decision.clarification_question
                         or "Which dates and times would work for you and anyone accompanying you?"
                     )
-                    + " Your appointment has not been changed.",
+                    + (
+                        " Your appointment has not been changed."
+                        if appointment_facts(db, run)
+                        else ""
+                    ),
                     source_version="patient-constraints-v1",
                     evidence={
                         "decision_step_id": step.id,

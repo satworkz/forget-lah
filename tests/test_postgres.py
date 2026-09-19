@@ -202,7 +202,7 @@ def test_postgres_migration_preserves_existing_cases_and_creates_budget(postgres
     with factory() as db:
         assert set(db.scalars(select(FollowupCase.id))) == before
         assert len(before) == 3
-        assert db.scalar(text("SELECT version_num FROM alembic_version")) == "0009"
+        assert db.scalar(text("SELECT version_num FROM alembic_version")) == "0010"
         assert db.get(ModelBudget, "organiser").calls == 0
     # No differences between the explicit migration and mapped runtime schema.
     from alembic.autogenerate import compare_metadata
@@ -367,3 +367,44 @@ def test_postgres_patient_memory_revisions_and_audit(postgres_schema):
         )
         db.flush()
         assert not effective_memory(db, case)
+
+
+@pytest.mark.postgres
+def test_team_phone_migration_preserves_enrollment(postgres_schema):
+    from sqlalchemy.exc import IntegrityError
+
+    from forget_lah.channel_models import ChannelBinding
+
+    engine, factory = postgres_schema
+    command.upgrade(Config("alembic.ini"), "0009")
+    # Reproduce an existing 0009 installation before the model constraint was added.
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE channel_binding DROP CONSTRAINT uq_channel_phone"))
+    seed(factory, "test@forget-lah.example", "postgres-test-only-password")
+    detect(factory, DEMO_CLINIC_ID, candidates_from_payload(candidates()))
+    with factory.begin() as db:
+        case = db.scalar(select(FollowupCase))
+        db.add(
+            ChannelBinding(
+                id="whatsapp-test-phone",
+                clinic_id=DEMO_CLINIC_ID,
+                case_id=case.id,
+                recipient="whatsapp:+6590000001",
+                enabled=True,
+            )
+        )
+    command.upgrade(Config("alembic.ini"), "head")
+    with factory() as db:
+        binding = db.get(ChannelBinding, "whatsapp-test-phone")
+        assert binding.enabled and binding.recipient == "whatsapp:+6590000001"
+        case_id = binding.case_id
+    with pytest.raises(IntegrityError), factory.begin() as db:
+        db.add(
+            ChannelBinding(
+                id=uid(),
+                clinic_id=DEMO_CLINIC_ID,
+                case_id=case_id,
+                recipient="whatsapp:+6590000001",
+                enabled=True,
+            )
+        )

@@ -176,3 +176,45 @@ General practical concerns (heat, traffic, work hours) use attributed other_conc
 Validation: targeted adaptation, memory and provider tests and an opt-in live Anthropic Tamil month/evening flow passed. The live flow reaches a focused time clarification without a pause, handoff, permanent exclusion memory or appointment write. Final Linux/Python 3.12 container suite passed with PostgreSQL: 377 passed, 6 opt-in live cases skipped. The final 68-test provider suite also passed, including the two added structured-output budget checks; Ruff, formatting and the web build passed. Four opt-in live Anthropic scenarios passed separately: the Tamil October request followed by an English time refinement offered only the matching October evening slot, and each of the three practical concerns produced a scoped memory record and focused clarification. Anthropic needs/barrier decisions now have a bounded 2,048-token output allowance to avoid truncating multilingual structured decisions; ordinary decisions retain 512 and preparation answers 1,024.
 
 AWS API and worker were deployed from the verified image. Alex's original saved patient event was resumed through audited retry, retaining October 1–31 and reaching AWAITING_PATIENT_REPLY with no handoff or appointment write. An initial transient model connection failure retried successfully. The Tamil timing clarification was translated and its WhatsApp delivery receipt confirmed delivered.
+
+
+## Booking follow-up after a missed appointment
+
+A past source appointment marked no_show, with no existing future booking, now advertises the same synthetic new-booking capability as a due recall. The clinic source validates the accepted slot, patient/clinic binding, episode and slot versions, prerequisites and future availability in one transaction. Replays return the same receipt; conflicting writes remain rejected. Cancelled/completed visits and future-dated no_show records do not become bookable through this change. The past appointment is never confirmed as attended.
+
+The general book-followup source endpoint supports recalls and missed visits; book-recall remains a compatibility alias. Natural-language acceptance is still interpreted against the saved offer by Claude, including Malay “ya, sahkan”. Priya's reported failure was a missing source capability, not a failed Malay interpretation. Historical escalated reviews remain historical; a fresh simulator review uses the updated capability without resetting patient preferences.
+
+Validation: 89 booking, simulator and patient-flow tests passed in Linux containers with PostgreSQL, including concurrent booking checks. The paid live Claude test of Priya-style missed-appointment booking with “ya, sahkan” completed with one source receipt and no handoff. Ruff, formatting and the web build passed. The source, API, worker and UI changes were deployed together to AWS.
+
+Priya's fresh AWS review reached waiting with no handoff; the source now advertises booking capability, and the reminder is translated into Malay using her preserved language preference. No patient reply or booking was fabricated during recovery.
+
+
+## Simultaneous WhatsApp team testing
+
+Staff can register several WhatsApp test phones in Developer testing, with one active phone per synthetic patient. Signed inbound messages, case focus, reply windows and outgoing deliveries are isolated by registration. New appointments retain the patient connection. Disconnecting or an expired reply window on one phone does not block others. Reset preserves active patient connections but clears shared demo history and preferences.
+
+Migration 0010 preserves existing enrollment and enforces unique clinic/phone registration. The existing environment number remains a compatibility default; additional numbers are entered through the UI. The sender uses the current active registration allowlist and a shared three-second send interval. A new registration waits for the next allowlist snapshot rather than failing a delivery.
+
+Validation: full Linux/PostgreSQL suite passed (395 passed, 7 optional tests skipped); the legacy-0009 enrollment migration check also passed separately. Ruff, formatting and the web build passed. Database backed up before deploying migration 0010 and updated API/worker/web images to AWS. Post-deployment checks verified HTTP readiness 200, the team-phone UI bundle, and the unchanged original enabled phone/case connection. No teammate phone was enrolled or messaged during verification; physical multi-device testing begins after staff registration.
+
+
+## Conversation comprehension and language repair
+
+The Coordinator can propose a comprehension repair with an exact quote from the current patient reply. The gateway validates that quote. A standalone request to explain or use another language restores substantive content from the current review, skipping earlier clarification loops and language acknowledgements. A missed-appointment reminder explains the missed visit and asks whether the patient wants help booking another appointment. The normal audited translation pipeline renders the combined response in the patient language.
+
+Language restatements no longer add a second language acknowledgement or copy saved preference acknowledgements. Existing combined messages are unwrapped using their recorded response-part evidence. Independent appointment acceptance and clinical questions continue through their existing paths; a comprehension request alone never confirms or changes a booking. Historical delivered messages are retained unchanged.
+
+Targeted validation: 27 patient-memory tests passed, including repeated comprehension repair across English, Chinese, Malay and Tamil. A paid live Claude test passed with the two original Tamil replies against a missed-appointment source; both responses retained the missed-visit purpose and concrete booking question, queued Tamil translation, and created no appointment write or handoff. This live test checked interpretation and response composition, not a physical WhatsApp delivery.
+
+Release validation: full Linux/PostgreSQL suite passed (399 passed, 8 optional tests skipped); Ruff, formatting and the web build passed. Updated API/worker deployed to AWS without resetting data. Readiness returned 200 and the running application exposes the new comprehension-repair contract. Existing delivered conversation entries are unchanged; subsequent replies use the repaired path.
+
+
+## Search named appointment periods before clarification
+
+Morning, afternoon and evening requests are interpreted by Claude as search constraints rather than practical concerns. The demo search convention is morning before noon, afternoon noon to before 5 pm, and evening from 5 pm, in Singapore time. These windows are not clinic opening-hour claims: only source-provided available slots are offered. Existing dates, month ranges and saved exclusions continue to constrain the search. A patient selects an offered slot before any booking write. Unspecified work schedules, heat and traffic preferences still require usable timing details; no conditions are invented. Clarification for a missed visit no longer claims an existing appointment was left unchanged. This supersedes the earlier requirement to clarify every evening request.
+
+When the current reply has been assessed as a new slot search, Engagement no longer routes it into attendance confirmation or selection of a previous offer. This lets a refinement such as after 6 pm refresh the available slots while preserving the requested month.
+
+Validation: full Linux/PostgreSQL suite passed (399 passed, 9 optional tests skipped). After the final refinement-routing change, 101 scheduling/patient-flow/booking tests passed with 3 PostgreSQL-only skips in the local targeted run. Ruff, formatting and web build passed. Live Claude handled Priya-style Tamil evening preference with only the available 5 pm slot offered, no concern memory, no booking and no handoff. The October-evening live scenario produced its matching initial offer; later refinement validation encountered provider output truncation and then a connection failure across bounded reruns, so live completion of that second turn is not claimed. Its behavior is covered by the passing regression test.
+
+Deployed to AWS without resetting data. Readiness returned 200; the running API image was checked for the named-period search instructions and refinement-routing guard.

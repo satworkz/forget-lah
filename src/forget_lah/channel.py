@@ -1,4 +1,4 @@
-"""Signed WhatsApp transport for one explicitly selected synthetic patient."""
+"""Signed WhatsApp transport for explicitly registered synthetic test patients."""
 
 import re
 import secrets
@@ -6,7 +6,7 @@ from datetime import timedelta
 from urllib.parse import parse_qsl
 
 from fastapi import HTTPException, Request, Response
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import select
 from starlette.datastructures import FormData
 from twilio.request_validator import RequestValidator
@@ -19,7 +19,7 @@ from forget_lah.channel_models import (
     ChannelRoutingState,
 )
 from forget_lah.channel_routing import channel_notice, conversation, patient_cases, resolve_case
-from forget_lah.db import FollowupCase, uid, utcnow
+from forget_lah.db import Clinic, FollowupCase, uid, utcnow
 from forget_lah.runtime.engine import abort_delegation, as_utc, release
 from forget_lah.runtime.models import AgentEvent, AgentRun, SimulatedMessage
 from forget_lah.runtime.startup import SIMULATOR_GOAL, automation_authorised
@@ -50,6 +50,20 @@ class BindingInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     case_id: str
     enabled: bool
+    binding_id: str | None = Field(default=None, max_length=40)
+    recipient: str | None = None
+
+    @field_validator("recipient")
+    @classmethod
+    def phone(cls, value):
+        if value is None:
+            return None
+        value = value.strip()
+        if not value.startswith("whatsapp:"):
+            value = "whatsapp:" + value
+        if not re.fullmatch(r"whatsapp:\+[1-9][0-9]{7,14}", value):
+            raise ValueError("Use international format, for example +6591234567")
+        return value
 
 
 def install_channel_routes(app, factory, settings, authorise):
@@ -59,7 +73,10 @@ def install_channel_routes(app, factory, settings, authorise):
             _, _, clinics = authorise(db, request)
             if DEMO_CLINIC_ID not in clinics:
                 raise HTTPException(403, "Test clinic access required")
-            binding = db.get(ChannelBinding, BINDING)
+            bindings = list(
+                db.scalars(select(ChannelBinding).where(ChannelBinding.clinic_id == DEMO_CLINIC_ID))
+            )
+            binding = next((b for b in bindings if b.id == BINDING), None)
             outbox = db.scalars(
                 select(ChannelOutbox)
                 .where(ChannelOutbox.clinic_id == DEMO_CLINIC_ID)
@@ -76,6 +93,19 @@ def install_channel_routes(app, factory, settings, authorise):
                 "configured": settings.whatsapp_enabled,
                 "webhook_url": settings.public_origin + WEBHOOK,
                 "case_id": binding.case_id if binding and binding.enabled else None,
+                "bindings": [
+                    {
+                        "id": b.id,
+                        "recipient": b.recipient,
+                        "case_id": b.case_id,
+                        "enabled": b.enabled,
+                        "case_ids": [c.id for c in patient_cases(db, b)],
+                        "window_open": bool(
+                            b.inbound_at and as_utc(b.inbound_at) > utcnow() - timedelta(hours=23)
+                        ),
+                    }
+                    for b in bindings
+                ],
                 "scope": "patient",
                 "case_ids": [c.id for c in patient_cases(db, binding)]
                 if binding and binding.enabled
@@ -106,9 +136,27 @@ def install_channel_routes(app, factory, settings, authorise):
                 digest(request.headers.get("X-CSRF-Token", "")), session.csrf_hash
             ):
                 raise HTTPException(403, "Invalid CSRF token")
+            # Serialize enrollment changes for this clinic, including first registrations.
+            db.scalar(select(Clinic).where(Clinic.id == DEMO_CLINIC_ID).with_for_update())
+            recipient = body.recipient or config.twilio_whatsapp_test_to
             binding = db.scalar(
-                select(ChannelBinding).where(ChannelBinding.id == BINDING).with_for_update()
+                select(ChannelBinding)
+                .where(
+                    ChannelBinding.clinic_id == DEMO_CLINIC_ID,
+                    ChannelBinding.id == body.binding_id
+                    if body.binding_id
+                    else ChannelBinding.recipient == recipient,
+                )
+                .with_for_update()
             )
+            if body.binding_id and not binding:
+                raise HTTPException(404, "Test phone not found")
+            if binding:
+                if body.recipient and body.recipient != binding.recipient:
+                    raise HTTPException(
+                        409, "Disconnect and register a new phone to change the number"
+                    )
+                recipient = binding.recipient
             case = db.scalar(
                 select(FollowupCase)
                 .where(
@@ -122,36 +170,60 @@ def install_channel_routes(app, factory, settings, authorise):
                 raise HTTPException(404, "Synthetic case not available")
             if binding and binding.enabled and binding.case_id != case.id:
                 raise HTTPException(409, "Disconnect the current case before selecting another")
+            if body.enabled:
+                for other in db.scalars(
+                    select(ChannelBinding).where(
+                        ChannelBinding.clinic_id == case.clinic_id, ChannelBinding.enabled.is_(True)
+                    )
+                ):
+                    anchor = db.get(FollowupCase, other.case_id)
+                    if other != binding and anchor and anchor.patient_id == case.patient_id:
+                        raise HTTPException(
+                            409, "This patient is already connected to another test phone"
+                        )
             if db.scalar(
-                select(ChannelOutbox.id).where(ChannelOutbox.status == "sending").limit(1)
+                select(ChannelOutbox.id)
+                .where(ChannelOutbox.status == "sending", ChannelOutbox.recipient == recipient)
+                .limit(1)
             ):
                 raise HTTPException(
                     409, "A message is being sent; wait before changing the binding"
                 )
             if not binding:
                 binding = ChannelBinding(
-                    id=BINDING,
+                    id=BINDING
+                    if recipient == config.twilio_whatsapp_test_to
+                    and not db.get(ChannelBinding, BINDING)
+                    else uid(),
                     clinic_id=case.clinic_id,
                     case_id=case.id,
-                    recipient=config.twilio_whatsapp_test_to,
+                    recipient=recipient,
                 )
                 db.add(binding)
             if body.enabled and not binding.enabled:
                 binding.created_at = utcnow()
-                if binding.recipient != config.twilio_whatsapp_test_to:
+                if binding.case_id != case.id:
                     binding.inbound_at = None
             if not body.enabled or not binding.enabled:
-                routing = db.get(ChannelRoutingState, BINDING)
+                routing = db.get(ChannelRoutingState, binding.id)
                 if routing:
                     routing.data = {}
             binding.case_id, binding.enabled = case.id, body.enabled
-            binding.recipient = config.twilio_whatsapp_test_to
+            binding.recipient = recipient
             if not body.enabled:
                 for message in db.scalars(
-                    select(ChannelOutbox).where(ChannelOutbox.status == "queued")
+                    select(ChannelOutbox).where(
+                        ChannelOutbox.status == "queued", ChannelOutbox.recipient == recipient
+                    )
                 ):
                     message.status = "canceled"
-            return {"case_id": case.id, "enabled": binding.enabled}
+                for incoming in db.scalars(
+                    select(ChannelInbox).where(ChannelInbox.status == "queued")
+                ):
+                    routing = db.get(ChannelRoutingState, incoming.sid)
+                    if routing and routing.data.get("binding_id", BINDING) == binding.id:
+                        incoming.status = "disconnected"
+            return {"id": binding.id, "case_id": case.id, "enabled": binding.enabled}
 
     @app.post(WEBHOOK)
     async def inbound(request: Request):
@@ -185,7 +257,6 @@ def install_channel_routes(app, factory, settings, authorise):
             raise HTTPException(400, "Invalid message fields")
         if (
             values["AccountSid"] != config.twilio_account_sid
-            or values["From"] != config.twilio_whatsapp_test_to
             or values["To"] != config.twilio_whatsapp_from
         ):
             raise HTTPException(403, "Test sender not allowed")
@@ -194,8 +265,15 @@ def install_channel_routes(app, factory, settings, authorise):
             raise HTTPException(400, "Invalid message identifier")
         with factory.begin() as db:
             binding = db.scalar(
-                select(ChannelBinding).where(ChannelBinding.id == BINDING).with_for_update()
+                select(ChannelBinding)
+                .where(
+                    ChannelBinding.clinic_id == DEMO_CLINIC_ID,
+                    ChannelBinding.recipient == values["From"],
+                )
+                .with_for_update()
             )
+            if not binding:
+                raise HTTPException(403, "Test sender not registered")
             if db.get(ChannelInbox, sid):
                 return Response("<Response/>", media_type="application/xml")
             if not binding or not binding.enabled or not db.get(FollowupCase, binding.case_id):
@@ -223,6 +301,7 @@ def install_channel_routes(app, factory, settings, authorise):
                     id=sid,
                     clinic_id=binding.clinic_id,
                     data={
+                        "binding_id": binding.id,
                         "reply_to_sid": reply_to,
                         "active_case_id": conversation(db, binding).data.get("active_case_id"),
                     },
@@ -243,10 +322,26 @@ def install_channel_routes(app, factory, settings, authorise):
         return Response("<Response/>", media_type="application/xml")
 
 
-def ingest_one(factory, settings=None):
+def ingest_one(factory, settings=None, binding_id=None):
+    if binding_id is None:
+        with factory() as db:
+            ids = list(
+                db.scalars(
+                    select(ChannelBinding.id)
+                    .where(
+                        ChannelBinding.enabled.is_(True), ChannelBinding.clinic_id == DEMO_CLINIC_ID
+                    )
+                    .order_by(ChannelBinding.id)
+                )
+            )
+        for ident in ids:
+            ingest_one(factory, settings, binding_id=ident)
+        return
     with factory.begin() as db:
         binding = db.scalar(
-            select(ChannelBinding).where(ChannelBinding.id == BINDING).with_for_update()
+            select(ChannelBinding)
+            .where(ChannelBinding.id == binding_id, ChannelBinding.clinic_id == DEMO_CLINIC_ID)
+            .with_for_update()
         )
         if not binding or not binding.enabled:
             return
@@ -263,6 +358,10 @@ def ingest_one(factory, settings=None):
             .limit(1)
         )
         if not incoming:
+            return
+        context = db.get(ChannelRoutingState, incoming.sid)
+        if context and context.data.get("binding_id", BINDING) != binding.id:
+            incoming.status = "disconnected"
             return
         incoming = resolve_case(db, binding, incoming)
         if not incoming:
@@ -366,10 +465,26 @@ def ingest_one(factory, settings=None):
         incoming.status, incoming.event_id = "processed", event_id
 
 
-def collect_messages(factory):
+def collect_messages(factory, binding_id=None):
+    if binding_id is None:
+        with factory() as db:
+            ids = list(
+                db.scalars(
+                    select(ChannelBinding.id)
+                    .where(
+                        ChannelBinding.enabled.is_(True), ChannelBinding.clinic_id == DEMO_CLINIC_ID
+                    )
+                    .order_by(ChannelBinding.id)
+                )
+            )
+        for ident in ids:
+            collect_messages(factory, binding_id=ident)
+        return
     with factory.begin() as db:
         binding = db.scalar(
-            select(ChannelBinding).where(ChannelBinding.id == BINDING).with_for_update()
+            select(ChannelBinding)
+            .where(ChannelBinding.id == binding_id, ChannelBinding.clinic_id == DEMO_CLINIC_ID)
+            .with_for_update()
         )
         if not binding or not binding.enabled or not db.get(FollowupCase, binding.case_id):
             return
@@ -400,11 +515,38 @@ def collect_messages(factory):
                 )
 
 
-def dispatch_one(factory, client):
+def dispatch_one(factory, client, binding_id=None):
+    if binding_id is None:
+        with factory() as db:
+            registered = {
+                b.recipient: b.id
+                for b in db.scalars(
+                    select(ChannelBinding).where(
+                        ChannelBinding.enabled.is_(True), ChannelBinding.clinic_id == DEMO_CLINIC_ID
+                    )
+                )
+            }
+            ids = list(
+                dict.fromkeys(
+                    registered[r]
+                    for r in db.scalars(
+                        select(ChannelOutbox.recipient)
+                        .where(ChannelOutbox.status == "queued")
+                        .order_by(ChannelOutbox.created_at, ChannelOutbox.id)
+                    )
+                    if r in registered
+                )
+            )
+        for ident in ids:
+            if dispatch_one(factory, client, binding_id=ident):
+                return True
+        return
     now = utcnow()
     with factory.begin() as db:
         binding = db.scalar(
-            select(ChannelBinding).where(ChannelBinding.id == BINDING).with_for_update()
+            select(ChannelBinding)
+            .where(ChannelBinding.id == binding_id, ChannelBinding.clinic_id == DEMO_CLINIC_ID)
+            .with_for_update()
         )
         if (
             not binding
@@ -413,6 +555,9 @@ def dispatch_one(factory, client):
             or as_utc(binding.inbound_at) < now - timedelta(hours=23)
         ):
             return
+        allowed = getattr(client, "allowed_recipients", None)
+        if allowed is not None and binding.recipient not in allowed:
+            return  # A newly enrolled phone will enter the next tick's allowlist.
         ids = [c.id for c in patient_cases(db, binding)]
         message = db.scalar(
             select(ChannelOutbox)
@@ -452,13 +597,20 @@ def dispatch_one(factory, client):
             message.updated_at = utcnow()
             focus_delivered(db, message)
 
+    return True
+
 
 def focus_delivered(db, message):
     """Only successful patient-facing dispatch establishes conversational focus."""
     if message.status not in {"sent", "delivered", "read"}:
         return
     binding = db.scalar(
-        select(ChannelBinding).where(ChannelBinding.id == BINDING).with_for_update()
+        select(ChannelBinding)
+        .where(
+            (ChannelBinding.recipient == message.recipient)
+            & (ChannelBinding.clinic_id == message.clinic_id)
+        )
+        .with_for_update()
     )
     if (
         not binding
@@ -538,6 +690,26 @@ def channel_tick(factory, settings):
         return
     ingest_one(factory, settings)
     collect_messages(factory)
-    client = WhatsAppClient(config)
-    dispatch_one(factory, client)
+    with factory() as db:
+        recipients = list(
+            db.scalars(
+                select(ChannelBinding.recipient).where(
+                    ChannelBinding.enabled.is_(True), ChannelBinding.clinic_id == DEMO_CLINIC_ID
+                )
+            )
+        )
+    client = WhatsAppClient(config, allowed_recipients=recipients)
+    # Shared Sandbox sender permits one send per three seconds across all phones.
+    with factory.begin() as db:
+        db.scalar(select(Clinic).where(Clinic.id == DEMO_CLINIC_ID).with_for_update())
+        clock = db.get(ChannelRoutingState, "whatsapp-send-clock")
+        now = utcnow().timestamp()
+        send_allowed = not clock or now - clock.data.get("reserved_at", 0) >= 3
+        if send_allowed:
+            if not clock:
+                clock = ChannelRoutingState(id="whatsapp-send-clock", clinic_id=DEMO_CLINIC_ID)
+                db.add(clock)
+            clock.data = {"reserved_at": now}
+    if send_allowed:
+        dispatch_one(factory, client)
     poll_delivery(factory, client)

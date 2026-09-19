@@ -222,6 +222,7 @@ class NeedsDecision(BoundDecision):
     appointment_intent: Literal["UNSPECIFIED", "CHANGE", "CONFIRM"] = "UNSPECIFIED"
     appointment_request_quote: str | None = Field(default=None, max_length=240)
     question: str | None = Field(default=None, max_length=240)
+    comprehension_quote: str | None = Field(default=None, max_length=240)
     concern_quote: str | None = Field(default=None, max_length=200)
 
     @model_validator(mode="after")

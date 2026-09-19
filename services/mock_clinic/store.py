@@ -141,6 +141,23 @@ def slot_dict(row):
     }
 
 
+def can_book_followup(row, now=None):
+    """Source capability for a new slot; a past visit cannot be confirmed retroactively."""
+    if row.has_future_booking:
+        return False
+    if row.record_type == "recall" and row.source_status == "due":
+        return True
+    scheduled = row.scheduled_at
+    if scheduled and scheduled.tzinfo is None:
+        scheduled = scheduled.replace(tzinfo=UTC)
+    return bool(
+        row.record_type == "appointment"
+        and row.source_status == "no_show"
+        and scheduled
+        and scheduled < (now or datetime.now(UTC))
+    )
+
+
 def envelope(db, row):
     slots = list(
         db.scalars(
@@ -181,9 +198,7 @@ def envelope(db, row):
             "can_write_appointments": False,
             "episode_version": row.version,
             "can_simulate_confirmation": True,
-            "can_simulate_booking": row.record_type == "recall"
-            and row.source_status == "due"
-            and not row.has_future_booking,
+            "can_simulate_booking": can_book_followup(row),
             "can_simulate_rescheduling": row.record_type == "appointment"
             and row.source_status == "scheduled",
             "available_slots": available,

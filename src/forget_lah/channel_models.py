@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import JSON, DateTime, ForeignKey, String
+from sqlalchemy import JSON, DateTime, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from forget_lah.db import Base, uid, utcnow
@@ -19,6 +19,7 @@ class ChannelRoutingState(Base):
 
 class ChannelBinding(Base):
     __tablename__ = "channel_binding"
+    __table_args__ = (UniqueConstraint("clinic_id", "recipient", name="uq_channel_phone"),)
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
     clinic_id: Mapped[str] = mapped_column(ForeignKey("clinic.id"))
     case_id: Mapped[str] = mapped_column(String(36))
