@@ -34,6 +34,11 @@ x-app-env: &app-env
   LLM_MODEL: ${LLM_MODEL:-global.anthropic.claude-sonnet-4-5-20250929-v1:0}
   AGENT_DAILY_CALL_LIMIT: ${AGENT_DAILY_CALL_LIMIT:-40}
   AGENT_REQUEST_MAX_BYTES: ${AGENT_REQUEST_MAX_BYTES:-32000}
+  AGENT_PARALLELISM: ${AGENT_PARALLELISM:-2}
+  AGENT_STEP_DELAY_SECONDS: ${AGENT_STEP_DELAY_SECONDS:-0}
+  WORKER_IDLE_SECONDS: ${WORKER_IDLE_SECONDS:-0.25}
+  SOURCE_POLL_INTERVAL_SECONDS: ${SOURCE_POLL_INTERVAL_SECONDS:-2}
+  AGENT_REQUIRED_READS_ENABLED: ${AGENT_REQUIRED_READS_ENABLED:-true}
   AGENT_MIN_INTERVAL_SECONDS: ${AGENT_MIN_INTERVAL_SECONDS:-2}
 
 services:
@@ -98,6 +103,7 @@ services:
 
   worker:
     <<: *runtime
+    stop_grace_period: 90s
     command: [python, -m, forget_lah.worker]
     environment: *app-env
     depends_on:

@@ -473,6 +473,61 @@ def apply_initial_demo_wait(db, settings, run, case, step):
     return True
 
 
+def apply_required_read(db, settings, run, case, step):
+    """Execute mandatory specialist reads; Claude still interprets and returns evidence."""
+    if not settings.agent_required_reads_enabled or run.active_role not in {
+        "engagement",
+        "preparation",
+    }:
+        return False
+    obs = step.observation
+    attempted = {
+        t["result"]["tool_name"]
+        for t in obs["tools"]
+        if t["role"] == run.active_role and t["sequence"] > obs["delegation_start"]
+    }
+    read = next(
+        (
+            name
+            for name in obs["return_requirements"]["missing_tools"]
+            if name in {"read_followup_context", "get_approved_instructions", "check_prerequisites"}
+            and name in obs["allowed_tools"]
+            and name not in attempted
+        ),
+        None,
+    )
+    # A failed read needs the usual model recovery path before any other work.
+    if not read or any(
+        t["result"]["status"] != "succeeded"
+        for t in obs["tools"]
+        if t["role"] == run.active_role and t["sequence"] > obs["delegation_start"]
+    ):
+        return False
+    decision = ToolDecision(
+        request_id=step.id,
+        expected_case_version=case.case_version,
+        step_type="TOOL",
+        reason_code="READ_SOURCE",
+        tool_name=read,
+    )
+    step.origin = "rule"
+    step.observation = {
+        **obs,
+        "application_rule": {
+            "name": "REQUIRED_SPECIALIST_READ",
+            "explanation": "Read evidence required by the delegated role before model review. The policy gateway and source result remain authoritative.",
+        },
+    }
+    step.decision = decision.model_dump()
+    step.policy = policy_for(db, run, case, step, decision)
+    if step.policy["decision"] != "ALLOW":
+        step.status, step.error_code = "rejected", "POLICY_DENIED"
+        pause(run, "POLICY_DENIED")
+    else:
+        step.status = "tool_pending"
+    return True
+
+
 def prepare_step(factory, settings, run_id, token):
     with factory.begin() as db:
         run = current_run(db, run_id, token)
@@ -650,6 +705,9 @@ def prepare_step(factory, settings, run_id, token):
                 pending.status = "tool_pending"
             elif apply_initial_demo_wait(db, settings, run, case, pending):
                 return None
+            elif apply_required_read(db, settings, run, case, pending):
+                if pending.status != "tool_pending":
+                    return None
         if pending.status == "pending":
             if pending.attempts >= 2:
                 pending.status, pending.error_code = "error", "MODEL_ATTEMPTS_EXHAUSTED"
@@ -704,7 +762,7 @@ def record_failure(factory, run_id, token, step_id, code, *, retryable=False, de
 def apply_control(db, run, case, step, decision, settings):
     step.status = "completed"
     case.case_version += 1
-    delay = settings.agent_min_interval_seconds
+    delay = settings.agent_step_delay_seconds
     if isinstance(decision, NeedsDecision):
         persist_needs(db, case, decision, step.id)
         run.checkpoint = {
@@ -1484,7 +1542,7 @@ def execute_pending_tool(factory, settings, run_id, token, step_id, tools):
                 run.checkpoint = {**run.checkpoint, "wait_reason": "AWAITING_PATIENT_REPLY"}
                 release(run, "waiting")
         else:
-            release(run, "queued", delay=settings.agent_min_interval_seconds)
+            release(run, "queued", delay=settings.agent_step_delay_seconds)
         return True
 
 

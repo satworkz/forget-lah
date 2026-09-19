@@ -244,3 +244,8 @@ Language restatements no longer add a second language acknowledgement or copy sa
 Morning, afternoon and evening requests are interpreted by Claude as search constraints rather than practical concerns. The demo search convention is morning before noon, afternoon noon to before 5 pm, and evening from 5 pm, in Singapore time. These windows are not clinic opening-hour claims: only source-provided available slots are offered. Existing dates, month ranges and saved exclusions continue to constrain the search. A patient selects an offered slot before any booking write. Unspecified work schedules, heat and traffic preferences still require usable timing details; no conditions are invented. Clarification for a missed visit no longer claims an existing appointment was left unchanged. This supersedes the earlier requirement to clarify every evening request.
 
 When the current reply has been assessed as a new slot search, Engagement no longer routes it into attendance confirmation or selection of a previous offer. This lets a refinement such as after 6 pm refresh the available slots while preserving the requested month.
+
+
+## Faster independent case processing
+
+Two bounded agent execution slots and independent delivery, translation and detection loops remove cross-case network blocking. Ready steps no longer have an artificial delay; mandatory specialist reads remain policy-checked rule steps without model calls. Existing source-write checks, ordering, leases, shared budgets, multilingual delivery and audit evidence remain in place. See [Performance](PERFORMANCE.md) for configuration, validation and the planned reactive wake-up design.
