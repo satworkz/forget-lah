@@ -386,3 +386,41 @@ def test_live_tamil_november_request_respects_doctor_deadline(simulated_runtime)
     assert "requested a call" in message["original_body"]
     assert message["evidence"]["scheduling_review"][0]["date_to"] == f"{year}-09-30"
     assert source_count(engine) == 0
+
+
+@pytest.mark.skipif(
+    os.environ.get("RUN_LIVE_PREPARATION") != "1", reason="Explicit paid live-model opt-in required"
+)
+@pytest.mark.parametrize(
+    "reply,intent", [("No I can’t", "CHANGE"), ("Can you cancel that appointment", "CANCEL")]
+)
+def test_live_refusal_and_cancellation_are_appointment_intents(simulated_runtime, reply, intent):
+    runtime, tools, source, engine = simulated_runtime
+    case, _ = start(runtime, "myopia")
+    drain(runtime, tools=tools)
+    event(runtime[1], case, "demo_reply", reply).raise_for_status()
+    settings = runtime[2].model_copy(
+        update={
+            "anthropic_api_key": SecretStr(os.environ["ANTHROPIC_API_KEY"]),
+            "anthropic_model": os.environ["ANTHROPIC_MODEL"],
+        }
+    )
+    enable_live_translation(runtime, case, settings)
+    drain(runtime, tools=tools, model=AnthropicModel(settings))
+    result = view(runtime[1], case)
+    assert result["run"]["status"] == ("waiting" if intent == "CHANGE" else "escalated"), result[
+        "run"
+    ]
+    needs = next(
+        s["decision"]
+        for s in result["steps"]
+        if (s.get("decision") or {}).get("step_type") == "REVIEW_NEEDS"
+    )
+    assert needs["appointment_intent"] == intent
+    assert needs["appointment_request_quote"] in reply
+    assert not needs["patient_questions"]
+    assert source_count(engine) == 0
+    if intent == "CANCEL":
+        assert (
+            "not been cancelled yet" in result["patient_simulator"]["messages"][-1]["original_body"]
+        )

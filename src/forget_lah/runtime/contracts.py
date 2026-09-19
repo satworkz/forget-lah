@@ -234,18 +234,18 @@ class NeedsDecision(BoundDecision):
     preparation_plans: list[str] = Field(
         default_factory=list,
         max_length=3,
-        description="Neutral transport, accompaniment, food or medication plans; exact quotes. Never attendance/booking intent alone. Inability/refusal/help needs belong in patient_questions.",
+        description="Neutral transport, accompaniment, food or medication plans; exact quotes. Never attendance/booking intent alone. Inability to meet preparation requirements belongs in patient_questions; declining attendance belongs in appointment_intent.",
     )
     patient_questions: list[str] = Field(
         default_factory=list,
         max_length=3,
-        description="Questions or explicit unmet needs requiring help; exact reply quotes.",
+        description="Questions or explicit preparation needs; exact reply quotes. Plain attendance refusal is appointment_intent CHANGE, cancellation is CANCEL, not a patient question.",
     )
     step_type: Literal["REVIEW_NEEDS"]
     reason_code: Literal["PATIENT_NEEDS_REVIEWED"]
     reply_event_id: str = Field(min_length=36, max_length=36)
     updates: list[MemoryChange] = Field(max_length=5)
-    appointment_intent: Literal["UNSPECIFIED", "CHANGE", "CONFIRM"] = "UNSPECIFIED"
+    appointment_intent: Literal["UNSPECIFIED", "CHANGE", "CONFIRM", "CANCEL"] = "UNSPECIFIED"
     appointment_request_quote: str | None = Field(default=None, max_length=240)
     question: str | None = Field(default=None, max_length=240)
     comprehension_quote: str | None = Field(default=None, max_length=240)
@@ -377,7 +377,9 @@ def reject_constant(_):
     raise ValueError("Non-finite JSON number")
 
 
-def parse_decision(text: str, request_id: str, case_version: int):
+def parse_decision(
+    text: str, request_id: str, case_version: int, *, patient_source=None, quote_repairs=None
+):
     if len(text.encode("utf-8")) > 16000:
         raise ValueError("Decision exceeds limit")
     text = text.strip()
@@ -385,6 +387,12 @@ def parse_decision(text: str, request_id: str, case_version: int):
     if fenced:
         text = fenced.group(1)
     value = json.loads(text, object_pairs_hook=unique_object, parse_constant=reject_constant)
+    if isinstance(value, dict) and patient_source is not None:
+        from forget_lah.runtime.evidence_text import restore_patient_quotes
+
+        value, repairs = restore_patient_quotes(value, patient_source)
+        if quote_repairs is not None:
+            quote_repairs.extend(repairs)
     decision = decision_adapter.validate_python(value)
     if decision.request_id != request_id or decision.expected_case_version != case_version:
         raise ValueError("Decision does not match the current request and case version")

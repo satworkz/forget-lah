@@ -254,3 +254,8 @@ Two bounded agent execution slots and independent delivery, translation and dete
 ## Doctor instructions constrain slot offers
 
 Preparation now explicitly assesses every approved note before authorizing an offer. Source-quoted date restrictions are enforced against offered slots; unclear restrictions or no suitable requested slot trigger an explained clinic callback. Bookings require a reviewed offer and unchanged source version. See [Doctor instructions](DOCTOR_INSTRUCTIONS.md) for behavior and limitations.
+
+
+## Reply evidence and handoff recovery
+
+Harmless quote/whitespace differences are restored to exact saved patient text before validation. Attendance refusal and cancellation have distinct routing; cancellation requests clinic action without searching slots or claiming cancellation. General staff handoff acceptance completes deterministically; unresolved callbacks and clinical reviews remain open. Staff-wait messages reflect recorded ownership. See [Reply recovery](REPLY_RECOVERY.md).

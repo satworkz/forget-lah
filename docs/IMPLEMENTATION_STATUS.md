@@ -234,3 +234,10 @@ Preparation now explicitly assesses every approved note before authorizing an of
 Validation: full Linux/PostgreSQL regression run passed (417 passed, 10 optional tests skipped). The final multi-requirement coverage adjustment passed all 14 focused scheduling checks. Ruff and formatting passed. The live Claude Tamil November scenario passed with the effective September 30 deadline, no offered November slot, a callback acknowledgement and zero source appointment writes. Live validation initially caught an incorrect month boundary and duplicate requirements for one note; source-date intersection and combined-requirement coverage address both. No schema migration or data reset is required.
 
 Deployed API/worker to AWS. Public readiness returned 200 and the running image verified the scheduling-review contract and September 30 source deadline. Both pre-deployment phone bindings remain unchanged; a third active registration was added during the work and remains intact. No data reset or patient test message was sent as part of deployment.
+
+
+## Reply evidence and handoff recovery
+
+Harmless quote/whitespace differences are restored to exact saved patient text before validation. Attendance refusal and cancellation have distinct routing; cancellation requests clinic action without searching slots or claiming cancellation. General staff handoff acceptance completes deterministically; unresolved callbacks and clinical reviews remain open. Staff-wait messages reflect recorded ownership. See [Reply recovery](REPLY_RECOVERY.md).
+
+Validation: full Linux/PostgreSQL suite passed (427 passed, 12 optional tests skipped). All 29 channel tests passed after adding ownership-status coverage; nine focused evidence/refusal/cancellation/handoff tests passed. Live Claude handled both the original curly-apostrophe refusal and explicit cancellation with the correct intent and zero appointment writes. Ruff and formatting passed. Deployed API/worker to AWS; public readiness returned 200 and all three phone registrations were preserved.

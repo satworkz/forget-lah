@@ -529,6 +529,49 @@ def apply_required_read(db, settings, run, case, step):
     return True
 
 
+def apply_accepted_handoff(db, settings, run, case, step):
+    if (
+        run.active_role != "coordinator"
+        or run.checkpoint.get("latest_event", {}).get("kind") != "accept_handoff"
+    ):
+        return False
+    if any(
+        run.checkpoint.get(key, {}).get("status") not in {None, "resolved"}
+        for key in ("callback", "clinical_review")
+    ):
+        return False
+    handoff = db.scalar(
+        select(StaffHandoff).where(
+            StaffHandoff.run_id == run.id, StaffHandoff.clinic_id == run.clinic_id
+        )
+    )
+    if not handoff or not handoff.accepted_by or not handoff.accepted_at:
+        return False
+    decision = CompleteDecision(
+        request_id=step.id,
+        expected_case_version=case.case_version,
+        step_type="COMPLETE",
+        reason_code="STAFF_HANDOFF_ACCEPTED",
+        handoff_id=handoff.id,
+    )
+    step.origin = "rule"
+    step.observation = {
+        **step.observation,
+        "application_rule": {
+            "name": "ACCEPTED_STAFF_HANDOFF",
+            "explanation": "Named staff accepted ownership; no unresolved callback or clinical review is auto-closed.",
+        },
+    }
+    step.decision = decision.model_dump()
+    step.policy = policy_for(db, run, case, step, decision)
+    if step.policy["decision"] == "ALLOW":
+        apply_control(db, run, case, step, decision, settings)
+    else:
+        step.status, step.error_code = "rejected", "POLICY_DENIED"
+        pause(run, "POLICY_DENIED")
+    return True
+
+
 def prepare_step(factory, settings, run_id, token):
     with factory.begin() as db:
         run = current_run(db, run_id, token)
@@ -704,6 +747,8 @@ def prepare_step(factory, settings, run_id, token):
                     pause(run, "POLICY_DENIED")
                     return None
                 pending.status = "tool_pending"
+            elif apply_accepted_handoff(db, settings, run, case, pending):
+                return None
             elif apply_initial_demo_wait(db, settings, run, case, pending):
                 return None
             elif apply_required_read(db, settings, run, case, pending):
@@ -820,6 +865,24 @@ def apply_control(db, run, case, step, decision, settings):
                 if language_ack(language):
                     say(language_ack(language))
                 request_handoff(db, run, "LANGUAGE_SUPPORT_REQUIRED", risk="AMBER")
+            return
+        if decision.appointment_intent == "CANCEL":
+            request = {
+                "status": "requested",
+                "topic": "appointment cancellation",
+                "question": decision.appointment_request_quote,
+                "reply_event_id": decision.reply_event_id,
+                "decision_step_id": step.id,
+            }
+            run.checkpoint = {
+                **run.checkpoint,
+                "cancellation_request": request,
+                "callback": run.checkpoint.get("callback") or request,
+            }
+            say(
+                "I've asked the clinic team to help cancel your appointment and requested a callback. Your appointment has not been cancelled yet."
+            )
+            request_handoff(db, run, "CANCELLATION_REQUESTED", risk="AMBER")
             return
         language_changes = [
             u for u in decision.updates if u.key in {"preferred_language", "excluded_languages"}
@@ -1325,7 +1388,17 @@ def store_proposal(factory, settings, run_id, token, step_id, reply):
                 setattr(step, field, (getattr(step, field) or 0) + value)
         step.latency_ms = reply.latency_ms
         try:
-            decision = parse_decision(reply.text, step.id, case.case_version)
+            patient_reply = saved_reply(db, run)
+            repairs = []
+            decision = parse_decision(
+                reply.text,
+                step.id,
+                case.case_version,
+                patient_source=patient_reply.content if patient_reply else None,
+                quote_repairs=repairs,
+            )
+            if repairs:
+                step.observation = {**step.observation, "evidence_quote_repairs": repairs}
         except ValueError as exc:
             step.validation_failures = [
                 *(step.validation_failures or []),
