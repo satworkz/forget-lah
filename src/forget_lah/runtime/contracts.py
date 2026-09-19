@@ -98,7 +98,33 @@ class QuestionAnswer(StrictModel):
         return self
 
 
+class SchedulingInstruction(StrictModel):
+    instruction_id: str
+    quote: str = Field(min_length=1, max_length=2000)
+    effect: Literal["INFORMATION", "DATE_WINDOW", "CLINIC_REVIEW"]
+    date_from: str | None = None
+    date_to: str | None = None
+
+    @model_validator(mode="after")
+    def valid_window(self):
+        from datetime import date
+
+        for value in (self.date_from, self.date_to):
+            if value is not None:
+                if date.fromisoformat(value).isoformat() != value:
+                    raise ValueError("Use ISO YYYY-MM-DD dates")
+        if self.effect == "DATE_WINDOW":
+            if not (self.date_from or self.date_to):
+                raise ValueError("A date window needs at least one bound")
+            if self.date_from and self.date_to and self.date_from > self.date_to:
+                raise ValueError("Invalid date window")
+        elif self.date_from or self.date_to:
+            raise ValueError("Only date windows have date bounds")
+        return self
+
+
 class ReturnDecision(BoundDecision):
+    scheduling_review: list[SchedulingInstruction] | None = Field(default=None, max_length=20)
     question_answers: list[QuestionAnswer] = Field(default_factory=list, max_length=3)
     step_type: Literal["RETURN"]
     reason_code: Literal[

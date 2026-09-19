@@ -323,6 +323,10 @@ def policy_for(db, run, case, step, decision):
                 deny = "SPECIALIST_EVIDENCE_INCOMPLETE"
             if not deny and run.active_role == "preparation":
                 deny = validate_answers(db, run, decision)
+                if not deny:
+                    from forget_lah.runtime.scheduling import validate_review
+
+                    deny = validate_review(db, run, decision)
     elif isinstance(decision, WaitDecision):
         if (
             simulation_enabled(run)

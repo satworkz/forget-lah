@@ -338,3 +338,51 @@ def enable_live_translation(runtime, case, settings):
     runtime[2].anthropic_api_key = settings.anthropic_api_key
     with runtime[0].begin() as db:
         db.scalar(select(AgentRun).where(AgentRun.case_id == case)).mode = "anthropic"
+
+
+@pytest.mark.skipif(
+    os.environ.get("RUN_LIVE_PREPARATION") != "1", reason="Explicit paid live-model opt-in required"
+)
+def test_live_tamil_november_request_respects_doctor_deadline(simulated_runtime):
+    from datetime import UTC, datetime
+
+    from test_simulator import new_slot
+
+    runtime, tools, source, engine = simulated_runtime
+    year = datetime.now(UTC).year + 1
+    body = episode_body(source, "DEMO-ANTENATAL-VISIT-01")
+    note = f"Bring your maternity appointment booklet if you have one. Patient must finish this mandatory appointment before October {year}."
+    body.update(
+        source_status="scheduled", scheduled_at=f"{year}-09-21T09:00:00+00:00", doctor_note=note
+    )
+    source.put(
+        "/internal/admin/episodes/DEMO-ANTENATAL-VISIT-01", headers=ADMIN, json=body
+    ).raise_for_status()
+    source.post(
+        "/internal/admin/slots",
+        headers=ADMIN,
+        json=new_slot(
+            specialty="antenatal",
+            starts_at=f"{year}-11-06T02:00:00+00:00",
+            ends_at=f"{year}-11-06T02:30:00+00:00",
+        ),
+    ).raise_for_status()
+    case, _ = start(runtime, "antenatal")
+    drain(runtime, tools=tools)
+    event(runtime[1], case, "demo_reply", f"எனக்கு {year} நவம்பரில் வேண்டும்.").raise_for_status()
+    settings = runtime[2].model_copy(
+        update={
+            "anthropic_api_key": SecretStr(os.environ["ANTHROPIC_API_KEY"]),
+            "anthropic_model": os.environ["ANTHROPIC_MODEL"],
+        }
+    )
+    enable_live_translation(runtime, case, settings)
+    drain(runtime, tools=tools, model=AnthropicModel(settings))
+    result = view(runtime[1], case)
+    assert result["run"]["status"] == "escalated", result["run"]
+    message = result["patient_simulator"]["messages"][-1]
+    assert message["evidence"]["slots"] == []
+    assert note in message["original_body"]
+    assert "requested a call" in message["original_body"]
+    assert message["evidence"]["scheduling_review"][0]["date_to"] == f"{year}-09-30"
+    assert source_count(engine) == 0

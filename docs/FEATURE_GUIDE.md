@@ -249,3 +249,8 @@ When the current reply has been assessed as a new slot search, Engagement no lon
 ## Faster independent case processing
 
 Two bounded agent execution slots and independent delivery, translation and detection loops remove cross-case network blocking. Ready steps no longer have an artificial delay; mandatory specialist reads remain policy-checked rule steps without model calls. Existing source-write checks, ordering, leases, shared budgets, multilingual delivery and audit evidence remain in place. See [Performance](PERFORMANCE.md) for configuration, validation and the planned reactive wake-up design.
+
+
+## Doctor instructions constrain slot offers
+
+Preparation now explicitly assesses every approved note before authorizing an offer. Source-quoted date restrictions are enforced against offered slots; unclear restrictions or no suitable requested slot trigger an explained clinic callback. Bookings require a reviewed offer and unchanged source version. See [Doctor instructions](DOCTOR_INSTRUCTIONS.md) for behavior and limitations.

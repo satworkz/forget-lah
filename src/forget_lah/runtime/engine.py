@@ -52,6 +52,7 @@ from forget_lah.runtime.responses import (
     memory_ack,
     patient_message,
 )
+from forget_lah.runtime.scheduling import normalize_review
 from forget_lah.runtime.simulation import (
     booking_choice,
     clarification_allowed,
@@ -1131,6 +1132,9 @@ def apply_control(db, run, case, step, decision, settings):
                 **run.checkpoint,
                 "question_answers": [a.model_dump() for a in decision.question_answers],
                 "question_review_step_id": step.id,
+                "scheduling_review": normalize_review(
+                    [r.model_dump() for r in decision.scheduling_review]
+                ),
             }
         delegation.status, delegation.evidence_ids = "returned", decision.evidence_ids
         delegation.result_reason_code = decision.reason_code
@@ -1162,6 +1166,9 @@ def apply_control(db, run, case, step, decision, settings):
                         source_version="approved-question-review-v1",
                         evidence={
                             "question_review_step_id": step.id,
+                            "scheduling_review": [
+                                r.model_dump() for r in decision.scheduling_review
+                            ],
                             "question_answers": run.checkpoint["question_answers"],
                         },
                     )

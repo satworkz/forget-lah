@@ -10,6 +10,7 @@ from forget_lah.runtime.adaptation import effective_constraints, matching_slots,
 from forget_lah.runtime.models import AgentDelegation, AgentEvent, AgentStep, SimulatedMessage
 from forget_lah.runtime.questions import question_response
 from forget_lah.runtime.responses import patient_message
+from forget_lah.runtime.scheduling import compatible
 from forget_lah.source import DEMO_CLINIC_ID
 
 
@@ -99,7 +100,20 @@ def booking_choice(db, run):
     index = number - 1
     if index >= len(options):
         return None
+    review_id = offer.evidence.get("scheduling_review_step_id")
+    review_step = db.get(AgentStep, review_id) if review_id else None
+    review = (review_step.decision or {}).get("scheduling_review") if review_step else None
+    reviewed = bool(
+        review_step
+        and review_step.run_id == run.id
+        and review_step.clinic_id == run.clinic_id
+        and review_step.role == "preparation"
+        and review_step.status == "completed"
+        and (review_step.policy or {}).get("decision") == "ALLOW"
+        and compatible([options[index]], review)
+    )
     return {
+        "scheduling_reviewed": reviewed,
         "slot": options[index],
         "episode_version": offer.evidence["episode_version"],
         "offer_id": offer.id,
@@ -302,6 +316,7 @@ def simulation_evidence(db, run):
             (not choice and future_scheduled(context.tool_result["data"]))
             or (
                 choice
+                and choice["scheduling_reviewed"]
                 and (
                     context.tool_result["data"].get("can_simulate_booking")
                     or (
@@ -330,7 +345,8 @@ def simulation_evidence(db, run):
         and context
         and not receipt
         and (
-            choice["slot"] not in context.tool_result["data"].get("available_slots", [])
+            not choice["scheduling_reviewed"]
+            or choice["slot"] not in context.tool_result["data"].get("available_slots", [])
             or choice["episode_version"] != context.tool_result["data"].get("episode_version")
         )
     )
@@ -380,6 +396,7 @@ def simulation_evidence(db, run):
     result["options_ready"] = bool(
         result["recall_options_available"]
         and date_report
+        and run.checkpoint.get("scheduling_review") is not None
         and preparation
         and instructions
         and prerequisites
@@ -591,6 +608,11 @@ def save_options(db, run):
     case = db.get(FollowupCase, run.case_id)
     constraints = effective_constraints(run, preferences_for(db, case))
     slots = matching_slots(slots, constraints)
+    requested_slots = slots
+    review = run.checkpoint.get("scheduling_review")
+    slots = compatible(slots, review)
+    restricted = [r for r in (review or []) if r["effect"] != "INFORMATION"]
+    clinical_conflict = bool(restricted and (len(slots) != len(requested_slots) or not slots))
     mismatch = bool(all_slots and not slots)
     scheduled = context.tool_result["data"].get("source_status") == "scheduled"
     unchanged = (
@@ -617,6 +639,41 @@ def save_options(db, run):
             unchanged
             + "The clinic currently lists no alternative slots. I've requested help from the clinic team to find a suitable time."
         )
+    if clinical_conflict:
+        explanation = "Your doctor's instructions say: " + " ".join(r["quote"] for r in restricted)
+        if slots:
+            body = (
+                explanation
+                + "\n\nOnly these matching slots meet the recorded timing instructions:\n"
+                + "\n".join(
+                    f"Option {i}: {appointment_time(slot['starts_at'])} — {slot['doctor']}"
+                    for i, slot in enumerate(slots, 1)
+                )
+            )
+        else:
+            body = (
+                explanation
+                + "\n\nI can't offer a time matching your request within these instructions. I've requested a call from the clinic team to help arrange a suitable appointment."
+            )
+            if scheduled:
+                body += (
+                    " Your existing appointment on "
+                    + appointment_time(context.tool_result["data"]["scheduled_at"])
+                    + " has not been changed."
+                )
+            else:
+                body += " Nothing has been booked."
+            run.checkpoint = {
+                **run.checkpoint,
+                "callback": {
+                    "status": "requested",
+                    "topic": "doctor scheduling instructions",
+                    "question": reply.content,
+                    "reply_event_id": reply.id,
+                    "decision_step_id": run.checkpoint["question_review_step_id"],
+                    "instructions": restricted,
+                },
+            }
     # Preparation evidence still gates eligibility; general instructions are
     # delivered by save_acknowledgement after a verified source confirmation.
     if slots:
@@ -634,6 +691,9 @@ def save_options(db, run):
         source_version=context.tool_result["source_version"],
         evidence={
             "slots": slots,
+            "scheduling_review_step_id": run.checkpoint.get("question_review_step_id"),
+            "scheduling_review": review,
+            "doctor_instruction_conflict": clinical_conflict,
             "constraint_mismatch": mismatch,
             "applied_constraints": constraints,
             "selection_changed": bool(booking_choice(db, run)),
