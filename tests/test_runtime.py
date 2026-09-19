@@ -261,6 +261,8 @@ def test_initial_demo_wait_skips_model_budget_and_resumes_with_model(runtime, mo
 )
 def test_initial_wait_does_not_bypass_source_or_authority_checks(runtime, condition):
     factory, client, settings = runtime
+    # Exercise model/initial-wait policy directly, without the separate read optimization.
+    settings.agent_required_reads_enabled = False
     _, run_id = start(runtime)
     for _ in range(2):
         process_run(factory, settings, *claim_run(factory), tools=source_tools())
@@ -570,6 +572,8 @@ def test_source_outage_waits_and_preserves_reply_on_timer(runtime):
 )
 def test_gateway_rejects_unearned_authority_and_evidence(runtime, proposal):
     factory, client, settings = runtime
+    # Exercise model/initial-wait policy directly, without the separate read optimization.
+    settings.agent_required_reads_enabled = False
     case_id, run_id = start(runtime)
     if proposal == "unowned_complete":
         process_run(factory, settings, *claim_run(factory), tools=source_tools())

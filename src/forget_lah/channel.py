@@ -21,7 +21,7 @@ from forget_lah.channel_models import (
 from forget_lah.channel_routing import channel_notice, conversation, patient_cases, resolve_case
 from forget_lah.db import Clinic, FollowupCase, uid, utcnow
 from forget_lah.runtime.engine import abort_delegation, as_utc, release
-from forget_lah.runtime.models import AgentEvent, AgentRun, SimulatedMessage
+from forget_lah.runtime.models import AgentEvent, AgentRun, SimulatedMessage, StaffHandoff
 from forget_lah.runtime.startup import SIMULATOR_GOAL, automation_authorised
 from forget_lah.service_identity import AUTOMATION_PRINCIPAL_ID
 from forget_lah.source import DEMO_CLINIC_ID
@@ -399,6 +399,19 @@ def ingest_one(factory, settings=None, binding_id=None):
             db.flush()
         elif run.status != "waiting":
             incoming.status = "needs_staff"
+            handoff = db.scalar(
+                select(StaffHandoff).where(
+                    StaffHandoff.run_id == run.id, StaffHandoff.clinic_id == run.clinic_id
+                )
+            )
+            staff_status = (
+                "Clinic staff have accepted your request and it is awaiting their action. "
+                if handoff and handoff.accepted_by
+                else "Your request is awaiting assignment to clinic staff. "
+            )
+            if run.checkpoint.get("cancellation_request"):
+                staff_status += "The appointment has not been cancelled yet. "
+            staff_status += "I've saved your latest message for staff review; it has not changed your appointment."
             channel_notice(
                 db,
                 case,
@@ -407,8 +420,7 @@ def ingest_one(factory, settings=None, binding_id=None):
                     "I'm sorry, automated review is temporarily paused. Your message has been saved, "
                     "but I haven't recorded an attendance confirmation or changed your appointment from it."
                     if run.status == "paused"
-                    else "I've received your message. This follow-up needs clinic staff attention; "
-                    "your appointment has not been changed by this message."
+                    else staff_status
                 ),
             )
             return
@@ -445,6 +457,7 @@ def ingest_one(factory, settings=None, binding_id=None):
                 "content": reply_content,
                 "channel": "whatsapp_test",
             },
+            "turn_start_step": run.step_count,
             "returned_specialists": [],
             "delegation_start": 0,
             "patient_simulator_enabled": True,

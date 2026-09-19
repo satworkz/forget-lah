@@ -137,6 +137,7 @@ def install_routes(app, factory, settings, authorise):
                 "active_role": run.active_role,
                 "goal": run.goal,
                 "step_count": run.step_count,
+                "turn_step_count": run.step_count - run.checkpoint.get("turn_start_step", 0),
                 "step_limit": settings.agent_max_steps,
                 "wait_reason": run.checkpoint.get("wait_reason"),
                 "pause_reason": run.checkpoint.get("pause_reason"),
@@ -513,6 +514,11 @@ def install_routes(app, factory, settings, authorise):
             run.checkpoint = {
                 **previous_response,
                 "latest_event": next_event,
+                "turn_start_step": (
+                    run.step_count
+                    if body.kind == "demo_reply"
+                    else run.checkpoint.get("turn_start_step", 0)
+                ),
                 "returned_specialists": [],
                 "delegation_start": 0,
                 "patient_simulator_enabled": simulation_enabled(run),

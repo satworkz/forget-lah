@@ -218,3 +218,35 @@ When the current reply has been assessed as a new slot search, Engagement no lon
 Validation: full Linux/PostgreSQL suite passed (399 passed, 9 optional tests skipped). After the final refinement-routing change, 101 scheduling/patient-flow/booking tests passed with 3 PostgreSQL-only skips in the local targeted run. Ruff, formatting and web build passed. Live Claude handled Priya-style Tamil evening preference with only the available 5 pm slot offered, no concern memory, no booking and no handoff. The October-evening live scenario produced its matching initial offer; later refinement validation encountered provider output truncation and then a connection failure across bounded reruns, so live completion of that second turn is not claimed. Its behavior is covered by the passing regression test.
 
 Deployed to AWS without resetting data. Readiness returned 200; the running API image was checked for the named-period search instructions and refinement-routing guard.
+
+
+## Faster independent case processing
+
+Two bounded agent execution slots and independent delivery, translation and detection loops remove cross-case network blocking. Ready steps no longer have an artificial delay; mandatory specialist reads remain policy-checked rule steps without model calls. Existing source-write checks, ordering, leases, shared budgets, multilingual delivery and audit evidence remain in place. See [Performance](PERFORMANCE.md) for configuration, validation and the planned reactive wake-up design.
+
+Release validation: full Linux/PostgreSQL suite passed (404 passed, 9 optional tests skipped); Ruff, formatting and the production web build passed. The controlled slot-offer comparison reduced model calls from 11 to 8 with identical output and no source writes. A live Claude Tamil evening-search test passed against synthetic local data. Deployed API, worker and web to AWS without resetting data. Readiness returned 200; two existing phone bindings were unchanged, the staff progress bundle was verified, and the worker reported two execution slots, 250 ms idle polling, zero artificial step delay and unchanged two-second provider pacing. Physical-device latency after this release has not yet been measured.
+
+
+## Doctor instructions constrain slot offers
+
+Preparation now explicitly assesses every approved note before authorizing an offer. Source-quoted date restrictions are enforced against offered slots; unclear restrictions or no suitable requested slot trigger an explained clinic callback. Bookings require a reviewed offer and unchanged source version. See [Doctor instructions](DOCTOR_INSTRUCTIONS.md) for behavior and limitations.
+
+Validation: full Linux/PostgreSQL regression run passed (417 passed, 10 optional tests skipped). The final multi-requirement coverage adjustment passed all 14 focused scheduling checks. Ruff and formatting passed. The live Claude Tamil November scenario passed with the effective September 30 deadline, no offered November slot, a callback acknowledgement and zero source appointment writes. Live validation initially caught an incorrect month boundary and duplicate requirements for one note; source-date intersection and combined-requirement coverage address both. No schema migration or data reset is required.
+
+Deployed API/worker to AWS. Public readiness returned 200 and the running image verified the scheduling-review contract and September 30 source deadline. Both pre-deployment phone bindings remain unchanged; a third active registration was added during the work and remains intact. No data reset or patient test message was sent as part of deployment.
+
+
+## Reply evidence and handoff recovery
+
+Harmless quote/whitespace differences are restored to exact saved patient text before validation. Attendance refusal and cancellation have distinct routing; cancellation requests clinic action without searching slots or claiming cancellation. General staff handoff acceptance completes deterministically; unresolved callbacks and clinical reviews remain open. Staff-wait messages reflect recorded ownership. See [Reply recovery](REPLY_RECOVERY.md).
+
+Validation: full Linux/PostgreSQL suite passed (427 passed, 12 optional tests skipped). All 29 channel tests passed after adding ownership-status coverage; nine focused evidence/refusal/cancellation/handoff tests passed. Live Claude handled both the original curly-apostrophe refusal and explicit cancellation with the correct intent and zero appointment writes. Ruff and formatting passed. Deployed API/worker to AWS; public readiness returned 200 and all three phone registrations were preserved.
+
+
+## Availability search without mandatory preferences
+
+Patient requests for alternatives can search without a date/time preference. The application corrects unsupported generic clarification proposals to source search while preserving real date/constraint clarification, doctor-note restrictions and booking consent. Current appointment times are not offered as alternatives. Processing remains bounded per new patient reply; retry does not reset that allowance and the daily paid-call cap is unchanged. See [Reply recovery](REPLY_RECOVERY.md) for the incident and regression coverage.
+
+Validation: 436 tests passed and 12 optional live tests skipped in the full Linux/PostgreSQL suite. The final six conversation-replay checks also passed with per-step provider request-size validation; all requests fit the unchanged 32 KB cap. Ruff, formatting and production web builds passed. This investigation used no paid model calls, no live-case retry and no test messages. Live natural-language interpretation is not claimed from the offline semantic replay.
+
+Deployed API, worker and web to AWS. Public readiness returned 200; all three phone registrations were preserved. Running-image checks verified the availability correction, per-reply budget and strict parser. Priya remains waiting at the same saved conversation step; no automatic message replay was performed.

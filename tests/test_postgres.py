@@ -1,6 +1,6 @@
 import os
 from concurrent.futures import ThreadPoolExecutor
-from threading import Barrier
+from threading import Barrier, Event
 
 import pytest
 from alembic import command
@@ -408,3 +408,45 @@ def test_team_phone_migration_preserves_enrollment(postgres_schema):
                 enabled=True,
             )
         )
+
+
+@pytest.mark.postgres
+def test_parallel_agents_process_different_cases_without_reclaim(postgres_schema):
+    from test_runtime import source_tools
+
+    from forget_lah.runtime.engine import process_run
+    from forget_lah.runtime.provider import MockModel
+    from forget_lah.settings import Settings
+
+    _, factory = postgres_schema
+    command.upgrade(Config("alembic.ini"), "head")
+    seed_runs(factory, 2)
+    settings = Settings(database_url="sqlite://", agent_min_interval_seconds=0)
+    # Finish initial deterministic reads before blocking each case's model call.
+    for _ in range(2):
+        process_run(factory, settings, *claim_run(factory), tools=source_tools())
+    claims = [claim_run(factory), claim_run(factory)]
+    assert claims[0][0] != claims[1][0]
+    entered = Barrier(3)
+    release = Event()
+
+    class BlockingModel(MockModel):
+        def decide(self, obs, **kwargs):
+            entered.wait(timeout=10)
+            assert release.wait(10)
+            return super().decide(obs, **kwargs)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [
+            executor.submit(
+                process_run, factory, settings, *claim, model=BlockingModel(), tools=source_tools()
+            )
+            for claim in claims
+        ]
+        try:
+            entered.wait(timeout=10)
+            assert claim_run(factory) is None
+        finally:
+            release.set()
+        for future in futures:
+            assert future.result(timeout=15)

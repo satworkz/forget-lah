@@ -98,7 +98,33 @@ class QuestionAnswer(StrictModel):
         return self
 
 
+class SchedulingInstruction(StrictModel):
+    instruction_id: str
+    quote: str = Field(min_length=1, max_length=2000)
+    effect: Literal["INFORMATION", "DATE_WINDOW", "CLINIC_REVIEW"]
+    date_from: str | None = None
+    date_to: str | None = None
+
+    @model_validator(mode="after")
+    def valid_window(self):
+        from datetime import date
+
+        for value in (self.date_from, self.date_to):
+            if value is not None:
+                if date.fromisoformat(value).isoformat() != value:
+                    raise ValueError("Use ISO YYYY-MM-DD dates")
+        if self.effect == "DATE_WINDOW":
+            if not (self.date_from or self.date_to):
+                raise ValueError("A date window needs at least one bound")
+            if self.date_from and self.date_to and self.date_from > self.date_to:
+                raise ValueError("Invalid date window")
+        elif self.date_from or self.date_to:
+            raise ValueError("Only date windows have date bounds")
+        return self
+
+
 class ReturnDecision(BoundDecision):
+    scheduling_review: list[SchedulingInstruction] | None = Field(default=None, max_length=20)
     question_answers: list[QuestionAnswer] = Field(default_factory=list, max_length=3)
     step_type: Literal["RETURN"]
     reason_code: Literal[
@@ -208,18 +234,18 @@ class NeedsDecision(BoundDecision):
     preparation_plans: list[str] = Field(
         default_factory=list,
         max_length=3,
-        description="Neutral transport, accompaniment, food or medication plans; exact quotes. Never attendance/booking intent alone. Inability/refusal/help needs belong in patient_questions.",
+        description="Neutral transport, accompaniment, food or medication plans; exact quotes. Never attendance/booking intent alone. Inability to meet preparation requirements belongs in patient_questions; declining attendance belongs in appointment_intent.",
     )
     patient_questions: list[str] = Field(
         default_factory=list,
         max_length=3,
-        description="Questions or explicit unmet needs requiring help; exact reply quotes.",
+        description="Questions or explicit preparation needs; exact reply quotes. Plain attendance refusal is appointment_intent CHANGE, cancellation is CANCEL, not a patient question.",
     )
     step_type: Literal["REVIEW_NEEDS"]
     reason_code: Literal["PATIENT_NEEDS_REVIEWED"]
     reply_event_id: str = Field(min_length=36, max_length=36)
     updates: list[MemoryChange] = Field(max_length=5)
-    appointment_intent: Literal["UNSPECIFIED", "CHANGE", "CONFIRM"] = "UNSPECIFIED"
+    appointment_intent: Literal["UNSPECIFIED", "CHANGE", "CONFIRM", "CANCEL"] = "UNSPECIFIED"
     appointment_request_quote: str | None = Field(default=None, max_length=240)
     question: str | None = Field(default=None, max_length=240)
     comprehension_quote: str | None = Field(default=None, max_length=240)
@@ -260,6 +286,7 @@ class BarrierDecision(BoundDecision):
     concern_quote: str | None = Field(default=None, max_length=200)
     remember_exclusions: bool = False
     preparation_issue: Literal["NONE", "INCOMPLETE", "NEEDS_EXPLANATION"] = "NONE"
+    clarification_reason: Literal["NONE", "AMBIGUOUS_DATE", "UNRESOLVED_PREFERENCE"] = "NONE"
     next_action: Literal["SEARCH_SLOTS", "CLARIFY_TIME", "REVIEW_PREPARATION"]
 
     @model_validator(mode="after")
@@ -282,6 +309,8 @@ class BarrierDecision(BoundDecision):
         if self.earliest_minute is not None and self.latest_minute is not None:
             if self.earliest_minute > self.latest_minute:
                 raise ValueError("Time window is reversed")
+        if self.clarification_reason != "NONE" and not self.clarification_question:
+            raise ValueError("A real timing ambiguity needs a focused question")
         if self.next_action == "REVIEW_PREPARATION" and self.preparation_issue == "NONE":
             raise ValueError("Preparation review requires an explicit issue")
         return self
@@ -351,7 +380,9 @@ def reject_constant(_):
     raise ValueError("Non-finite JSON number")
 
 
-def parse_decision(text: str, request_id: str, case_version: int):
+def parse_decision(
+    text: str, request_id: str, case_version: int, *, patient_source=None, quote_repairs=None
+):
     if len(text.encode("utf-8")) > 16000:
         raise ValueError("Decision exceeds limit")
     text = text.strip()
@@ -359,6 +390,12 @@ def parse_decision(text: str, request_id: str, case_version: int):
     if fenced:
         text = fenced.group(1)
     value = json.loads(text, object_pairs_hook=unique_object, parse_constant=reject_constant)
+    if isinstance(value, dict) and patient_source is not None:
+        from forget_lah.runtime.evidence_text import restore_patient_quotes
+
+        value, repairs = restore_patient_quotes(value, patient_source)
+        if quote_repairs is not None:
+            quote_repairs.extend(repairs)
     decision = decision_adapter.validate_python(value)
     if decision.request_id != request_id or decision.expected_case_version != case_version:
         raise ValueError("Decision does not match the current request and case version")
@@ -400,7 +437,8 @@ DECISION_FORMATS = {
         "requested_date": "unambiguous YYYY-MM-DD or null; clarify ambiguous dates",
         "date_from": "inclusive local YYYY-MM-DD range start, or null",
         "date_to": "inclusive local YYYY-MM-DD range end, or null",
-        "clarification_question": "one focused question about missing timing details, or null",
+        "clarification_question": "one focused question resolving a stated ambiguity, or null",
+        "clarification_reason": ["NONE", "AMBIGUOUS_DATE", "UNRESOLVED_PREFERENCE"],
         "excluded_minutes": "SGT minutes explicitly unavailable; not a before/after bound",
         "rejects_current_offer": "true only when patient rejects all currently offered choices",
         "preparation_issue": ["NONE", "INCOMPLETE", "NEEDS_EXPLANATION"],

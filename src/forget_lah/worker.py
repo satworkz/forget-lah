@@ -75,10 +75,81 @@ def finish_job(factory, job_id: str, lease_token: str, *, settings=None) -> bool
         return True
 
 
+def run_lane(name, task, stopped, idle_seconds):
+    """Network waits in one lane never hold up another; each task owns its sessions."""
+    while not stopped.is_set():
+        try:
+            worked = task()
+        except (httpx.HTTPError, SQLAlchemyError, ValueError) as exc:
+            log.warning("worker_lane_failed lane=%s error_type=%s", name, type(exc).__name__)
+            stopped.wait(1)
+            continue
+        if not worked:
+            stopped.wait(idle_seconds)
+
+
+def run_lanes(tasks, stopped, idle_seconds):
+    from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+
+    with ThreadPoolExecutor(max_workers=len(tasks), thread_name_prefix="followup") as pool:
+        futures = [pool.submit(run_lane, name, task, stopped, idle_seconds) for name, task in tasks]
+        try:
+            # A lane terminating unexpectedly must restart the supervised worker,
+            # never silently leave a channel or case queue unattended.
+            while not stopped.is_set():
+                done, _ = wait(futures, timeout=0.5, return_when=FIRST_COMPLETED)
+                if done:
+                    for future in done:
+                        future.result()
+                    if not stopped.is_set():
+                        raise RuntimeError("Worker lane stopped unexpectedly")
+        finally:
+            stopped.set()
+
+
+def worker_tasks(factory, settings):
+    next_detection = 0.0
+    next_control = 0.0
+
+    def control():
+        nonlocal next_detection, next_control
+        now = time.monotonic()
+        if now < next_control:
+            return False
+        next_control = now + 1
+        if now >= next_detection:
+            next_detection = now + settings.source_poll_interval_seconds
+            try:
+                created = detect(factory, DEMO_CLINIC_ID, read_candidates(settings.mock_clinic_url))
+                if created:
+                    log.info("synthetic_cases_created=%s", created)
+            except (httpx.HTTPError, ValueError) as exc:
+                log.warning("source_poll_failed error_type=%s", type(exc).__name__)
+        for _ in range(50):
+            claim = claim_job(factory)
+            if not claim:
+                break
+            finish_job(factory, *claim, settings=settings)
+        queue_ready_reviews(factory, settings)
+        return False
+
+    def agent():
+        activation = claim_run(factory)
+        if not activation:
+            return False
+        process_run(factory, settings, *activation)
+        return True
+
+    return [
+        ("control", control),
+        ("translation", lambda: translate_one(factory, settings)),
+        ("whatsapp", lambda: channel_tick(factory, settings)),
+        *[(f"agent-{i + 1}", agent) for i in range(settings.agent_parallelism)],
+    ]
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
-    # HTTP client info logs contain full source/gateway URLs. Persist safe event
-    # codes and structured results instead of writing those URLs to routine logs.
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
     settings = Settings()
@@ -86,36 +157,12 @@ def main() -> None:
     stopped = threading.Event()
     for signum in (signal.SIGINT, signal.SIGTERM):
         signal.signal(signum, lambda *_: stopped.set())
-    next_detection = 0.0
-    while not stopped.is_set():
-        try:
-            if time.monotonic() >= next_detection:
-                next_detection = time.monotonic() + 10
-                try:
-                    created = detect(
-                        factory, DEMO_CLINIC_ID, read_candidates(settings.mock_clinic_url)
-                    )
-                    if created:
-                        log.info("synthetic_cases_created=%s", created)
-                except (httpx.HTTPError, ValueError) as exc:
-                    log.warning("source_poll_failed error_type=%s", type(exc).__name__)
-            for _ in range(50):
-                claim = claim_job(factory)
-                if not claim:
-                    break
-                finish_job(factory, *claim, settings=settings)
-            queue_ready_reviews(factory, settings)
-            translate_one(factory, settings)
-            channel_tick(factory, settings)
-            for _ in range(3):
-                activation = claim_run(factory)
-                if not activation:
-                    break
-                process_run(factory, settings, *activation)
-        except (httpx.HTTPError, SQLAlchemyError, ValueError) as exc:
-            # No response bodies, credentials, names or connection strings in routine logs.
-            log.warning("worker_cycle_failed error_type=%s; retry_in_seconds=1", type(exc).__name__)
-        stopped.wait(1)
+    log.info(
+        "worker_started agent_parallelism=%s idle_seconds=%s",
+        settings.agent_parallelism,
+        settings.worker_idle_seconds,
+    )
+    run_lanes(worker_tasks(factory, settings), stopped, settings.worker_idle_seconds)
 
 
 if __name__ == "__main__":

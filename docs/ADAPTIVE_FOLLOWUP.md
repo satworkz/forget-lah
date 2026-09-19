@@ -36,7 +36,7 @@ Future: explicitly consented communication/language preferences; reviewed aggreg
 
 - New forward migration `0005` creates the clinic-scoped preference table. Bootstrap applies it. Windows and Ubuntu launchers remain unchanged.
 - Preferences require an authenticated clinic session, CSRF/Origin checks, a current case version and an idle review. A patient-row lock serializes updates across that patient's cases.
-- The total step default is 40, capped at 40, to accommodate multi-turn clarification. Per-role/event and daily-call limits remain. This is bounded; indefinitely long chats are not supported.
+- The step default is 40, capped at 40 per new patient reply. Cumulative conversation history is retained; staff retries do not renew the allowance. Per-role/event and shared daily paid-call limits remain. See REPLY_RECOVERY.md for the September 19 conversation regression and correction.
 - The current source returns a bounded slot list. A no-match response describes currently listed slots, not all possible clinic availability.
 - Supported memory is time preference only. Caregiver authorisation, real messages, translation, transport/financial service lookup and autonomous learning are not implemented.
 - Model mistakes remain possible. Quote binding proves traceability, not correctness. Use adversarial and varied-language evaluations before expanding this synthetic feature.

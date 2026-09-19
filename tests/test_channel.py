@@ -768,3 +768,35 @@ def test_new_registration_waits_for_next_transport_allowlist(channel):
     dispatch_one(factory, NotYetAllowed())
     with factory() as db:
         assert db.scalar(select(ChannelOutbox)).status == "queued"
+
+
+@pytest.mark.parametrize("owned", [False, True])
+def test_staff_wait_notice_reflects_ownership_and_cancellation(channel, owned):
+    from forget_lah.db import Principal
+    from forget_lah.runtime.models import StaffHandoff
+
+    client, factory, settings, case_id, run_id = channel
+    with factory.begin() as db:
+        run = db.get(AgentRun, run_id)
+        run.status, run.available_at = "escalated", None
+        run.checkpoint = {**run.checkpoint, "cancellation_request": {"status": "requested"}}
+        owner = db.scalar(select(Principal).where(Principal.email == "staff@forget-lah.example"))
+        db.add(
+            StaffHandoff(
+                clinic_id=DEMO_CLINIC_ID,
+                case_id=case_id,
+                run_id=run_id,
+                reason_code="CANCELLATION_REQUESTED",
+                risk="AMBER",
+                accepted_by=owner.id if owned else None,
+                accepted_at=utcnow() if owned else None,
+            )
+        )
+    post(client, settings, body="What is happening with my request?")
+    ingest_one(factory)
+    with factory() as db:
+        message = db.scalar(select(SimulatedMessage)).body
+        assert ("staff have accepted" if owned else "awaiting assignment") in message
+        assert "not been cancelled yet" in message
+        assert db.get(AgentRun, run_id).status == "escalated"
+        assert db.scalar(select(ChannelInbox)).status == "needs_staff"

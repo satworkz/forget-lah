@@ -39,6 +39,11 @@ class Settings(BaseSettings):
     agent_max_steps: int = Field(default=40, ge=4, le=40)
     agent_daily_call_limit: int = Field(default=40, ge=1, le=400)
     agent_request_max_bytes: int = Field(default=32000, ge=2000, le=64000)
+    agent_step_delay_seconds: float = Field(default=0, ge=0, le=30)
+    agent_parallelism: int = Field(default=2, ge=1, le=4)
+    worker_idle_seconds: float = Field(default=0.25, ge=0.05, le=5)
+    source_poll_interval_seconds: float = Field(default=2, ge=1, le=60)
+    agent_required_reads_enabled: bool = True
     agent_min_interval_seconds: int = Field(default=2, ge=0, le=30)
 
     @property

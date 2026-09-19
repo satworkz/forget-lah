@@ -52,6 +52,7 @@ from forget_lah.runtime.responses import (
     memory_ack,
     patient_message,
 )
+from forget_lah.runtime.scheduling import normalize_review
 from forget_lah.runtime.simulation import (
     booking_choice,
     clarification_allowed,
@@ -473,6 +474,104 @@ def apply_initial_demo_wait(db, settings, run, case, step):
     return True
 
 
+def apply_required_read(db, settings, run, case, step):
+    """Execute mandatory specialist reads; Claude still interprets and returns evidence."""
+    if not settings.agent_required_reads_enabled or run.active_role not in {
+        "engagement",
+        "preparation",
+    }:
+        return False
+    obs = step.observation
+    attempted = {
+        t["result"]["tool_name"]
+        for t in obs["tools"]
+        if t["role"] == run.active_role and t["sequence"] > obs["delegation_start"]
+    }
+    read = next(
+        (
+            name
+            for name in obs["return_requirements"]["missing_tools"]
+            if name in {"read_followup_context", "get_approved_instructions", "check_prerequisites"}
+            and name in obs["allowed_tools"]
+            and name not in attempted
+        ),
+        None,
+    )
+    # A failed read needs the usual model recovery path before any other work.
+    if not read or any(
+        t["result"]["status"] != "succeeded"
+        for t in obs["tools"]
+        if t["role"] == run.active_role and t["sequence"] > obs["delegation_start"]
+    ):
+        return False
+    decision = ToolDecision(
+        request_id=step.id,
+        expected_case_version=case.case_version,
+        step_type="TOOL",
+        reason_code="READ_SOURCE",
+        tool_name=read,
+    )
+    step.origin = "rule"
+    step.observation = {
+        **obs,
+        "application_rule": {
+            "name": "REQUIRED_SPECIALIST_READ",
+            "explanation": "Read evidence required by the delegated role before model review. The policy gateway and source result remain authoritative.",
+        },
+    }
+    step.decision = decision.model_dump()
+    step.policy = policy_for(db, run, case, step, decision)
+    if step.policy["decision"] != "ALLOW":
+        step.status, step.error_code = "rejected", "POLICY_DENIED"
+        pause(run, "POLICY_DENIED")
+    else:
+        step.status = "tool_pending"
+    return True
+
+
+def apply_accepted_handoff(db, settings, run, case, step):
+    if (
+        run.active_role != "coordinator"
+        or run.checkpoint.get("latest_event", {}).get("kind") != "accept_handoff"
+    ):
+        return False
+    if any(
+        run.checkpoint.get(key, {}).get("status") not in {None, "resolved"}
+        for key in ("callback", "clinical_review")
+    ):
+        return False
+    handoff = db.scalar(
+        select(StaffHandoff).where(
+            StaffHandoff.run_id == run.id, StaffHandoff.clinic_id == run.clinic_id
+        )
+    )
+    if not handoff or not handoff.accepted_by or not handoff.accepted_at:
+        return False
+    decision = CompleteDecision(
+        request_id=step.id,
+        expected_case_version=case.case_version,
+        step_type="COMPLETE",
+        reason_code="STAFF_HANDOFF_ACCEPTED",
+        handoff_id=handoff.id,
+    )
+    step.origin = "rule"
+    step.observation = {
+        **step.observation,
+        "application_rule": {
+            "name": "ACCEPTED_STAFF_HANDOFF",
+            "explanation": "Named staff accepted ownership; no unresolved callback or clinical review is auto-closed.",
+        },
+    }
+    step.decision = decision.model_dump()
+    step.policy = policy_for(db, run, case, step, decision)
+    if step.policy["decision"] == "ALLOW":
+        apply_control(db, run, case, step, decision, settings)
+    else:
+        step.status, step.error_code = "rejected", "POLICY_DENIED"
+        pause(run, "POLICY_DENIED")
+    return True
+
+
 def prepare_step(factory, settings, run_id, token):
     with factory.begin() as db:
         run = current_run(db, run_id, token)
@@ -501,7 +600,10 @@ def prepare_step(factory, settings, run_id, token):
             pause(run, "STALE_CHECKPOINT")
             return None
         if not pending:
-            if run.step_count >= settings.agent_max_steps:
+            if (
+                run.step_count - run.checkpoint.get("turn_start_step", 0)
+                >= settings.agent_max_steps
+            ):
                 pause(run, "STEP_BUDGET_EXHAUSTED")
                 return None
             # Per-event Coordinator limit and per-delegation specialist limit.
@@ -648,8 +750,13 @@ def prepare_step(factory, settings, run_id, token):
                     pause(run, "POLICY_DENIED")
                     return None
                 pending.status = "tool_pending"
+            elif apply_accepted_handoff(db, settings, run, case, pending):
+                return None
             elif apply_initial_demo_wait(db, settings, run, case, pending):
                 return None
+            elif apply_required_read(db, settings, run, case, pending):
+                if pending.status != "tool_pending":
+                    return None
         if pending.status == "pending":
             if pending.attempts >= 2:
                 pending.status, pending.error_code = "error", "MODEL_ATTEMPTS_EXHAUSTED"
@@ -704,7 +811,7 @@ def record_failure(factory, run_id, token, step_id, code, *, retryable=False, de
 def apply_control(db, run, case, step, decision, settings):
     step.status = "completed"
     case.case_version += 1
-    delay = settings.agent_min_interval_seconds
+    delay = settings.agent_step_delay_seconds
     if isinstance(decision, NeedsDecision):
         persist_needs(db, case, decision, step.id)
         run.checkpoint = {
@@ -761,6 +868,24 @@ def apply_control(db, run, case, step, decision, settings):
                 if language_ack(language):
                     say(language_ack(language))
                 request_handoff(db, run, "LANGUAGE_SUPPORT_REQUIRED", risk="AMBER")
+            return
+        if decision.appointment_intent == "CANCEL":
+            request = {
+                "status": "requested",
+                "topic": "appointment cancellation",
+                "question": decision.appointment_request_quote,
+                "reply_event_id": decision.reply_event_id,
+                "decision_step_id": step.id,
+            }
+            run.checkpoint = {
+                **run.checkpoint,
+                "cancellation_request": request,
+                "callback": run.checkpoint.get("callback") or request,
+            }
+            say(
+                "I've asked the clinic team to help cancel your appointment and requested a callback. Your appointment has not been cancelled yet."
+            )
+            request_handoff(db, run, "CANCELLATION_REQUESTED", risk="AMBER")
             return
         language_changes = [
             u for u in decision.updates if u.key in {"preferred_language", "excluded_languages"}
@@ -855,6 +980,20 @@ def apply_control(db, run, case, step, decision, settings):
             step.id,
         )
     if isinstance(decision, BarrierDecision):
+        effective_action = decision.next_action
+        if (
+            effective_action == "CLARIFY_TIME"
+            and decision.clarification_reason == "NONE"
+            and decision.preparation_issue == "NONE"
+            and run.checkpoint.get("appointment_intent") == "CHANGE"
+        ):
+            # Availability is a source fact, not a required patient preference.
+            # Preserve the model proposal separately from this policy correction.
+            effective_action = "SEARCH_SLOTS"
+            step.observation = {
+                **step.observation,
+                "application_rule": "OPTIONAL_PREFERENCES_DO_NOT_BLOCK_SEARCH",
+            }
         # Each assessed reply is a complete revised constraint set.
         # Explicit new availability can supersede a previous offer rejection.
         rejected = []
@@ -870,6 +1009,7 @@ def apply_control(db, run, case, step, decision, settings):
                 **decision.model_dump(
                     exclude={"request_id", "expected_case_version", "step_type", "reason_code"}
                 ),
+                "next_action": effective_action,
                 "step_id": step.id,
                 "rejected_slot_ids": rejected,
             },
@@ -884,7 +1024,7 @@ def apply_control(db, run, case, step, decision, settings):
             and decision.requested_date is None
             and decision.date_from is None
         )
-        if decision.next_action == "CLARIFY_TIME" or negative_only:
+        if effective_action == "CLARIFY_TIME" or negative_only:
             db.add(
                 patient_message(
                     run,
@@ -1073,6 +1213,9 @@ def apply_control(db, run, case, step, decision, settings):
                 **run.checkpoint,
                 "question_answers": [a.model_dump() for a in decision.question_answers],
                 "question_review_step_id": step.id,
+                "scheduling_review": normalize_review(
+                    [r.model_dump() for r in decision.scheduling_review]
+                ),
             }
         delegation.status, delegation.evidence_ids = "returned", decision.evidence_ids
         delegation.result_reason_code = decision.reason_code
@@ -1104,6 +1247,9 @@ def apply_control(db, run, case, step, decision, settings):
                         source_version="approved-question-review-v1",
                         evidence={
                             "question_review_step_id": step.id,
+                            "scheduling_review": [
+                                r.model_dump() for r in decision.scheduling_review
+                            ],
                             "question_answers": run.checkpoint["question_answers"],
                         },
                     )
@@ -1260,7 +1406,17 @@ def store_proposal(factory, settings, run_id, token, step_id, reply):
                 setattr(step, field, (getattr(step, field) or 0) + value)
         step.latency_ms = reply.latency_ms
         try:
-            decision = parse_decision(reply.text, step.id, case.case_version)
+            patient_reply = saved_reply(db, run)
+            repairs = []
+            decision = parse_decision(
+                reply.text,
+                step.id,
+                case.case_version,
+                patient_source=patient_reply.content if patient_reply else None,
+                quote_repairs=repairs,
+            )
+            if repairs:
+                step.observation = {**step.observation, "evidence_quote_repairs": repairs}
         except ValueError as exc:
             step.validation_failures = [
                 *(step.validation_failures or []),
@@ -1484,7 +1640,7 @@ def execute_pending_tool(factory, settings, run_id, token, step_id, tools):
                 run.checkpoint = {**run.checkpoint, "wait_reason": "AWAITING_PATIENT_REPLY"}
                 release(run, "waiting")
         else:
-            release(run, "queued", delay=settings.agent_min_interval_seconds)
+            release(run, "queued", delay=settings.agent_step_delay_seconds)
         return True
 
 
