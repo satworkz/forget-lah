@@ -295,3 +295,28 @@ def test_historical_tasks_repair_once_without_mutating_evidence(
 
         assert result["run"]["pause_reason"] == "MODEL_EVIDENCE_INVALID"
         assert source_count(simulated_runtime[3]) == 0
+
+
+@pytest.mark.parametrize(
+    "text,question",
+    [
+        ("I cant travel in hot sun", "What times are comfortable for you to travel?"),
+        (
+            "I prefer less traffic time",
+            "I cannot check traffic here. What time range would you prefer?",
+        ),
+        ("avoid office time", "What hours do you work so we can look outside those times?"),
+    ],
+)
+def test_open_ended_scheduling_concern_is_saved_without_invented_exclusions(
+    simulated_runtime, text, question
+):
+    case, result = setup_reply(
+        simulated_runtime, text, NeedsModel([("other_concern", text, "visit")], question=question)
+    )
+    assert result["run"]["status"] == "waiting"
+    assert result["handoff"] is None
+    record = result["preferences"]["records"][0]
+    assert record["key"] == "other_concern" and record["quote"] == text
+    assert record["scope"] == "visit" and record["status"] == "pending"
+    assert question in result["patient_simulator"]["messages"][-1]["body"]

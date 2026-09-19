@@ -164,6 +164,7 @@ class MemoryChange(StrictModel):
         "excluded_languages",
         "contact_permission",
         "arrival_support",
+        "other_concern",
     ]
     value: str = Field(max_length=160)
     scope: Literal["visit", "future"]
@@ -185,7 +186,9 @@ class MemoryChange(StrictModel):
                     n < 0 or n > (6 if self.key == "excluded_weekdays" else 1439) for n in numbers
                 )
             ):
-                raise ValueError("Invalid exclusion values")
+                raise ValueError(
+                    "Use at most 12 explicitly rejected exact times/days. Never expand a preferred time window into exclusions; use ASSESS_BARRIERS time bounds or clarify instead."
+                )
         if self.key == "contact_permission" and (self.value != "stopped" or self.scope != "future"):
             raise ValueError("Stop contact is persistent; resume uses an explicit control")
         if self.key == "preferred_language" and not re.fullmatch(
@@ -248,6 +251,9 @@ class BarrierDecision(BoundDecision):
     latest_minute: int | None = Field(default=None, ge=0, le=1439)
     weekdays: list[Literal[0, 1, 2, 3, 4, 5, 6]] = Field(default_factory=list, max_length=7)
     requested_date: str | None = None
+    date_from: str | None = None
+    date_to: str | None = None
+    clarification_question: str | None = Field(default=None, min_length=1, max_length=240)
     excluded_minutes: list[int] = Field(default_factory=list, max_length=12)
     rejects_current_offer: bool = False
     concern_quote: str | None = Field(default=None, max_length=200)
@@ -265,6 +271,13 @@ class BarrierDecision(BoundDecision):
             raise ValueError("Lasting scheduling concern requires an excluded time")
         if self.requested_date is not None:
             date.fromisoformat(self.requested_date)
+        if (self.date_from is None) != (self.date_to is None):
+            raise ValueError("Date range needs both date_from and date_to")
+        if self.date_from is not None:
+            if date.fromisoformat(self.date_from) > date.fromisoformat(self.date_to):
+                raise ValueError("Date range is reversed")
+            if self.requested_date and not self.date_from <= self.requested_date <= self.date_to:
+                raise ValueError("Requested date conflicts with date range")
         if self.earliest_minute is not None and self.latest_minute is not None:
             if self.earliest_minute > self.latest_minute:
                 raise ValueError("Time window is reversed")
@@ -384,6 +397,9 @@ DECISION_FORMATS = {
         "latest_minute": "local SGT minute of day, or null",
         "weekdays": "Monday=0 through Sunday=6; empty means unrestricted",
         "requested_date": "unambiguous YYYY-MM-DD or null; clarify ambiguous dates",
+        "date_from": "inclusive local YYYY-MM-DD range start, or null",
+        "date_to": "inclusive local YYYY-MM-DD range end, or null",
+        "clarification_question": "one focused question about missing timing details, or null",
         "excluded_minutes": "SGT minutes explicitly unavailable; not a before/after bound",
         "rejects_current_offer": "true only when patient rejects all currently offered choices",
         "preparation_issue": ["NONE", "INCOMPLETE", "NEEDS_EXPLANATION"],

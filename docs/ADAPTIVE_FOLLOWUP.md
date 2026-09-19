@@ -18,7 +18,7 @@ The plan panel separates source-confirmed attendance, retrieved clinic instructi
 
 ## How the intelligence works
 
-Claude can propose `ASSESS_BARRIERS` with exact reply quotes, a Singapore time window, weekdays (Monday=0), an unambiguous calendar date, a preparation issue, and a next action. The gateway checks role, request/case version, saved reply and quote binding. It does not certify the semantic interpretation as infallible. Current symptoms use the separate clinical-review path.
+Claude can propose `ASSESS_BARRIERS` with exact reply quotes, a Singapore time window, weekdays (Monday=0), an unambiguous calendar date or inclusive date range, a focused timing clarification, a preparation issue, and a next action. The gateway checks role, request/case version, saved reply and quote binding. It does not certify the semantic interpretation as infallible. Current symptoms use the separate clinical-review path.
 
 An approved decision is saved in the run checkpoint and journey. Engagement reads source slots. Application code filters actual source results; Claude cannot invent slots. A current-visit constraint overrides a stored preference. Conflicting or uncertain availability should produce a clarification. Source API checks remain mandatory before booking. A changed selection detected before writing produces a fresh offer and requires a new patient choice; a last-instant write conflict still uses the guarded failure/handoff path.
 
@@ -71,3 +71,5 @@ The Coordinator can quote a patient's expressed frustration in a barrier assessm
 A clearly recurring unavailable time (for example, “I told you several times that 10 won't work”) can be saved for the same clinic and source patient. The UI shows **Times to avoid** and the **Reported concern** under **Preferences for future follow-ups**. Saving a replacement manual preference or **Forget preferences** updates future use; historical audit messages remain. A full demo reset clears this memory; **Start fresh test** preserves it.
 
 Future suggestions filter saved excluded times. If an existing source appointment conflicts, the reminder acknowledges that conflict and asks about finding another time. The agent never silently moves or cancels that appointment. Ordinary one-off conflicts are not lasting restrictions. Current implementation covers specific excluded times, not arbitrary learned policies, medical facts or model retraining. All statements here come from the staff-operated synthetic simulator, not authenticated patient channels.
+
+Month/time refinements retain known constraints across replies. General practical concerns such as heat, traffic and working hours are saved as quoted reports and clarified into patient-selected times; the app does not supply forecasts or infer work schedules. See the feature guide for current examples and scope rules.

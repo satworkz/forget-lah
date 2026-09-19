@@ -46,6 +46,13 @@ def effective_memory(db, case):
         for row in rows:
             if row.scope == scope and row.key != "other_concern":
                 result[row.key] = row.value["value"]
+    concerns = [
+        {"quote": row.quote, "scope": row.scope, "status": row.status}
+        for row in rows
+        if row.key == "other_concern"
+    ]
+    if concerns:
+        result["reported_concerns"] = concerns[-3:]
     return result
 
 
@@ -56,7 +63,13 @@ def persist_needs(db, case, decision, step_id):
         .with_for_update()
     )
     for change in decision.updates:
-        old = [r for r in records_for(db, case) if r.key == change.key and r.scope == change.scope]
+        old = [
+            r
+            for r in records_for(db, case)
+            if r.key == change.key
+            and r.scope == change.scope
+            and (change.key != "other_concern" or r.value["value"] == change.value)
+        ]
         for row in old:
             row.status = "superseded" if change.operation == "set" else "retracted"
         value = change.value

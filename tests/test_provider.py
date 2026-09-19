@@ -487,3 +487,71 @@ def test_gateway_schema_compaction_preserves_fields_bindings_and_limits():
     assert "items<=3" in needs["properties"]["preparation_plans"]["description"]
     assert needs["properties"]["updates"]["items"]["additionalProperties"] is False
     assert compact["unevaluatedProperties"] is False
+
+
+@pytest.mark.parametrize("provider", [AnthropicModel, OrganiserModel])
+@pytest.mark.parametrize(
+    "text",
+    [
+        "ஆம்",
+        "எனது சந்திப்பு நேரத்தை மாற்ற முடியுமா?",
+        "我可以更改预约时间吗？",
+        "Boleh saya ubah masa temu janji?",
+    ],
+)
+def test_multilingual_context_fits_default_wire_budget(provider, text):
+    config = settings()
+    assert config.agent_request_max_bytes == 32000
+    obs = {
+        **observation(),
+        "simulation": {"enabled": True},
+        "latest_event": {"id": uid(), "kind": "demo_reply", "content": text},
+        "patient_memory": {"preferred_language": "ta"},
+        "recent_messages": [
+            {"body": "உங்கள் சந்திப்புக்கு ஒருவரை அழைத்து வாருங்கள். " * 12} for _ in range(4)
+        ],
+    }
+    sizes = []
+
+    def handler(request):
+        sizes.append(len(request.content))
+        assert sizes[-1] <= config.agent_request_max_bytes
+        if provider is AnthropicModel:
+            return httpx.Response(200, json=anthropic_envelope())
+        return httpx.Response(
+            200, json={"done": True, "message": {"role": "assistant", "content": "{}"}}
+        )
+
+    provider(config, httpx.MockTransport(handler)).decide(obs)
+    assert sizes and sizes[0] > 8000
+
+
+@pytest.mark.parametrize("provider", [AnthropicModel, OrganiserModel])
+def test_oversized_multilingual_context_still_blocked(provider):
+    obs = {
+        **observation(),
+        "latest_event": {"id": uid(), "kind": "demo_reply", "content": "தமிழ்" * 10000},
+    }
+
+    def handler(request):
+        pytest.fail("Oversized request must not be sent")
+
+    with pytest.raises(ModelError, match="MODEL_REQUEST_TOO_LARGE"):
+        provider(settings(), httpx.MockTransport(handler)).decide(obs)
+
+
+@pytest.mark.parametrize("reviewed", [False, True])
+def test_structured_scheduling_has_bounded_multilingual_output_room(reviewed):
+    obs = {
+        **observation(),
+        "simulation": {"enabled": True},
+        "latest_event": {"id": uid(), "kind": "demo_reply", "content": "After 6 pm please"},
+        "needs_reviewed": reviewed,
+        "appointment_intent": "CHANGE",
+    }
+
+    def handler(request):
+        assert json.loads(request.content)["max_tokens"] == 2048
+        return httpx.Response(200, json=anthropic_envelope())
+
+    AnthropicModel(settings(), httpx.MockTransport(handler)).decide(obs)

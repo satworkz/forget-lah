@@ -91,7 +91,7 @@ def test_constraint_search_and_booking(simulated_runtime):
 
     settings = runtime[2].model_copy(
         update={
-            "agent_request_max_bytes": 8000,  # CI/default limit, independent of private .env.
+            "agent_request_max_bytes": 32000,  # Shipped cap; ignore private .env.
             "llm_gateway_url": "https://gateway.example",
             "llm_gateway_api_key": SecretStr("test-only"),
         }
@@ -426,3 +426,95 @@ def test_frustration_ack_and_reported_memory(simulated_runtime, remember, kind):
         json={"expected_case_version": result["case_version"], "clear": True, "consent": False},
     ).raise_for_status()
     assert view(client, case)["preferences"] == {}
+
+
+def test_date_range_and_time_window_filter_in_singapore():
+    slots = [
+        {"id": "before", "starts_at": "2026-09-30T10:00:00+00:00"},
+        {"id": "morning", "starts_at": "2026-10-01T02:00:00+00:00"},
+        {"id": "first", "starts_at": "2026-10-01T10:00:00+00:00"},
+        {"id": "last", "starts_at": "2026-10-31T11:00:00+00:00"},
+        {"id": "november", "starts_at": "2026-10-31T16:00:00+00:00"},
+    ]
+    assert [
+        s["id"]
+        for s in matching_slots(
+            slots,
+            {
+                "date_from": "2026-10-01",
+                "date_to": "2026-10-31",
+                "earliest_minute": 1080,
+                "latest_minute": 1200,
+            },
+        )
+    ] == ["first", "last"]
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"date_from": "2026-10-01"},
+        {"date_from": "2026-10-31", "date_to": "2026-10-01"},
+        {"date_from": "2026-02-30", "date_to": "2026-03-01"},
+        {"date_from": "2026-10-01", "date_to": "2026-10-31", "requested_date": "2026-11-01"},
+    ],
+)
+def test_invalid_date_windows_rejected(changes):
+    from forget_lah.runtime.contracts import BarrierDecision
+
+    with pytest.raises(ValueError):
+        BarrierDecision(
+            request_id=uid(),
+            expected_case_version=1,
+            reply_event_id=uid(),
+            step_type="ASSESS_BARRIERS",
+            reason_code="PATIENT_BARRIERS_REVIEWED",
+            evidence_quotes=["October"],
+            next_action="SEARCH_SLOTS",
+            **changes,
+        )
+
+
+def test_specific_time_clarification_preserves_month(simulated_runtime):
+    class MonthModel(BarrierModel):
+        def decide(self, obs, **kwargs):
+            if obs["role"] == "coordinator" and not obs["needs_reviewed"]:
+                from test_patient_memory import NeedsModel
+
+                return NeedsModel(
+                    [("other_concern", "October evenings", "visit")],
+                    question="What evening time suits you?",
+                    intent="CHANGE",
+                ).decide(obs, **kwargs)
+            response = super().decide(obs, **kwargs)
+            d = json.loads(response.text)
+            if d["step_type"] == "ASSESS_BARRIERS":
+                d.update(
+                    date_from="2026-10-01",
+                    date_to="2026-10-31",
+                    earliest_minute=None,
+                    next_action="CLARIFY_TIME",
+                    clarification_question="What time in the evening would suit you in October?",
+                )
+            return ModelReply(json.dumps(d))
+
+    runtime, tools, _, engine = simulated_runtime
+    case, _ = start(runtime, "myopia")
+    drain(runtime, tools=tools)
+    event(runtime[1], case, "demo_reply", "I prefer October and evening time").raise_for_status()
+    drain(runtime, tools=tools, model=MonthModel())
+    result = view(runtime[1], case)
+    assert result["run"]["status"] == "waiting"
+    assert result["handoff"] is None
+    assert source_count(engine) == 0
+    assert (
+        "evening would suit you in October" in result["patient_simulator"]["messages"][-1]["body"]
+    )
+    from sqlalchemy import select
+
+    from forget_lah.runtime.models import AgentRun
+
+    with runtime[0]() as db:
+        barrier = db.scalar(select(AgentRun).where(AgentRun.case_id == case)).checkpoint["barriers"]
+        assert barrier["date_from"] == "2026-10-01"
+        assert barrier["date_to"] == "2026-10-31"
