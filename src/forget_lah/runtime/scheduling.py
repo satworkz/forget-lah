@@ -136,25 +136,63 @@ def check_signature(item):
     }
 
 
+def _same_check_source(resolution, requirement):
+    return (
+        resolution.get("instruction_id") == requirement.get("instruction_id")
+        and resolution.get("quote") == requirement.get("quote")
+        and resolution.get("if_not_met") == requirement.get("if_not_met")
+    )
+
+
+def _condition_span_matches(resolution, requirement):
+    left = (resolution.get("condition_quote") or "").strip()
+    right = (requirement.get("condition_quote") or "").strip()
+    return bool(left and right and (left == right or left in right or right in left))
+
+
 def pending_patient_checks(review, resolutions=None):
-    resolved = {
-        (r.get("instruction_id"), r.get("quote"), r.get("condition_quote"), r.get("if_not_met"))
-        for r in (resolutions or [])
-        if r.get("resolution") in {"MET", "RESCHEDULE"}
-    }
-    pending = []
+    requirements = []
     for item in review or []:
         value = item.model_dump() if hasattr(item, "model_dump") else dict(item)
-        if value.get("effect") != "PATIENT_CHECK":
-            continue
-        signature = (
-            value.get("instruction_id"),
-            value.get("quote"),
-            value.get("condition_quote"),
-            value.get("if_not_met"),
+        if value.get("effect") == "PATIENT_CHECK":
+            requirements.append(value)
+    resolved = [
+        r
+        for r in (resolutions or [])
+        if r.get("resolution") in {"MET", "RESCHEDULE"}
+    ]
+
+    pending = []
+    for requirement in requirements:
+        exact = any(
+            _same_check_source(resolution, requirement)
+            and resolution.get("condition_quote") == requirement.get("condition_quote")
+            for resolution in resolved
         )
-        if signature not in resolved:
-            pending.append(value)
+        if exact:
+            continue
+
+        # A live model may select a slightly wider/narrower exact substring from
+        # the same unchanged doctor note on a later pass. Reuse that resolution
+        # only when the source/action are identical and the containment match is
+        # unambiguous among the current checks. Never use semantic similarity.
+        matched = False
+        for resolution in resolved:
+            if not _same_check_source(resolution, requirement) or not _condition_span_matches(
+                resolution, requirement
+            ):
+                continue
+            candidates = [
+                item
+                for item in requirements
+                if _same_check_source(resolution, item)
+                and _condition_span_matches(resolution, item)
+            ]
+            if len(candidates) == 1:
+                matched = True
+                break
+        if not matched:
+            pending.append(requirement)
     return pending
 
 

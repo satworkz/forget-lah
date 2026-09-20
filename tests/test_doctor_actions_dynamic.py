@@ -325,3 +325,221 @@ def test_patient_check_condition_and_reschedule_consequence_must_be_exact_source
         ],
     )
     assert validate_review(FakeDb(), run, bad_consequence) == "PATIENT_CHECK_CONSEQUENCE_SOURCE_MISMATCH"
+
+
+class ContextualGuidanceModel(MockModel):
+    """Exercise the live-model contract for a confirmation plus an independent plan/question."""
+
+    def __init__(self, note, guidance_quote):
+        self.note = note
+        self.guidance_quote = guidance_quote
+        self.omitted_review_once = False
+        self.repair_seen = False
+
+    def decide(self, obs, *, repair=False):
+        event = obs["latest_event"]
+        if (
+            obs["role"] == "coordinator"
+            and event["kind"] == "demo_reply"
+            and not obs.get("needs_reviewed")
+        ):
+            return ModelReply(
+                json.dumps(
+                    {
+                        "request_id": obs["request_id"],
+                        "expected_case_version": obs["expected_case_version"],
+                        "step_type": "REVIEW_NEEDS",
+                        "reason_code": "PATIENT_NEEDS_REVIEWED",
+                        "reply_event_id": event.get("reply_event_id", event["id"]),
+                        "updates": [],
+                        "patient_questions": [
+                            "hope the appointment will be finished by that time"
+                        ],
+                        "preparation_plans": ["I have movie ticket booked at 12:00pm"],
+                        "appointment_intent": "CONFIRM",
+                        "appointment_request_quote": "yes pls",
+                        "question": None,
+                        "comprehension_quote": None,
+                        "concern_quote": None,
+                    }
+                )
+            )
+        if (
+            obs["role"] == "coordinator"
+            and obs.get("appointment_intent") == "CONFIRM"
+            and "preparation" not in obs.get("returned_specialists", [])
+        ):
+            return ModelReply(
+                json.dumps(
+                    {
+                        "request_id": obs["request_id"],
+                        "expected_case_version": obs["expected_case_version"],
+                        "step_type": "DELEGATE",
+                        "reason_code": "PREPARATION_REVIEW_REQUIRED",
+                        "target": "preparation",
+                        "goal": "Review approved instructions against the patient's question and plan",
+                    }
+                )
+            )
+
+        response = super().decide(obs, repair=repair)
+        value = json.loads(response.text)
+        if obs["role"] == "preparation" and value.get("step_type") == "RETURN":
+            notes = [
+                t
+                for t in obs["tools"]
+                if t["role"] == "preparation"
+                and t["result"]["tool_name"] == "get_approved_instructions"
+            ]
+            note = notes[-1]["result"]["data"]["instructions"][0]
+            if obs.get("patient_questions"):
+                value["question_answers"] = [
+                    {
+                        "question_index": 0,
+                        "outcome": "UNSUPPORTED",
+                        "instruction_id": None,
+                        "quote": None,
+                    },
+                    {
+                        "question_index": 1,
+                        "outcome": "GUIDANCE",
+                        "instruction_id": note["instruction_id"],
+                        "quote": self.guidance_quote,
+                    },
+                ]
+            # Reproduce the real Alex incident once: the first otherwise-valid
+            # Preparation RETURN omitted scheduling coverage. The runtime should
+            # request one bounded repair instead of pausing.
+            if not self.omitted_review_once and not repair:
+                value["scheduling_review"] = None
+                self.omitted_review_once = True
+            else:
+                if repair:
+                    self.repair_seen = True
+                value["scheduling_review"] = [
+                    {
+                        "instruction_id": note["instruction_id"],
+                        "quote": note["approved_text"],
+                        "effect": "INFORMATION",
+                    }
+                ]
+            return ModelReply(json.dumps(value))
+        return response
+
+
+def test_reschedule_resolution_survives_option_selection_without_reasking(simulated_runtime):
+    runtime, tools, source, source_engine = simulated_runtime
+    set_note(source, "DEMO-ANTENATAL-VISIT-01", SCAN_NOTE)
+    add_antenatal_slot(source)
+    case, _ = start(runtime, "antenatal")
+    drain(runtime, tools=tools)
+    event(runtime[1], case, "demo_reply", "I confirm my attendance").raise_for_status()
+    drain(runtime, tools=tools, model=scan_model())
+    event(runtime[1], case, "demo_reply", "No, I have not done the scan yet").raise_for_status()
+    drain(runtime, tools=tools, model=scan_model())
+    before = view(runtime[1], case)
+    checks_before = [
+        m
+        for m in before["patient_simulator"]["messages"]
+        if m["kind"] == "doctor_instruction_check"
+    ]
+    assert len(checks_before) == 1
+    assert before["patient_simulator"]["messages"][-1]["kind"] == "options"
+
+    event(runtime[1], case, "demo_reply", "option 1 is fine").raise_for_status()
+    drain(runtime, tools=tools, model=scan_model())
+    result = view(runtime[1], case)
+    checks_after = [
+        m
+        for m in result["patient_simulator"]["messages"]
+        if m["kind"] == "doctor_instruction_check"
+    ]
+    assert len(checks_after) == 1, result["patient_simulator"]["messages"]
+    assert result["run"]["status"] == "completed", result
+    assert source_count(source_engine) == 1
+
+
+def test_information_note_guides_related_plan_and_bad_first_return_repairs(simulated_runtime):
+    runtime, tools, source, source_engine = simulated_runtime
+    note = (
+        "Demo clinic note: bring your existing spectacles if you have them. "
+        "Eyes will be blurry after the appointment"
+    )
+    guidance = "Eyes will be blurry after the appointment"
+    set_note(source, "DEMO-MYOPIA-VISIT-01", note)
+    case, _ = start(runtime, "myopia")
+    drain(runtime, tools=tools)
+    event(
+        runtime[1],
+        case,
+        "demo_reply",
+        "yes pls, I have movie ticket booked at 12:00pm, hope the appointment will be finished by that time.",
+    ).raise_for_status()
+    model = ContextualGuidanceModel(note, guidance)
+    drain(runtime, tools=tools, model=model)
+    result = view(runtime[1], case)
+
+    assert model.repair_seen is True
+    assert result["run"]["status"] == "completed", result
+    assert result["handoff"] is None
+    assert source_count(source_engine) == 1
+    body = result["patient_simulator"]["messages"][-1]["body"]
+    assert "can't check that here from the clinic information available" in body
+    assert guidance in body
+    assert "alternative appointment dates" in body
+    assert "requested a callback" not in body
+
+
+def test_condition_span_reuse_is_source_bound_and_unambiguous():
+    from forget_lah.runtime.scheduling import pending_patient_checks
+
+    note = "Confirm the mandatory scan is completed before the visit; if not reschedule."
+    resolved = {
+        "instruction_id": "n1",
+        "quote": note,
+        "condition_quote": "Confirm the mandatory scan is completed before the visit",
+        "if_not_met": "RESCHEDULE",
+        "resolution": "RESCHEDULE",
+    }
+    narrower = {
+        "instruction_id": "n1",
+        "quote": note,
+        "effect": "PATIENT_CHECK",
+        "condition_quote": "mandatory scan is completed before the visit",
+        "patient_question": "Have you completed the mandatory scan?",
+        "if_not_met": "RESCHEDULE",
+        "consequence_quote": "if not reschedule",
+    }
+    assert pending_patient_checks([narrower], [resolved]) == []
+
+    ambiguous = {
+        **narrower,
+        "condition_quote": "scan is completed before the visit",
+        "patient_question": "Is the scan completed before the visit?",
+    }
+    assert pending_patient_checks([narrower, ambiguous], [resolved]) == [narrower, ambiguous]
+
+
+def test_preparation_question_prompt_preserves_scheduling_contract():
+    from forget_lah.db import uid
+    from forget_lah.runtime.provider import prompt_for
+
+    prompt = prompt_for(
+        {
+            "role": "preparation",
+            "request_id": uid(),
+            "expected_case_version": 1,
+            "patient_questions": [
+                "hope the appointment will be finished by that time",
+                "I have a movie ticket booked at 12:00pm",
+            ],
+            "patient_task_types": ["QUESTION", "PLAN"],
+            "simulation": {"enabled": True},
+            "allowed_tools": ["get_approved_instructions", "check_prerequisites"],
+        },
+        False,
+    )
+    assert "Every RETURN MUST include scheduling_review" in prompt
+    assert "still return the complete scheduling_review required above" in prompt
+    assert "non-clinical administrative question" in prompt
+    assert "after-appointment effect/restriction" in prompt

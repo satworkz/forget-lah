@@ -50,9 +50,12 @@ def question_response(run, reply, *, confirmation_step_id=None):
         return ""
     by_index = {a["question_index"]: a for a in answers}
     parts, pending = [], []
+    has_guidance = False
+    has_unsupported = False
     for index, question in enumerate(questions):
         answer = by_index.get(index, {"outcome": "CLINIC_REVIEW"})
         if answer["outcome"] in {"ANSWERED", "GUIDANCE"}:
+            has_guidance = has_guidance or answer["outcome"] == "GUIDANCE"
             text = (
                 f"Please keep your clinic's advice in mind: {answer['quote']}"
                 if answer["outcome"] == "GUIDANCE"
@@ -64,9 +67,20 @@ def question_response(run, reply, *, confirmation_step_id=None):
             if "Thanks for letting us know your plans." not in parts:
                 parts.append("Thanks for letting us know your plans.")
         elif answer["outcome"] == "UNSUPPORTED":
-            parts.append(f"Regarding ‘{question}’, sorry, I can't check that here.")
+            has_unsupported = True
+            parts.append(
+                f"Regarding ‘{question}’, sorry, I can't check that here from the clinic information available."
+            )
         else:
             pending.append(question)
+    if (
+        has_guidance
+        and has_unsupported
+        and run.checkpoint.get("appointment_intent") == "CONFIRM"
+    ):
+        parts.append(
+            "If this clinic guidance conflicts with another commitment, you can keep the clinic appointment and change that plan, or ask me to show alternative appointment dates."
+        )
     if pending:
         parts.append(
             "I've sent your question to the clinic team and requested a callback: "

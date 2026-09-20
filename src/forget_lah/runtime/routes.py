@@ -511,8 +511,19 @@ def install_routes(app, factory, settings, authorise):
                 else {}
             )
             previous_barriers = run.checkpoint.get("barriers")
+            # A verified doctor-instruction answer is durable workflow state, not
+            # turn-local model context. Preserve it across later patient replies so
+            # a RESCHEDULE consequence can reach option selection/booking without
+            # immediately asking the same prerequisite again. A changed approved
+            # note is still re-read and invalidates the resolution by source identity.
+            instruction_resolutions = run.checkpoint.get("instruction_check_resolutions")
             run.checkpoint = {
                 **previous_response,
+                **(
+                    {"instruction_check_resolutions": instruction_resolutions}
+                    if instruction_resolutions
+                    else {}
+                ),
                 "latest_event": next_event,
                 "turn_start_step": (
                     run.step_count

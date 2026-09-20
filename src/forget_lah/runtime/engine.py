@@ -626,9 +626,17 @@ def prepare_step(factory, settings, run_id, token):
                     else s.sequence > run.checkpoint.get("delegation_start", 0)
                 )
             ]
-            if len(active) >= (
-                6 if simulation_enabled(run) or run.active_role != "coordinator" else 4
-            ):
+            if simulation_enabled(run):
+                # Mixed patient turns can legitimately require Coordinator to review
+                # needs, delegate Preparation, delegate Engagement, refresh
+                # Preparation after the source write, acknowledge, and complete.
+                # Keep this bounded (and below the global turn step budget), but do
+                # not pause one decision before completion for these evidence-heavy
+                # simulator journeys. Specialists retain the tighter limit.
+                role_limit = 8 if run.active_role == "coordinator" else 6
+            else:
+                role_limit = 4 if run.active_role == "coordinator" else 6
+            if len(active) >= role_limit:
                 pause(run, "ROLE_BUDGET_EXHAUSTED")
                 return None
             step_id = uid()
@@ -1653,6 +1661,39 @@ def store_proposal(factory, settings, run_id, token, step_id, reply):
                         "field": "REVIEW_NEEDS",
                         "code": reason,
                         "message": "All evidence quotes and task items must be exact text from latest_event.content only. Use history to interpret the reply, not to copy previous tasks. Reassess this reply and return the complete corrected decision.",
+                    }
+                    for reason in reasons
+                ]
+                step.validation_failures = [*(step.validation_failures or []), failure][-2:]
+                step.error_code = "MODEL_EVIDENCE_INVALID"
+                if step.attempts < 2:
+                    release(run, "queued", delay=settings.agent_min_interval_seconds)
+                else:
+                    step.status = "rejected"
+                    pause(run, "MODEL_EVIDENCE_INVALID")
+                return None
+
+            preparation_repairable = {
+                "QUESTION_COVERAGE_INCOMPLETE",
+                "NEUTRAL_PLAN_REQUIRES_GUIDANCE_REVIEW",
+                "PLAN_OUTCOME_REQUIRES_PLAN",
+                "QUESTION_ANSWER_NOT_IN_APPROVED_SOURCE",
+                "SCHEDULING_INSTRUCTION_COVERAGE_REQUIRED",
+                "SCHEDULING_INSTRUCTION_SOURCE_MISMATCH",
+                "PATIENT_CHECK_CONDITION_SOURCE_MISMATCH",
+                "PATIENT_CHECK_CONSEQUENCE_SOURCE_MISMATCH",
+            }
+            if (
+                isinstance(decision, ReturnDecision)
+                and run.active_role == "preparation"
+                and set(reasons) <= preparation_repairable
+            ):
+                failure = validation_failure(reply.text, ValueError(), step.attempts)
+                failure["errors"] = [
+                    {
+                        "field": "PREPARATION_RETURN",
+                        "code": reason,
+                        "message": "Re-read the approved instruction evidence and return complete source-bound scheduling_review plus question_answers for every indexed patient task. Do not invent a source answer; use UNSUPPORTED for a non-clinical operational fact that the available clinic sources cannot answer.",
                     }
                     for reason in reasons
                 ]
