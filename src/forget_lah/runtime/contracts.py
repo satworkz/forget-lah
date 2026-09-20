@@ -88,6 +88,22 @@ class QuestionAnswer(StrictModel):
     outcome: Literal["ANSWERED", "GUIDANCE", "NOT_REQUIRED", "CLINIC_REVIEW", "UNSUPPORTED"]
     instruction_id: str | None = None
     quote: str | None = Field(default=None, max_length=600)
+    guidance_relation: (
+        Literal[
+            "PRACTICAL_RELEVANCE",
+            "PREPARATION_RELEVANCE",
+            "POSSIBLE_SUBSTITUTION",
+            "GENERAL_RELEVANCE",
+        ]
+        | None
+    ) = Field(
+        default=None,
+        description=(
+            "For PLAN+GUIDANCE only: a bounded semantic relationship between the exact patient "
+            "plan and exact approved source quote. This selects safe response wording; it never "
+            "authorizes new clinical advice or a scheduling action."
+        ),
+    )
 
     @model_validator(mode="after")
     def bound_answer(self):
@@ -95,6 +111,10 @@ class QuestionAnswer(StrictModel):
             raise ValueError("Answered questions require an exact approved source quote")
         if self.outcome not in {"ANSWERED", "GUIDANCE"} and (self.instruction_id or self.quote):
             raise ValueError("Unanswered questions have no source answer")
+        if self.outcome == "GUIDANCE" and self.guidance_relation is None:
+            raise ValueError("Contextual guidance requires a bounded guidance relation")
+        if self.outcome != "GUIDANCE" and self.guidance_relation is not None:
+            raise ValueError("Only contextual guidance can carry a guidance relation")
         return self
 
 

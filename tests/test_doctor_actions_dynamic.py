@@ -413,6 +413,7 @@ class ContextualGuidanceModel(MockModel):
                         "outcome": "GUIDANCE",
                         "instruction_id": note["instruction_id"],
                         "quote": self.guidance_quote,
+                        "guidance_relation": "PRACTICAL_RELEVANCE",
                     },
                 ]
             # Reproduce the real Alex incident once: the first otherwise-valid
@@ -550,4 +551,5 @@ def test_preparation_question_prompt_preserves_scheduling_contract():
     assert "Every RETURN MUST include scheduling_review" in prompt
     assert "still return the complete scheduling_review required above" in prompt
     assert "non-clinical administrative question" in prompt
-    assert "after-appointment effect/restriction" in prompt
+    assert "guidance_relation" in prompt
+    assert "Do not infer unstated direction" in prompt

@@ -1683,6 +1683,7 @@ def store_proposal(factory, settings, run_id, token, step_id, reply):
                 "NEUTRAL_PLAN_REQUIRES_GUIDANCE_REVIEW",
                 "PLAN_OUTCOME_REQUIRES_PLAN",
                 "QUESTION_ANSWER_NOT_IN_APPROVED_SOURCE",
+                "GUIDANCE_REQUIRES_INFORMATION_REVIEW",
                 "SCHEDULING_INSTRUCTION_COVERAGE_REQUIRED",
                 "SCHEDULING_INSTRUCTION_SOURCE_MISMATCH",
                 "PATIENT_CHECK_CONDITION_SOURCE_MISMATCH",

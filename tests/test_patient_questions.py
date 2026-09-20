@@ -19,9 +19,11 @@ class QuestionModel(NeedsModel):
         intent="CONFIRM",
         task="Do I need someone to accompany me?",
         plan=False,
+        guidance_relation="GENERAL_RELEVANCE",
     ):
         super().__init__([], intent=intent)
         self.outcome, self.quote, self.task, self.plan = outcome, quote, task, plan
+        self.guidance_relation = guidance_relation
 
     def decide(self, obs, **kwargs):
         value = json.loads(super().decide(obs, **kwargs).text)
@@ -45,6 +47,9 @@ class QuestionModel(NeedsModel):
                     outcome=self.outcome,
                     instruction_id=note["instruction_id"] if self.quote else None,
                     quote=self.quote,
+                    guidance_relation=(
+                        self.guidance_relation if self.outcome == "GUIDANCE" else None
+                    ),
                 )
             ]
         return ModelReply(json.dumps(value))
