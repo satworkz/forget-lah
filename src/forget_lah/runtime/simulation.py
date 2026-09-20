@@ -10,7 +10,7 @@ from forget_lah.runtime.adaptation import effective_constraints, matching_slots,
 from forget_lah.runtime.models import AgentDelegation, AgentEvent, AgentStep, SimulatedMessage
 from forget_lah.runtime.questions import question_response
 from forget_lah.runtime.responses import patient_message
-from forget_lah.runtime.scheduling import compatible
+from forget_lah.runtime.scheduling import compatible, instruction_gate_clear
 from forget_lah.source import DEMO_CLINIC_ID
 
 
@@ -50,6 +50,125 @@ def saved_reply(db, run):
         else None
     )
 
+
+
+def pending_instruction_question(db, run):
+    """Return the latest unresolved doctor-instruction question preceding this patient reply."""
+    reply = saved_reply(db, run)
+    if not reply:
+        return None
+    resolved = {
+        (step.decision or {}).get("question_message_id")
+        for step in db.scalars(
+            select(AgentStep).where(
+                AgentStep.run_id == run.id,
+                AgentStep.clinic_id == run.clinic_id,
+                AgentStep.status == "completed",
+            )
+        )
+        if (step.decision or {}).get("step_type") == "INTERPRET_INSTRUCTION_CHECK"
+    }
+    for message in db.scalars(
+        select(SimulatedMessage)
+        .where(
+            SimulatedMessage.run_id == run.id,
+            SimulatedMessage.clinic_id == run.clinic_id,
+            SimulatedMessage.kind == "doctor_instruction_check",
+        )
+        .order_by(SimulatedMessage.created_at.desc())
+    ):
+        if message.id in resolved or message.event_id == reply.id:
+            continue
+        return message
+    return None
+
+
+def save_instruction_question(
+    db,
+    run,
+    requirement,
+    review,
+    *,
+    source_version,
+    resolutions=None,
+    resume_appointment_intent="UNSPECIFIED",
+    attempt=1,
+):
+    reply = saved_reply(db, run)
+    existing = db.scalar(
+        select(SimulatedMessage).where(
+            SimulatedMessage.run_id == run.id,
+            SimulatedMessage.event_id == reply.id,
+            SimulatedMessage.kind == "doctor_instruction_check",
+        )
+    )
+    if existing:
+        return existing
+    body = requirement["patient_question"].strip()
+    if not body.endswith("?"):
+        body += "?"
+    body += " No appointment changes will be made until this is resolved."
+    row = patient_message(
+        run,
+        clinic_id=run.clinic_id,
+        case_id=run.case_id,
+        run_id=run.id,
+        event_id=reply.id,
+        kind="doctor_instruction_check",
+        body=body,
+        source_version=source_version,
+        evidence={
+            "requirement": requirement,
+            "scheduling_review": review,
+            "resolutions": resolutions or [],
+            "resume_appointment_intent": resume_appointment_intent,
+            "attempt": attempt,
+        },
+    )
+    db.add(row)
+    db.flush()
+    return row
+
+
+def current_instruction_gate(db, run, context_step, choice=None):
+    # A selected option is already bound to the exact Preparation review that
+    # produced the offer. booking_choice() verifies that review, any patient
+    # checks, and slot compatibility. The record gate separately verifies the
+    # episode version and that the selected slot is still in the fresh source.
+    if choice is not None:
+        return bool(choice.get("scheduling_reviewed"))
+
+    review_step_id = run.checkpoint.get("question_review_step_id")
+    review_step = db.get(AgentStep, review_step_id) if review_step_id else None
+    if (
+        not review_step
+        or review_step.run_id != run.id
+        or review_step.clinic_id != run.clinic_id
+        or review_step.role != "preparation"
+        or review_step.status != "completed"
+        or (review_step.policy or {}).get("decision") != "ALLOW"
+    ):
+        return False
+    review = (review_step.decision or {}).get("scheduling_review")
+    instruction_source = None
+    for evidence_id in (review_step.decision or {}).get("evidence_ids", []):
+        evidence = db.get(AgentStep, evidence_id)
+        if (
+            evidence
+            and evidence.tool_result
+            and evidence.tool_result.get("tool_name") == "get_approved_instructions"
+        ):
+            instruction_source = evidence.tool_result.get("source_version")
+            break
+    if not instruction_source or instruction_source != context_step.tool_result.get("source_version"):
+        return False
+    resolutions = run.checkpoint.get("instruction_check_resolutions", [])
+    if not instruction_gate_clear(review, resolutions):
+        return False
+    target = choice["slot"] if choice else {"starts_at": context_step.tool_result["data"].get("scheduled_at")}
+    if target.get("starts_at") and not compatible([target], review):
+        return False
+    return True
 
 def latest_selection_offer(db, run):
     reply = saved_reply(db, run)
@@ -103,6 +222,7 @@ def booking_choice(db, run):
     review_id = offer.evidence.get("scheduling_review_step_id")
     review_step = db.get(AgentStep, review_id) if review_id else None
     review = (review_step.decision or {}).get("scheduling_review") if review_step else None
+    resolutions = offer.evidence.get("instruction_check_resolutions", [])
     reviewed = bool(
         review_step
         and review_step.run_id == run.id
@@ -110,6 +230,7 @@ def booking_choice(db, run):
         and review_step.role == "preparation"
         and review_step.status == "completed"
         and (review_step.policy or {}).get("decision") == "ALLOW"
+        and instruction_gate_clear(review, resolutions)
         and compatible([options[index]], review)
     )
     return {
@@ -119,6 +240,7 @@ def booking_choice(db, run):
         "offer_id": offer.id,
         "unsupported_question": proof.decision.get("unsupported_question", "NONE"),
         "selection_step_id": proof.id,
+        "instruction_check_resolutions": resolutions,
     }
 
 
@@ -153,12 +275,18 @@ def attendance_interpretation(db, run):
 def reply_evidence(db, run):
     reply = saved_reply(db, run)
     interpretation = attendance_interpretation(db, run)
+    resumed_confirmation = bool(
+        reply
+        and run.checkpoint.get("instruction_check_processed") == reply.id
+        and run.checkpoint.get("instruction_check_resume_intent") == "CONFIRM"
+    )
     return (
         reply
         if reply
         and (
             explicit_confirmation(reply.content)
             or booking_choice(db, run)
+            or resumed_confirmation
             or (interpretation and interpretation.decision.get("confirmed") is True)
         )
         else None
@@ -233,9 +361,21 @@ def simulation_evidence(db, run):
         "recall_options_available": False,
         "selection_needs_refresh": False,
         "has_offer": False,
+        "instruction_check": None,
     }
     if not result["enabled"]:
         return result
+    pending_check = pending_instruction_question(db, run)
+    if pending_check:
+        requirement = pending_check.evidence.get("requirement", {})
+        result["instruction_check"] = {
+            "question_message_id": pending_check.id,
+            "reply_event_id": saved_reply(db, run).id,
+            "question": pending_check.body,
+            "condition_quote": requirement.get("condition_quote"),
+            "if_not_met": requirement.get("if_not_met"),
+            "attempt": pending_check.evidence.get("attempt", 1),
+        }
     reply = reply_evidence(db, run)
     result["confirmation_authorized"] = reply is not None
     steps = current_tools(db, run)
@@ -306,10 +446,12 @@ def simulation_evidence(db, run):
                 for i, s in enumerate(offer.evidence.get("slots", []), 1)
             ],
         }
-    result["booking_authorized"] = choice is not None
+    result["booking_authorized"] = bool(choice and choice.get("scheduling_reviewed"))
+    instruction_gate = bool(context and current_instruction_gate(db, run, context, choice))
     result["record_required"] = bool(
         reply
         and context
+        and instruction_gate
         and context.tool_result["data"].get("can_simulate_confirmation")
         and context.tool_result["data"].get("episode_version")
         and (
@@ -361,11 +503,20 @@ def simulation_evidence(db, run):
             )
         )
     )
+    instructions = latest_tool(steps, "get_approved_instructions", "preparation")
+    prerequisites = latest_tool(steps, "check_prerequisites", "preparation")
+    # A guarded write can introduce more than one specialist return in the same
+    # patient turn: Engagement interprets the choice, Preparation clears the
+    # doctor-note gate, Engagement performs the write, and Preparation refreshes
+    # against the new source version. Select the reports that actually contain
+    # the current evidence rather than relying on unspecified SQL row order.
     engagement = next(
         (
             d
             for d in reports
-            if d.target == "engagement" and d.result_reason_code == "PATIENT_CONFIRMED_ATTENDANCE"
+            if d.target == "engagement"
+            and d.result_reason_code == "PATIENT_CONFIRMED_ATTENDANCE"
+            and (not receipt or receipt.id in d.evidence_ids)
         ),
         None,
     )
@@ -373,12 +524,15 @@ def simulation_evidence(db, run):
         (
             d
             for d in reports
-            if d.target == "preparation" and d.result_reason_code == "SPECIALIST_REVIEW_FINISHED"
+            if d.target == "preparation"
+            and d.result_reason_code == "SPECIALIST_REVIEW_FINISHED"
+            and instructions
+            and instructions.id in d.evidence_ids
+            and prerequisites
+            and prerequisites.id in d.evidence_ids
         ),
         None,
     )
-    instructions = latest_tool(steps, "get_approved_instructions", "preparation")
-    prerequisites = latest_tool(steps, "check_prerequisites", "preparation")
     ack = latest_tool(steps, "send_simulated_acknowledgement", "coordinator")
     any_context = latest_tool(steps, "read_followup_context")
     result["recall_options_available"] = bool(
@@ -718,6 +872,7 @@ def save_options(db, run):
             "episode_version": context.tool_result["data"]["episode_version"],
             "source_step_id": context.id,
             "instruction_step_id": instructions.id,
+            "instruction_check_resolutions": run.checkpoint.get("instruction_check_resolutions", []),
         },
     )
     db.add(row)

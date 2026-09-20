@@ -11,6 +11,7 @@ from forget_lah.runtime.contracts import (
     CompleteSimulationDecision,
     DelegateDecision,
     EscalateDecision,
+    InstructionCheckDecision,
     NeedsDecision,
     ReturnDecision,
     SelectionDecision,
@@ -25,6 +26,7 @@ from forget_lah.runtime.simulation import (
     clarification_count,
     explicit_confirmation,
     latest_selection_offer,
+    pending_instruction_question,
     read_already_available,
     saved_reply,
     simulation_enabled,
@@ -188,6 +190,25 @@ def policy_for(db, run, case, step, decision):
             deny = "ATTENDANCE_QUOTE_NOT_IN_PATIENT_REPLY"
         else:
             reasons.append("PATIENT_REPORT_BOUND_CLINIC_REVIEW_REQUIRED")
+    elif isinstance(decision, InstructionCheckDecision):
+        reply = saved_reply(db, run)
+        question = pending_instruction_question(db, run)
+        if (
+            run.active_role != "coordinator"
+            or not simulation_enabled(run)
+            or not reply
+            or not question
+            or decision.reply_event_id != reply.id
+            or decision.question_message_id != question.id
+        ):
+            deny = "INSTRUCTION_CHECK_BINDING_REQUIRED"
+        elif (
+            not decision.answer_quote.strip()
+            or decision.answer_quote not in reply.content
+        ):
+            deny = "INSTRUCTION_CHECK_ANSWER_NOT_IN_REPLY"
+        else:
+            reasons.append("PATIENT_ANSWER_BOUND_TO_APPROVED_INSTRUCTION_CHECK")
     elif isinstance(decision, AttendanceDecision):
         review = simulation_evidence(db, run).get("attendance_review")
         delegation = db.scalar(

@@ -19,6 +19,7 @@ from forget_lah.runtime.contracts import (
     CompleteSimulationDecision,
     DelegateDecision,
     EscalateDecision,
+    InstructionCheckDecision,
     NeedsDecision,
     ReturnDecision,
     SelectionDecision,
@@ -52,7 +53,7 @@ from forget_lah.runtime.responses import (
     memory_ack,
     patient_message,
 )
-from forget_lah.runtime.scheduling import normalize_review
+from forget_lah.runtime.scheduling import check_signature, normalize_review, pending_patient_checks
 from forget_lah.runtime.simulation import (
     booking_choice,
     clarification_allowed,
@@ -64,6 +65,7 @@ from forget_lah.runtime.simulation import (
     read_already_available,
     reply_evidence,
     save_acknowledgement,
+    save_instruction_question,
     save_options,
     save_reminder,
     saved_reply,
@@ -1114,6 +1116,124 @@ def apply_control(db, run, case, step, decision, settings):
             },
         }
         request_handoff(db, run, "PATIENT_REPORTED_SYMPTOMS", risk="RED")
+    elif isinstance(decision, InstructionCheckDecision):
+        # policy_for() has already bound this ID to the current pending question.
+        # The step is marked completed at the start of apply_control(), so using
+        # pending_instruction_question() here would hide the very question being resolved.
+        question = db.get(SimulatedMessage, decision.question_message_id)
+        reply = saved_reply(db, run)
+        evidence = question.evidence
+        requirement = evidence["requirement"]
+        review = evidence.get("scheduling_review", [])
+        resolutions = list(evidence.get("resolutions", []))
+        signature = check_signature(requirement)
+        resolution = {**signature, "resolution": decision.outcome, "decision_step_id": step.id}
+        if decision.outcome == "UNCLEAR":
+            if int(evidence.get("attempt", 1)) >= 2:
+                db.add(
+                    patient_message(
+                        run,
+                        clinic_id=run.clinic_id,
+                        case_id=run.case_id,
+                        run_id=run.id,
+                        event_id=reply.id,
+                        kind="preparation_callback",
+                        body="Thanks. I couldn't confirm the clinic requirement from your reply, so I've asked the clinic team to review it with you. Your appointment has not been changed.",
+                        source_version=question.source_version,
+                        evidence={"instruction_check_step_id": step.id, "question_message_id": question.id},
+                    )
+                )
+                run.checkpoint = {**run.checkpoint, "instruction_check_processed": reply.id}
+                request_handoff(db, run, "DOCTOR_INSTRUCTION_REVIEW_REQUIRED", risk="AMBER")
+            else:
+                run.checkpoint = {**run.checkpoint, "instruction_check_processed": reply.id}
+                save_instruction_question(
+                    db,
+                    run,
+                    requirement,
+                    review,
+                    source_version=question.source_version,
+                    resolutions=resolutions,
+                    resume_appointment_intent=evidence.get("resume_appointment_intent", "UNSPECIFIED"),
+                    attempt=int(evidence.get("attempt", 1)) + 1,
+                )
+                run.checkpoint = {**run.checkpoint, "wait_reason": "AWAITING_PATIENT_REPLY"}
+                release(run, "waiting")
+            return
+
+        if decision.outcome == "NOT_MET" and requirement.get("if_not_met") == "CLINIC_REVIEW":
+            db.add(
+                patient_message(
+                    run,
+                    clinic_id=run.clinic_id,
+                    case_id=run.case_id,
+                    run_id=run.id,
+                    event_id=reply.id,
+                    kind="preparation_callback",
+                    body="Thank you for confirming. The clinic needs to review this requirement before any appointment change or confirmation. I've requested a callback, and your appointment has not been changed.",
+                    source_version=question.source_version,
+                    evidence={"instruction_check_step_id": step.id, "question_message_id": question.id},
+                )
+            )
+            run.checkpoint = {**run.checkpoint, "instruction_check_processed": reply.id}
+            request_handoff(db, run, "DOCTOR_INSTRUCTION_REVIEW_REQUIRED", risk="AMBER")
+            return
+
+        resolution["resolution"] = (
+            "RESCHEDULE" if decision.outcome == "NOT_MET" else "MET"
+        )
+        resolutions.append(resolution)
+        pending = pending_patient_checks(review, resolutions)
+        if pending and decision.outcome == "MET":
+            run.checkpoint = {**run.checkpoint, "instruction_check_processed": reply.id}
+            save_instruction_question(
+                db,
+                run,
+                pending[0],
+                review,
+                source_version=question.source_version,
+                resolutions=resolutions,
+                resume_appointment_intent=evidence.get("resume_appointment_intent", "UNSPECIFIED"),
+            )
+            run.checkpoint = {**run.checkpoint, "wait_reason": "AWAITING_PATIENT_REPLY"}
+            release(run, "waiting")
+            return
+
+        resume_intent = evidence.get("resume_appointment_intent", "UNSPECIFIED")
+        if decision.outcome == "NOT_MET":
+            resume_intent = "CHANGE"
+        checkpoint = {
+            **run.checkpoint,
+            "instruction_check_processed": reply.id,
+            "instruction_check_resume_intent": resume_intent,
+            "instruction_check_resolutions": resolutions,
+            "needs_reviewed": reply.id,
+            "appointment_intent": resume_intent,
+        }
+        if decision.outcome == "NOT_MET":
+            checkpoint["barriers"] = {
+                "reply_event_id": reply.id,
+                "evidence_quotes": [decision.answer_quote],
+                "earliest_minute": None,
+                "latest_minute": None,
+                "weekdays": [],
+                "requested_date": None,
+                "date_from": None,
+                "date_to": None,
+                "clarification_question": None,
+                "excluded_minutes": [],
+                "rejects_current_offer": False,
+                "concern_quote": None,
+                "remember_exclusions": False,
+                "preparation_issue": "NONE",
+                "clarification_reason": "NONE",
+                "next_action": "SEARCH_SLOTS",
+                "step_id": step.id,
+                "doctor_instruction_reschedule": True,
+                "rejected_slot_ids": [],
+            }
+        run.checkpoint = checkpoint
+        release(run, "queued", delay=delay)
     elif isinstance(decision, SelectionDecision):
         if decision.option_number is None:
             offer = latest_selection_offer(db, run)
@@ -1142,6 +1262,7 @@ def apply_control(db, run, case, step, decision, settings):
             run.checkpoint = {**run.checkpoint, "wait_reason": "AWAITING_PATIENT_REPLY"}
             release(run, "waiting")
         else:
+            offer = latest_selection_offer(db, run)
             run.checkpoint = {
                 **run.checkpoint,
                 "selection": {
@@ -1149,7 +1270,16 @@ def apply_control(db, run, case, step, decision, settings):
                     "offer_id": decision.offer_id,
                     "reply_event_id": decision.reply_event_id,
                 },
+                "appointment_intent": "CONFIRM",
+                "instruction_check_resolutions": (
+                    offer.evidence.get("instruction_check_resolutions", []) if offer else []
+                ),
             }
+            # Stay inside the current Engagement delegation. The selected offer
+            # is already bound to a validated Preparation review; the next engine
+            # step can deterministically perform the source write if that review,
+            # any doctor-note checks, the episode version and the slot are all
+            # still valid.
             release(run, "queued", delay=delay)
     elif isinstance(decision, AttendanceDecision):
         run.checkpoint = {
@@ -1222,6 +1352,81 @@ def apply_control(db, run, case, step, decision, settings):
         returned = run.checkpoint.get("returned_specialists", []) + [run.active_role]
         run.active_role = "coordinator"
         run.checkpoint = {**run.checkpoint, "returned_specialists": returned, "delegation_start": 0}
+        appointment_intent = run.checkpoint.get("appointment_intent", "UNSPECIFIED")
+        if appointment_intent not in {"CONFIRM", "CHANGE"} and reply_evidence(db, run):
+            # Explicit/verified attendance can skip REVIEW_NEEDS entirely, so the
+            # durable checkpoint may not yet carry appointment_intent even though
+            # the existing confirmation evidence is sufficient.
+            appointment_intent = "CONFIRM"
+            run.checkpoint = {**run.checkpoint, "appointment_intent": appointment_intent}
+        if delegation.target == "preparation" and appointment_intent in {"CONFIRM", "CHANGE"}:
+            review = run.checkpoint.get("scheduling_review") or []
+            resolutions = run.checkpoint.get("instruction_check_resolutions", [])
+            pending_checks = pending_patient_checks(review, resolutions)
+            if pending_checks:
+                instruction_source = next(
+                    (
+                        db.get(AgentStep, evidence_id)
+                        for evidence_id in decision.evidence_ids
+                        if db.get(AgentStep, evidence_id)
+                        and (db.get(AgentStep, evidence_id).tool_result or {}).get("tool_name")
+                        == "get_approved_instructions"
+                    ),
+                    None,
+                )
+                save_instruction_question(
+                    db,
+                    run,
+                    pending_checks[0],
+                    review,
+                    source_version=instruction_source.tool_result["source_version"],
+                    resolutions=resolutions,
+                    resume_appointment_intent=appointment_intent,
+                )
+                run.checkpoint = {**run.checkpoint, "wait_reason": "AWAITING_PATIENT_REPLY"}
+                release(run, "waiting")
+                return
+            if (
+                run.checkpoint.get("appointment_intent") == "CONFIRM"
+                and any(item.get("effect") == "CLINIC_REVIEW" for item in review)
+            ):
+                reply = saved_reply(db, run)
+                db.add(
+                    patient_message(
+                        run,
+                        clinic_id=run.clinic_id,
+                        case_id=run.case_id,
+                        run_id=run.id,
+                        event_id=reply.id,
+                        kind="preparation_callback",
+                        body="The clinic's approved instructions need staff review before this appointment can be confirmed. I've requested a callback, and your appointment has not been changed.",
+                        source_version="doctor-instruction-review-v1",
+                        evidence={"question_review_step_id": step.id},
+                    )
+                )
+                request_handoff(db, run, "DOCTOR_INSTRUCTION_REVIEW_REQUIRED", risk="AMBER")
+                return
+            # Preparation is the pre-action gate. Engagement may already have
+            # returned earlier in this same patient turn (for example after
+            # interpreting an offered slot), before the current doctor-note
+            # review existed. Once Preparation clears the gate, let Engagement
+            # run once more so the source write can occur under the fresh review.
+            # Do not do this after the write: a successful write changes the
+            # source version and Preparation then refreshes its evidence; the
+            # earlier Engagement report containing the receipt must remain valid
+            # for acknowledgement/completion.
+            receipt = latest_tool(
+                current_tools(db, run), "record_simulated_confirmation", "engagement"
+            )
+            if not receipt:
+                run.checkpoint = {
+                    **run.checkpoint,
+                    "returned_specialists": [
+                        role
+                        for role in run.checkpoint.get("returned_specialists", [])
+                        if role != "engagement"
+                    ],
+                }
         if (
             delegation.target == "preparation"
             and run.checkpoint.get("patient_questions")
@@ -1619,6 +1824,16 @@ def execute_pending_tool(factory, settings, run_id, token, step_id, tools):
                 )
         step.tool_result, step.status = result.model_dump(), "completed"
         case.case_version += 1
+        if tool_name == "record_simulated_confirmation" and result.status == "succeeded":
+            checkpoint = {
+                **run.checkpoint,
+                "returned_specialists": [
+                    role for role in run.checkpoint.get("returned_specialists", []) if role != "preparation"
+                ],
+            }
+            checkpoint.pop("question_review_step_id", None)
+            checkpoint.pop("scheduling_review", None)
+            run.checkpoint = checkpoint
         if (
             tool_name in {"send_simulated_acknowledgement", "send_simulated_options"}
             and result.status == "succeeded"
