@@ -27,6 +27,13 @@ def validate_review(db, run, decision):
     for item in review:
         if item.quote != notes[item.instruction_id]:
             return "SCHEDULING_INSTRUCTION_SOURCE_MISMATCH"
+        if item.effect == "PATIENT_CHECK":
+            if not item.condition_quote or item.condition_quote not in item.quote:
+                return "PATIENT_CHECK_CONDITION_SOURCE_MISMATCH"
+            if item.if_not_met == "RESCHEDULE" and (
+                not item.consequence_quote or item.consequence_quote not in item.quote
+            ):
+                return "PATIENT_CHECK_CONSEQUENCE_SOURCE_MISMATCH"
     return None
 
 
@@ -38,8 +45,28 @@ def normalize_review(review):
     months = "|".join(calendar.month_name[1:])
     pattern = rf"\b(on or before|on or after|not before|not after|before|after|by)\s+((?:\d{{4}}-\d{{2}}-\d{{2}})|(?:(?:\d{{1,2}}\s+)?(?:{months})\s+\d{{4}}))\b"
     for value in review:
-        item = dict(value)
-        for match in re.finditer(pattern, item["quote"], re.I):
+        source = dict(value)
+        is_check = source.get("effect") == "PATIENT_CHECK"
+        if is_check and source not in result:
+            result.append(source)
+
+        # Explicit absolute timing text remains enforceable even when the same
+        # approved note also contains a patient-verification gate. In that case
+        # derive a separate DATE_WINDOW entry instead of replacing PATIENT_CHECK.
+        item = (
+            {
+                "instruction_id": source.get("instruction_id"),
+                "quote": source["quote"],
+                "effect": "INFORMATION",
+                "date_from": None,
+                "date_to": None,
+            }
+            if is_check
+            else source
+        )
+        found_boundary = False
+        for match in re.finditer(pattern, source["quote"], re.I):
+            found_boundary = True
             operator, raw = match.groups()
             try:
                 if re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw):
@@ -70,7 +97,7 @@ def normalize_review(review):
                 item["date_from"] = max(item.get("date_from") or lower, lower)
             if item["effect"] != "CLINIC_REVIEW":
                 item["effect"] = "DATE_WINDOW"
-        if item not in result:
+        if (not is_check or found_boundary) and item not in result:
             result.append(item)
     return result
 
@@ -94,3 +121,82 @@ def compatible(slots, review):
         )
 
     return [slot for slot in slots if allowed(slot)]
+
+
+def check_signature(item):
+    """Stable, source-bound identity for a patient-verifiable doctor-note condition."""
+    value = item.model_dump() if hasattr(item, "model_dump") else dict(item)
+    if value.get("effect") != "PATIENT_CHECK":
+        return None
+    return {
+        "instruction_id": value["instruction_id"],
+        "quote": value["quote"],
+        "condition_quote": value["condition_quote"],
+        "if_not_met": value["if_not_met"],
+    }
+
+
+def _same_check_source(resolution, requirement):
+    return (
+        resolution.get("instruction_id") == requirement.get("instruction_id")
+        and resolution.get("quote") == requirement.get("quote")
+        and resolution.get("if_not_met") == requirement.get("if_not_met")
+    )
+
+
+def _condition_span_matches(resolution, requirement):
+    left = (resolution.get("condition_quote") or "").strip()
+    right = (requirement.get("condition_quote") or "").strip()
+    return bool(left and right and (left == right or left in right or right in left))
+
+
+def pending_patient_checks(review, resolutions=None):
+    requirements = []
+    for item in review or []:
+        value = item.model_dump() if hasattr(item, "model_dump") else dict(item)
+        if value.get("effect") == "PATIENT_CHECK":
+            requirements.append(value)
+    resolved = [r for r in (resolutions or []) if r.get("resolution") in {"MET", "RESCHEDULE"}]
+
+    pending = []
+    for requirement in requirements:
+        exact = any(
+            _same_check_source(resolution, requirement)
+            and resolution.get("condition_quote") == requirement.get("condition_quote")
+            for resolution in resolved
+        )
+        if exact:
+            continue
+
+        # A live model may select a slightly wider/narrower exact substring from
+        # the same unchanged doctor note on a later pass. Reuse that resolution
+        # only when the source/action are identical and the containment match is
+        # unambiguous among the current checks. Never use semantic similarity.
+        matched = False
+        for resolution in resolved:
+            if not _same_check_source(resolution, requirement) or not _condition_span_matches(
+                resolution, requirement
+            ):
+                continue
+            candidates = [
+                item
+                for item in requirements
+                if _same_check_source(resolution, item)
+                and _condition_span_matches(resolution, item)
+            ]
+            if len(candidates) == 1:
+                matched = True
+                break
+        if not matched:
+            pending.append(requirement)
+    return pending
+
+
+def instruction_gate_clear(review, resolutions=None):
+    if review is None or any(
+        (item.model_dump() if hasattr(item, "model_dump") else item).get("effect")
+        == "CLINIC_REVIEW"
+        for item in review
+    ):
+        return False
+    return not pending_patient_checks(review, resolutions)

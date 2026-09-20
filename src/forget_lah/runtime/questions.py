@@ -1,6 +1,13 @@
 """Per-turn questions are tasks, not persistent patient preferences."""
 
+from forget_lah.runtime.guidance import render_plan_guidance
 from forget_lah.runtime.models import AgentStep
+
+
+def _field(value, name, default=None):
+    if isinstance(value, dict):
+        return value.get(name, default)
+    return getattr(value, name, default)
 
 
 def validate_answers(db, run, decision):
@@ -25,6 +32,11 @@ def validate_answers(db, run, decision):
                     for n in step.tool_result["data"].get("instructions", [])
                 }
             )
+    information_reviews = [
+        item
+        for item in (getattr(decision, "scheduling_review", None) or [])
+        if _field(item, "effect") == "INFORMATION"
+    ]
     types = run.checkpoint.get("patient_task_types", [])
     for answer in answers:
         task_type = (
@@ -40,6 +52,25 @@ def validate_answers(db, run, decision):
             or answer.quote not in notes[answer.instruction_id]
         ):
             return "QUESTION_ANSWER_NOT_IN_APPROVED_SOURCE"
+        if answer.outcome == "GUIDANCE" and not any(
+            _field(item, "instruction_id") == answer.instruction_id
+            and answer.quote in (_field(item, "quote") or "")
+            for item in information_reviews
+        ):
+            return "GUIDANCE_REQUIRES_INFORMATION_REVIEW"
+        if answer.outcome == "GUIDANCE":
+            actions = set(answer.actions)
+            if answer.relation == "CONFLICTS" and "FOLLOW_CLINIC_INSTRUCTION" not in actions:
+                return "CONFLICT_MUST_PRESERVE_CLINIC_INSTRUCTION"
+            if answer.relation == "POSSIBLE_SUBSTITUTION" and not (
+                {"CONTACT_CLINIC", "FOLLOW_CLINIC_INSTRUCTION"} & actions
+            ):
+                return "SUBSTITUTION_NEEDS_SOURCE_PRESERVING_NEXT_STEP"
+            if "OFFER_RESCHEDULE" in actions and run.checkpoint.get("appointment_intent") not in {
+                "CONFIRM",
+                "CHANGE",
+            }:
+                return "RESCHEDULE_OFFER_REQUIRES_APPOINTMENT_CONTEXT"
     return None
 
 
@@ -52,19 +83,24 @@ def question_response(run, reply, *, confirmation_step_id=None):
     parts, pending = [], []
     for index, question in enumerate(questions):
         answer = by_index.get(index, {"outcome": "CLINIC_REVIEW"})
-        if answer["outcome"] in {"ANSWERED", "GUIDANCE"}:
-            text = (
-                f"Please keep your clinic's advice in mind: {answer['quote']}"
-                if answer["outcome"] == "GUIDANCE"
-                else f"Your clinic advises: {answer['quote']}"
+        if answer["outcome"] == "GUIDANCE":
+            text = render_plan_guidance(
+                question, answer, run.checkpoint.get("appointment_intent", "UNSPECIFIED")
             )
             if text not in parts:
                 parts.append(text)
+        elif answer["outcome"] == "ANSWERED":
+            text = f"Your clinic advises: {answer['quote']}"
+            if text not in parts:
+                parts.append(text)
         elif answer["outcome"] == "NOT_REQUIRED":
-            if "Thanks for letting us know your plans." not in parts:
-                parts.append("Thanks for letting us know your plans.")
+            # A neutral/unrelated plan needs no filler sentence. The appointment
+            # acknowledgement already covers the part of the turn that matters.
+            continue
         elif answer["outcome"] == "UNSUPPORTED":
-            parts.append(f"Regarding ‘{question}’, sorry, I can't check that here.")
+            parts.append(
+                f"Regarding ‘{question}’, sorry, I can't check that here from the clinic information available."
+            )
         else:
             pending.append(question)
     if pending:

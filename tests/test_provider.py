@@ -439,9 +439,20 @@ def test_preparation_schema_distinguishes_neutral_plans_from_help_requests():
         if b["properties"]["step_type"].get("const") == "RETURN"
     )
     variants = branch["properties"]["question_answers"]["items"]["anyOf"]
-    assert variants[0]["properties"]["outcome"]["enum"] == ["GUIDANCE", "NOT_REQUIRED"]
-    assert "CLINIC_REVIEW" in variants[1]["properties"]["outcome"]["enum"]
-    assert variants[1]["properties"]["question_index"]["const"] == 1
+    assert variants[0]["properties"]["outcome"]["const"] == "GUIDANCE"
+    assert variants[0]["properties"]["question_index"]["const"] == 0
+    assert {
+        "instruction_id",
+        "quote",
+        "relation",
+        "practical_issue",
+        "dependency",
+        "actions",
+    } <= set(variants[0]["required"])
+    assert variants[1]["properties"]["outcome"]["const"] == "NOT_REQUIRED"
+    assert variants[1]["properties"]["question_index"]["const"] == 0
+    assert "CLINIC_REVIEW" in variants[2]["properties"]["outcome"]["enum"]
+    assert variants[2]["properties"]["question_index"]["const"] == 1
 
 
 def test_retry_schema_binds_original_patient_reply_not_wake_event():

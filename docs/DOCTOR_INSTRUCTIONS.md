@@ -2,17 +2,24 @@
 
 Before a slot offer is authorized, Preparation must explicitly review every approved instruction. Each assessment carries its instruction ID and full source quote. A successful read alone is insufficient. The gateway requires complete source-matching coverage.
 
-Claude interprets natural-language notes into one of three outcomes:
+Claude interprets natural-language notes into a bounded set of outcomes:
 
-- INFORMATION: no scheduling restriction, such as bringing a booklet. Existing preparation guidance remains in effect.
+- INFORMATION: no scheduling restriction, such as bringing a booklet or an approved after-appointment effect. Existing preparation guidance remains in effect and can be surfaced when it is relevant to a patient question or stated plan.
 - DATE_WINDOW: explicit earliest/latest dates, inclusive and interpreted in Singapore time. For example, before October 2026 ends on 30 September 2026.
-- CLINIC_REVIEW: unclear anchors, conflicting instructions or conditions that cannot safely be represented by date bounds. Staff must clarify them.
+- PATIENT_CHECK: an explicit instruction to verify a factual prerequisite with the patient before confirmation or another appointment action. The model supplies an exact source condition, a neutral question and only a bounded source-authorized unmet consequence (`RESCHEDULE` or `CLINIC_REVIEW`). The gateway rejects invented conditions or consequences.
+- CLINIC_REVIEW: unclear anchors, conflicting instructions or conditions that cannot safely be represented by the supported deterministic actions. Staff must clarify them.
 
 Clear absolute English source boundaries (ISO dates or full month names with years) are independently calculated and intersected with the model result. This prevents a model arithmetic error such as treating “before October” as the end of October from widening the permitted window. Other wording still relies on the explicit model assessment; uncertain meanings require clinic review.
 
 The application intersects patient preferences and all assessed doctor date windows. Excluded slots cannot be offered. If the requested slots cannot be offered within the instructions, one patient response includes the approved note, explains that a suitable time cannot be offered, and acknowledges the clinic callback request. An existing appointment remains unchanged. The normal patient-language translation and channel pipeline handles this response.
 
 The offer records the validated Preparation decision. Booking requires that proof and a compatible slot, plus the existing source version and availability checks. Old offers without a scheduling review must be refreshed before booking. Changed doctor notes invalidate the source version and require a new offer/review; an old selection never authorizes overriding updated instructions.
+
+`PATIENT_CHECK` answers are durable workflow evidence. `MET` clears that exact source-bound requirement. `NOT_MET` can enter the explicit doctor-authorized remediation path, such as searching alternative slots for `RESCHEDULE`; the system does not immediately ask the same prerequisite again while that remediation is being completed. The requirement is not falsely marked as completed: a later follow-up/new run can verify it again before the new appointment. Slightly wider/narrower exact substrings selected by the model can reuse a resolution only when the full approved note, instruction ID and unmet action are unchanged and the match is unambiguous.
+
+Preparation also evaluates patient questions and practical plans against approved INFORMATION. If a clinic note materially bears on a stated commitment, the response can quote that exact guidance while separately acknowledging that an unsupported operational fact (for example appointment duration) cannot be confirmed. It must not turn the note into new clinical advice or claim a causal restriction that the source does not state.
+
+Context-aware guidance uses a bounded semantic relation rather than keyword rules. For a PLAN+GUIDANCE result the model must bind the exact patient plan (already source-bound by REVIEW_NEEDS) to an exact approved instruction quote and choose one of `PRACTICAL_RELEVANCE`, `PREPARATION_RELEVANCE`, `POSSIBLE_SUBSTITUTION`, or `GENERAL_RELEVANCE`. The gateway additionally requires that the quoted guidance is covered by an `INFORMATION` scheduling review for the same instruction. The application then composes the patient response deterministically from those verified inputs. This allows natural links such as a post-visit effect being relevant to a later activity or a named document being relevant to a proposed substitute, without allowing the model to invent a safety prohibition, causal claim, equivalence, or medical recommendation. If no approved information is materially relevant, the result is `NOT_REQUIRED`.
 
 This is source-grounded language interpretation followed by deterministic enforcement, not medical decision-making. The model must not infer permission to defer mandatory care. General accompaniment and preparation guidance still uses the existing question/plan flow. Ambiguous non-date scheduling requirements go to staff rather than being guessed. This does not claim that an LLM can never misinterpret a note; source-level structured restrictions would further strengthen the integration.
 

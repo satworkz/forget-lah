@@ -88,6 +88,48 @@ class QuestionAnswer(StrictModel):
     outcome: Literal["ANSWERED", "GUIDANCE", "NOT_REQUIRED", "CLINIC_REVIEW", "UNSUPPORTED"]
     instruction_id: str | None = None
     quote: str | None = Field(default=None, max_length=600)
+    relation: (
+        Literal[
+            "CONFLICTS",
+            "MAY_CONFLICT",
+            "SATISFIES",
+            "POSSIBLE_SUBSTITUTION",
+            "RELEVANT",
+        ]
+        | None
+    ) = None
+    practical_issue: (
+        Literal[
+            "LOCATION_OR_DIRECTIONS",
+            "TRANSPORT_OR_ACCOMPANIMENT",
+            "WORK_OR_SOCIAL_COMMITMENT",
+            "ITEM_OR_DOCUMENT",
+            "PREPARATION_ROUTINE",
+            "OTHER",
+        ]
+        | None
+    ) = None
+    dependency: (
+        Literal[
+            "SCREEN_USE",
+            "DRIVING",
+            "FOOD_OR_DRINK",
+            "MEDICATION",
+            "ITEM_OR_DOCUMENT",
+            "TIMING",
+            "TRAVEL_OR_NAVIGATION",
+            "OTHER",
+        ]
+        | None
+    ) = None
+    actions: list[
+        Literal[
+            "FOLLOW_CLINIC_INSTRUCTION",
+            "ARRANGE_ASSISTANCE",
+            "CONTACT_CLINIC",
+            "OFFER_RESCHEDULE",
+        ]
+    ] = Field(default_factory=list, max_length=4)
 
     @model_validator(mode="after")
     def bound_answer(self):
@@ -95,15 +137,43 @@ class QuestionAnswer(StrictModel):
             raise ValueError("Answered questions require an exact approved source quote")
         if self.outcome not in {"ANSWERED", "GUIDANCE"} and (self.instruction_id or self.quote):
             raise ValueError("Unanswered questions have no source answer")
+        if self.outcome == "GUIDANCE":
+            if self.relation is None or self.practical_issue is None or self.dependency is None:
+                raise ValueError(
+                    "Plan guidance requires a typed relation, practical issue and dependency"
+                )
+            if self.relation == "CONFLICTS" and "FOLLOW_CLINIC_INSTRUCTION" not in self.actions:
+                raise ValueError("A conflict must preserve the clinic instruction")
+            if self.relation == "POSSIBLE_SUBSTITUTION" and not (
+                {
+                    "CONTACT_CLINIC",
+                    "FOLLOW_CLINIC_INSTRUCTION",
+                }
+                & set(self.actions)
+            ):
+                raise ValueError("A possible substitution needs a source-preserving next step")
+            if self.relation == "SATISFIES" and self.actions:
+                raise ValueError("A satisfied plan does not need corrective actions")
+        elif (
+            self.relation is not None
+            or self.practical_issue is not None
+            or self.dependency is not None
+            or self.actions
+        ):
+            raise ValueError("Only plan guidance carries relation/actions")
         return self
 
 
 class SchedulingInstruction(StrictModel):
     instruction_id: str
     quote: str = Field(min_length=1, max_length=2000)
-    effect: Literal["INFORMATION", "DATE_WINDOW", "CLINIC_REVIEW"]
+    effect: Literal["INFORMATION", "DATE_WINDOW", "PATIENT_CHECK", "CLINIC_REVIEW"]
     date_from: str | None = None
     date_to: str | None = None
+    condition_quote: str | None = Field(default=None, min_length=1, max_length=600)
+    patient_question: str | None = Field(default=None, min_length=8, max_length=240)
+    if_not_met: Literal["RESCHEDULE", "CLINIC_REVIEW"] | None = None
+    consequence_quote: str | None = Field(default=None, min_length=1, max_length=600)
 
     @model_validator(mode="after")
     def valid_window(self):
@@ -120,6 +190,17 @@ class SchedulingInstruction(StrictModel):
                 raise ValueError("Invalid date window")
         elif self.date_from or self.date_to:
             raise ValueError("Only date windows have date bounds")
+
+        check_fields = (self.condition_quote, self.patient_question, self.if_not_met)
+        if self.effect == "PATIENT_CHECK":
+            if any(value is None for value in check_fields):
+                raise ValueError(
+                    "Patient checks need condition evidence, a question and an unmet action"
+                )
+            if self.if_not_met == "RESCHEDULE" and not self.consequence_quote:
+                raise ValueError("Reschedule requires an exact consequence quote")
+        elif any(value is not None for value in (*check_fields, self.consequence_quote)):
+            raise ValueError("Only patient checks carry patient-check fields")
         return self
 
 
@@ -152,6 +233,15 @@ class AttendanceDecision(BoundDecision):
     source_step_id: str = Field(min_length=36, max_length=36)
     confirmed: bool
     unsupported_question: Literal["NONE", "WEATHER", "PARKING", "OTHER_NON_CLINICAL"] = "NONE"
+
+
+class InstructionCheckDecision(BoundDecision):
+    step_type: Literal["INTERPRET_INSTRUCTION_CHECK"]
+    reason_code: Literal["DOCTOR_INSTRUCTION_CHECK_REVIEWED"]
+    reply_event_id: str = Field(min_length=36, max_length=36)
+    question_message_id: str = Field(min_length=36, max_length=36)
+    outcome: Literal["MET", "NOT_MET", "UNCLEAR"]
+    answer_quote: str = Field(min_length=1, max_length=240)
 
 
 class ClinicalReportDecision(BoundDecision):
@@ -357,6 +447,7 @@ Decision = Annotated[
     | CompleteSimulationDecision
     | SelectionDecision
     | AttendanceDecision
+    | InstructionCheckDecision
     | ClinicalReportDecision
     | BarrierDecision
     | ClarifyDecision
@@ -460,6 +551,12 @@ DECISION_FORMATS = {
         "reply_event_id": "saved reply ID",
         "option_number": "selected option number, or null to clarify",
         "unsupported_question": ["NONE", "WEATHER", "PARKING", "OTHER_NON_CLINICAL"],
+    },
+    "INTERPRET_INSTRUCTION_CHECK": {
+        "reply_event_id": "saved reply ID",
+        "question_message_id": "doctor-instruction question message ID",
+        "outcome": ["MET", "NOT_MET", "UNCLEAR"],
+        "answer_quote": "exact patient substring that answers the doctor-instruction question",
     },
     "TOOL": {"tool_name": list(TOOLS_BY_ROLE["preparation"])},
     "DELEGATE": {"target": ["engagement", "preparation"], "goal": "brief bounded goal"},
