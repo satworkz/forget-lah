@@ -19,11 +19,17 @@ class QuestionModel(NeedsModel):
         intent="CONFIRM",
         task="Do I need someone to accompany me?",
         plan=False,
-        guidance_relation="GENERAL_RELEVANCE",
+        relation="RELEVANT",
+        practical_issue="OTHER",
+        dependency="OTHER",
+        actions=None,
     ):
         super().__init__([], intent=intent)
         self.outcome, self.quote, self.task, self.plan = outcome, quote, task, plan
-        self.guidance_relation = guidance_relation
+        self.relation = relation
+        self.practical_issue = practical_issue
+        self.dependency = dependency
+        self.actions = actions or []
 
     def decide(self, obs, **kwargs):
         value = json.loads(super().decide(obs, **kwargs).text)
@@ -41,17 +47,20 @@ class QuestionModel(NeedsModel):
                 t for t in obs["tools"] if t["result"]["tool_name"] == "get_approved_instructions"
             ]
             note = notes[-1]["result"]["data"]["instructions"][0]
-            value["question_answers"] = [
-                dict(
-                    question_index=0,
-                    outcome=self.outcome,
-                    instruction_id=note["instruction_id"] if self.quote else None,
-                    quote=self.quote,
-                    guidance_relation=(
-                        self.guidance_relation if self.outcome == "GUIDANCE" else None
-                    ),
+            answer = dict(
+                question_index=0,
+                outcome=self.outcome,
+                instruction_id=note["instruction_id"] if self.quote else None,
+                quote=self.quote,
+            )
+            if self.outcome == "GUIDANCE":
+                answer.update(
+                    relation=self.relation,
+                    practical_issue=self.practical_issue,
+                    dependency=self.dependency,
+                    actions=self.actions,
                 )
-            ]
+            value["question_answers"] = [answer]
         return ModelReply(json.dumps(value))
 
 
@@ -195,7 +204,18 @@ def test_confirmation_and_preparation_plan_use_approved_notes(simulated_runtime,
     case, _ = start(runtime, "myopia")
     drain(runtime, tools=tools)
     event(runtime[1], case, "demo_reply", "Yes, " + plan).raise_for_status()
-    drain(runtime, tools=tools, model=QuestionModel("GUIDANCE", note, task=plan, plan=True))
+    drain(
+        runtime,
+        tools=tools,
+        model=QuestionModel(
+            "GUIDANCE",
+            note,
+            task=plan,
+            plan=True,
+            relation="RELEVANT",
+            practical_issue="OTHER",
+        ),
+    )
     result = view(runtime[1], case)
     assert source_count(engine) == 1
     messages = result["patient_simulator"]["messages"]

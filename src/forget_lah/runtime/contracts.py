@@ -88,22 +88,48 @@ class QuestionAnswer(StrictModel):
     outcome: Literal["ANSWERED", "GUIDANCE", "NOT_REQUIRED", "CLINIC_REVIEW", "UNSUPPORTED"]
     instruction_id: str | None = None
     quote: str | None = Field(default=None, max_length=600)
-    guidance_relation: (
+    relation: (
         Literal[
-            "PRACTICAL_RELEVANCE",
-            "PREPARATION_RELEVANCE",
+            "CONFLICTS",
+            "MAY_CONFLICT",
+            "SATISFIES",
             "POSSIBLE_SUBSTITUTION",
-            "GENERAL_RELEVANCE",
+            "RELEVANT",
         ]
         | None
-    ) = Field(
-        default=None,
-        description=(
-            "For PLAN+GUIDANCE only: a bounded semantic relationship between the exact patient "
-            "plan and exact approved source quote. This selects safe response wording; it never "
-            "authorizes new clinical advice or a scheduling action."
-        ),
-    )
+    ) = None
+    practical_issue: (
+        Literal[
+            "LOCATION_OR_DIRECTIONS",
+            "TRANSPORT_OR_ACCOMPANIMENT",
+            "WORK_OR_SOCIAL_COMMITMENT",
+            "ITEM_OR_DOCUMENT",
+            "PREPARATION_ROUTINE",
+            "OTHER",
+        ]
+        | None
+    ) = None
+    dependency: (
+        Literal[
+            "SCREEN_USE",
+            "DRIVING",
+            "FOOD_OR_DRINK",
+            "MEDICATION",
+            "ITEM_OR_DOCUMENT",
+            "TIMING",
+            "TRAVEL_OR_NAVIGATION",
+            "OTHER",
+        ]
+        | None
+    ) = None
+    actions: list[
+        Literal[
+            "FOLLOW_CLINIC_INSTRUCTION",
+            "ARRANGE_ASSISTANCE",
+            "CONTACT_CLINIC",
+            "OFFER_RESCHEDULE",
+        ]
+    ] = Field(default_factory=list, max_length=4)
 
     @model_validator(mode="after")
     def bound_answer(self):
@@ -111,10 +137,30 @@ class QuestionAnswer(StrictModel):
             raise ValueError("Answered questions require an exact approved source quote")
         if self.outcome not in {"ANSWERED", "GUIDANCE"} and (self.instruction_id or self.quote):
             raise ValueError("Unanswered questions have no source answer")
-        if self.outcome == "GUIDANCE" and self.guidance_relation is None:
-            raise ValueError("Contextual guidance requires a bounded guidance relation")
-        if self.outcome != "GUIDANCE" and self.guidance_relation is not None:
-            raise ValueError("Only contextual guidance can carry a guidance relation")
+        if self.outcome == "GUIDANCE":
+            if self.relation is None or self.practical_issue is None or self.dependency is None:
+                raise ValueError(
+                    "Plan guidance requires a typed relation, practical issue and dependency"
+                )
+            if self.relation == "CONFLICTS" and "FOLLOW_CLINIC_INSTRUCTION" not in self.actions:
+                raise ValueError("A conflict must preserve the clinic instruction")
+            if self.relation == "POSSIBLE_SUBSTITUTION" and not (
+                {
+                    "CONTACT_CLINIC",
+                    "FOLLOW_CLINIC_INSTRUCTION",
+                }
+                & set(self.actions)
+            ):
+                raise ValueError("A possible substitution needs a source-preserving next step")
+            if self.relation == "SATISFIES" and self.actions:
+                raise ValueError("A satisfied plan does not need corrective actions")
+        elif (
+            self.relation is not None
+            or self.practical_issue is not None
+            or self.dependency is not None
+            or self.actions
+        ):
+            raise ValueError("Only plan guidance carries relation/actions")
         return self
 
 

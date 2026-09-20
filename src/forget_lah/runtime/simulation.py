@@ -675,6 +675,7 @@ def save_acknowledgement(db, run):
         for a in run.checkpoint.get("question_answers", [])
         if a.get("outcome") in {"ANSWERED", "GUIDANCE"}
     }
+    has_plan_task = "PLAN" in run.checkpoint.get("patient_task_types", [])
     remaining_notes = [
         n
         for n in notes
@@ -683,7 +684,11 @@ def save_acknowledgement(db, run):
             for ident, quote in quoted_answers
         )
     ]
-    if remaining_notes:
+    # When the patient has stated a practical plan, Preparation owns the
+    # relevance decision for this turn. Do not dump unrelated raw doctor notes
+    # after the model has explicitly judged them unrelated. A later dedicated
+    # preparation interaction can surface other approved instructions.
+    if remaining_notes and not has_plan_task:
         body += "\n\nClinic instructions:\n" + "\n".join(
             n["approved_text"] for n in remaining_notes
         )
