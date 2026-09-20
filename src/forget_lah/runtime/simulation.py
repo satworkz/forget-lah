@@ -51,7 +51,6 @@ def saved_reply(db, run):
     )
 
 
-
 def pending_instruction_question(db, run):
     """Return the latest unresolved doctor-instruction question preceding this patient reply."""
     reply = saved_reply(db, run)
@@ -160,15 +159,22 @@ def current_instruction_gate(db, run, context_step, choice=None):
         ):
             instruction_source = evidence.tool_result.get("source_version")
             break
-    if not instruction_source or instruction_source != context_step.tool_result.get("source_version"):
+    if not instruction_source or instruction_source != context_step.tool_result.get(
+        "source_version"
+    ):
         return False
     resolutions = run.checkpoint.get("instruction_check_resolutions", [])
     if not instruction_gate_clear(review, resolutions):
         return False
-    target = choice["slot"] if choice else {"starts_at": context_step.tool_result["data"].get("scheduled_at")}
+    target = (
+        choice["slot"]
+        if choice
+        else {"starts_at": context_step.tool_result["data"].get("scheduled_at")}
+    )
     if target.get("starts_at") and not compatible([target], review):
         return False
     return True
+
 
 def latest_selection_offer(db, run):
     reply = saved_reply(db, run)
@@ -872,7 +878,9 @@ def save_options(db, run):
             "episode_version": context.tool_result["data"]["episode_version"],
             "source_step_id": context.id,
             "instruction_step_id": instructions.id,
-            "instruction_check_resolutions": run.checkpoint.get("instruction_check_resolutions", []),
+            "instruction_check_resolutions": run.checkpoint.get(
+                "instruction_check_resolutions", []
+            ),
         },
     )
     db.add(row)

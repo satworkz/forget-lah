@@ -128,7 +128,9 @@ class SchedulingInstruction(StrictModel):
         check_fields = (self.condition_quote, self.patient_question, self.if_not_met)
         if self.effect == "PATIENT_CHECK":
             if any(value is None for value in check_fields):
-                raise ValueError("Patient checks need condition evidence, a question and an unmet action")
+                raise ValueError(
+                    "Patient checks need condition evidence, a question and an unmet action"
+                )
             if self.if_not_met == "RESCHEDULE" and not self.consequence_quote:
                 raise ValueError("Reschedule requires an exact consequence quote")
         elif any(value is not None for value in (*check_fields, self.consequence_quote)):

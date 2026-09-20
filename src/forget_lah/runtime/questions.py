@@ -73,11 +73,7 @@ def question_response(run, reply, *, confirmation_step_id=None):
             )
         else:
             pending.append(question)
-    if (
-        has_guidance
-        and has_unsupported
-        and run.checkpoint.get("appointment_intent") == "CONFIRM"
-    ):
+    if has_guidance and has_unsupported and run.checkpoint.get("appointment_intent") == "CONFIRM":
         parts.append(
             "If this clinic guidance conflicts with another commitment, you can keep the clinic appointment and change that plan, or ask me to show alternative appointment dates."
         )

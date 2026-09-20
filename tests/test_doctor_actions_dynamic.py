@@ -26,25 +26,28 @@ class DoctorActionModel(MockModel):
         if obs["role"] == "coordinator" and sim.get("instruction_check"):
             text = event.get("content", "")
             lower = text.lower()
-            if (
-                re.search(r"\bno\b", lower)
-                or any(x in lower for x in ("not yet", "haven't", "have not", "do not have"))
+            if re.search(r"\bno\b", lower) or any(
+                x in lower for x in ("not yet", "haven't", "have not", "do not have")
             ):
                 outcome = "NOT_MET"
             elif any(x in lower for x in ("yes", "done", "completed", "have it")):
                 outcome = "MET"
             else:
                 outcome = "UNCLEAR"
-            return ModelReply(json.dumps({
-                "request_id": obs["request_id"],
-                "expected_case_version": obs["expected_case_version"],
-                "step_type": "INTERPRET_INSTRUCTION_CHECK",
-                "reason_code": "DOCTOR_INSTRUCTION_CHECK_REVIEWED",
-                "reply_event_id": sim["instruction_check"]["reply_event_id"],
-                "question_message_id": sim["instruction_check"]["question_message_id"],
-                "outcome": outcome,
-                "answer_quote": text,
-            }))
+            return ModelReply(
+                json.dumps(
+                    {
+                        "request_id": obs["request_id"],
+                        "expected_case_version": obs["expected_case_version"],
+                        "step_type": "INTERPRET_INSTRUCTION_CHECK",
+                        "reason_code": "DOCTOR_INSTRUCTION_CHECK_REVIEWED",
+                        "reply_event_id": sim["instruction_check"]["reply_event_id"],
+                        "question_message_id": sim["instruction_check"]["question_message_id"],
+                        "outcome": outcome,
+                        "answer_quote": text,
+                    }
+                )
+            )
 
         response = super().decide(obs, **kwargs)
         value = json.loads(response.text)
@@ -54,15 +57,17 @@ class DoctorActionModel(MockModel):
                 # Preserve ordinary informational delivery and add an independent generic check.
                 review.append(item)
                 if self.condition_quote in item["quote"]:
-                    review.append({
-                        "instruction_id": item["instruction_id"],
-                        "quote": item["quote"],
-                        "effect": "PATIENT_CHECK",
-                        "condition_quote": self.condition_quote,
-                        "patient_question": self.question,
-                        "if_not_met": self.if_not_met,
-                        "consequence_quote": self.consequence_quote,
-                    })
+                    review.append(
+                        {
+                            "instruction_id": item["instruction_id"],
+                            "quote": item["quote"],
+                            "effect": "PATIENT_CHECK",
+                            "condition_quote": self.condition_quote,
+                            "patient_question": self.question,
+                            "if_not_met": self.if_not_met,
+                            "consequence_quote": self.consequence_quote,
+                        }
+                    )
             value["scheduling_review"] = review
             return ModelReply(json.dumps(value))
         return response
@@ -308,7 +313,9 @@ def test_patient_check_condition_and_reschedule_consequence_must_be_exact_source
             )
         ],
     )
-    assert validate_review(FakeDb(), run, bad_condition) == "PATIENT_CHECK_CONDITION_SOURCE_MISMATCH"
+    assert (
+        validate_review(FakeDb(), run, bad_condition) == "PATIENT_CHECK_CONDITION_SOURCE_MISMATCH"
+    )
 
     bad_consequence = SimpleNamespace(
         evidence_ids=["source"],
@@ -324,7 +331,10 @@ def test_patient_check_condition_and_reschedule_consequence_must_be_exact_source
             )
         ],
     )
-    assert validate_review(FakeDb(), run, bad_consequence) == "PATIENT_CHECK_CONSEQUENCE_SOURCE_MISMATCH"
+    assert (
+        validate_review(FakeDb(), run, bad_consequence)
+        == "PATIENT_CHECK_CONSEQUENCE_SOURCE_MISMATCH"
+    )
 
 
 class ContextualGuidanceModel(MockModel):
@@ -352,9 +362,7 @@ class ContextualGuidanceModel(MockModel):
                         "reason_code": "PATIENT_NEEDS_REVIEWED",
                         "reply_event_id": event.get("reply_event_id", event["id"]),
                         "updates": [],
-                        "patient_questions": [
-                            "hope the appointment will be finished by that time"
-                        ],
+                        "patient_questions": ["hope the appointment will be finished by that time"],
                         "preparation_plans": ["I have movie ticket booked at 12:00pm"],
                         "appointment_intent": "CONFIRM",
                         "appointment_request_quote": "yes pls",

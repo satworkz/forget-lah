@@ -156,11 +156,7 @@ def pending_patient_checks(review, resolutions=None):
         value = item.model_dump() if hasattr(item, "model_dump") else dict(item)
         if value.get("effect") == "PATIENT_CHECK":
             requirements.append(value)
-    resolved = [
-        r
-        for r in (resolutions or [])
-        if r.get("resolution") in {"MET", "RESCHEDULE"}
-    ]
+    resolved = [r for r in (resolutions or []) if r.get("resolution") in {"MET", "RESCHEDULE"}]
 
     pending = []
     for requirement in requirements:

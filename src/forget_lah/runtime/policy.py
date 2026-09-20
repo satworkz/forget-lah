@@ -202,10 +202,7 @@ def policy_for(db, run, case, step, decision):
             or decision.question_message_id != question.id
         ):
             deny = "INSTRUCTION_CHECK_BINDING_REQUIRED"
-        elif (
-            not decision.answer_quote.strip()
-            or decision.answer_quote not in reply.content
-        ):
+        elif not decision.answer_quote.strip() or decision.answer_quote not in reply.content:
             deny = "INSTRUCTION_CHECK_ANSWER_NOT_IN_REPLY"
         else:
             reasons.append("PATIENT_ANSWER_BOUND_TO_APPROVED_INSTRUCTION_CHECK")

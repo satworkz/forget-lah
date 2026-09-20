@@ -1148,7 +1148,10 @@ def apply_control(db, run, case, step, decision, settings):
                         kind="preparation_callback",
                         body="Thanks. I couldn't confirm the clinic requirement from your reply, so I've asked the clinic team to review it with you. Your appointment has not been changed.",
                         source_version=question.source_version,
-                        evidence={"instruction_check_step_id": step.id, "question_message_id": question.id},
+                        evidence={
+                            "instruction_check_step_id": step.id,
+                            "question_message_id": question.id,
+                        },
                     )
                 )
                 run.checkpoint = {**run.checkpoint, "instruction_check_processed": reply.id}
@@ -1162,7 +1165,9 @@ def apply_control(db, run, case, step, decision, settings):
                     review,
                     source_version=question.source_version,
                     resolutions=resolutions,
-                    resume_appointment_intent=evidence.get("resume_appointment_intent", "UNSPECIFIED"),
+                    resume_appointment_intent=evidence.get(
+                        "resume_appointment_intent", "UNSPECIFIED"
+                    ),
                     attempt=int(evidence.get("attempt", 1)) + 1,
                 )
                 run.checkpoint = {**run.checkpoint, "wait_reason": "AWAITING_PATIENT_REPLY"}
@@ -1180,16 +1185,17 @@ def apply_control(db, run, case, step, decision, settings):
                     kind="preparation_callback",
                     body="Thank you for confirming. The clinic needs to review this requirement before any appointment change or confirmation. I've requested a callback, and your appointment has not been changed.",
                     source_version=question.source_version,
-                    evidence={"instruction_check_step_id": step.id, "question_message_id": question.id},
+                    evidence={
+                        "instruction_check_step_id": step.id,
+                        "question_message_id": question.id,
+                    },
                 )
             )
             run.checkpoint = {**run.checkpoint, "instruction_check_processed": reply.id}
             request_handoff(db, run, "DOCTOR_INSTRUCTION_REVIEW_REQUIRED", risk="AMBER")
             return
 
-        resolution["resolution"] = (
-            "RESCHEDULE" if decision.outcome == "NOT_MET" else "MET"
-        )
+        resolution["resolution"] = "RESCHEDULE" if decision.outcome == "NOT_MET" else "MET"
         resolutions.append(resolution)
         pending = pending_patient_checks(review, resolutions)
         if pending and decision.outcome == "MET":
@@ -1394,9 +1400,8 @@ def apply_control(db, run, case, step, decision, settings):
                 run.checkpoint = {**run.checkpoint, "wait_reason": "AWAITING_PATIENT_REPLY"}
                 release(run, "waiting")
                 return
-            if (
-                run.checkpoint.get("appointment_intent") == "CONFIRM"
-                and any(item.get("effect") == "CLINIC_REVIEW" for item in review)
+            if run.checkpoint.get("appointment_intent") == "CONFIRM" and any(
+                item.get("effect") == "CLINIC_REVIEW" for item in review
             ):
                 reply = saved_reply(db, run)
                 db.add(
@@ -1869,7 +1874,9 @@ def execute_pending_tool(factory, settings, run_id, token, step_id, tools):
             checkpoint = {
                 **run.checkpoint,
                 "returned_specialists": [
-                    role for role in run.checkpoint.get("returned_specialists", []) if role != "preparation"
+                    role
+                    for role in run.checkpoint.get("returned_specialists", [])
+                    if role != "preparation"
                 ],
             }
             checkpoint.pop("question_review_step_id", None)
