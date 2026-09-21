@@ -58,6 +58,7 @@ from forget_lah.runtime.simulation import (
     booking_choice,
     clarification_allowed,
     clarification_count,
+    closed_binary_answer,
     current_tools,
     future_scheduled,
     latest_selection_offer,
@@ -531,6 +532,60 @@ def apply_required_read(db, settings, run, case, step):
     return True
 
 
+def apply_closed_instruction_answer(db, settings, run, case, step):
+    """Resolve exact yes/no protocol answers without spending a model call.
+
+    Only a currently pending doctor-instruction check qualifies, and only when
+    the entire patient reply is an unambiguous closed answer. Any richer reply
+    (including symptoms, uncertainty, explanation or another request) stays on
+    the model path. The normal policy gateway and apply_control() remain
+    authoritative.
+    """
+    if run.active_role != "coordinator":
+        return False
+    check = step.observation.get("simulation", {}).get("instruction_check")
+    if not check:
+        return False
+    reply = saved_reply(db, run)
+    if not reply:
+        return False
+    polarity = closed_binary_answer(reply.content)
+    if polarity is None:
+        return False
+
+    decision = InstructionCheckDecision(
+        request_id=step.id,
+        expected_case_version=case.case_version,
+        step_type="INTERPRET_INSTRUCTION_CHECK",
+        reason_code="DOCTOR_INSTRUCTION_CHECK_REVIEWED",
+        reply_event_id=check["reply_event_id"],
+        question_message_id=check["question_message_id"],
+        outcome="MET" if polarity == "YES" else "NOT_MET",
+        answer_quote=reply.content.strip(),
+    )
+    step.origin = "rule"
+    step.observation = {
+        **step.observation,
+        "application_rule": {
+            "name": "CLOSED_BINARY_PROTOCOL_ANSWER",
+            "explanation": (
+                "The patient gave an exact unambiguous answer to the currently "
+                "pending yes/no clinic check. The deterministic protocol parser "
+                "interpreted only that closed answer; richer replies still use "
+                "the model. Policy and persisted workflow state remain authoritative."
+            ),
+        },
+    }
+    step.decision = decision.model_dump()
+    step.policy = policy_for(db, run, case, step, decision)
+    if step.policy["decision"] == "ALLOW":
+        apply_control(db, run, case, step, decision, settings)
+    else:
+        step.status, step.error_code = "rejected", "POLICY_DENIED"
+        pause(run, "POLICY_DENIED")
+    return True
+
+
 def apply_accepted_handoff(db, settings, run, case, step):
     if (
         run.active_role != "coordinator"
@@ -760,6 +815,8 @@ def prepare_step(factory, settings, run_id, token):
                     pause(run, "POLICY_DENIED")
                     return None
                 pending.status = "tool_pending"
+            elif apply_closed_instruction_answer(db, settings, run, case, pending):
+                return None
             elif apply_accepted_handoff(db, settings, run, case, pending):
                 return None
             elif apply_initial_demo_wait(db, settings, run, case, pending):

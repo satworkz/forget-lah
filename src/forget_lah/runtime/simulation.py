@@ -20,6 +20,21 @@ def simulation_enabled(run):
     )
 
 
+def closed_binary_answer(text):
+    """Resolve only exact closed-protocol acknowledgements.
+
+    This is intentionally narrow: it is a generic conversation-protocol parser,
+    not a domain rule. Rich, qualified, multilingual or clinically meaningful
+    replies remain with the model and normal safety flow.
+    """
+    normalized = re.sub(r"\s+", " ", text.strip().casefold()).rstrip(".!? ")
+    if normalized in {"yes", "yes please", "yes pls"}:
+        return "YES"
+    if normalized in {"no", "no thanks", "not yet"}:
+        return "NO"
+    return None
+
+
 def explicit_confirmation(text):
     """Conservative demo consent grammar; never treat a model finding as permission."""
     text = re.sub(r"\s+", " ", text.strip().lower()).rstrip(".! ")

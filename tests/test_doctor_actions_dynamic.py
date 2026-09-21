@@ -2,12 +2,14 @@ import json
 import re
 from datetime import UTC, datetime, timedelta
 
+from sqlalchemy import select
 from test_patient_simulation import simulated_runtime as simulated_runtime
 from test_patient_simulation import source_count
 from test_runtime import drain, event, start, view
 from test_simulator import ADMIN, episode_body, new_slot
 from test_simulator import simulator as simulator
 
+from forget_lah.runtime.models import AgentStep
 from forget_lah.runtime.provider import MockModel, ModelReply
 
 
@@ -555,3 +557,98 @@ def test_preparation_question_prompt_preserves_scheduling_contract():
     assert "still return the complete scheduling_review required above" in prompt
     assert "non-clinical administrative question" in prompt
     assert "after-appointment effect/restriction" in prompt
+
+
+class FailIfModelSeesClosedInstructionAnswer(DoctorActionModel):
+    """Prove exact closed answers are handled by protocol code, not the LLM."""
+
+    def decide(self, obs, **kwargs):
+        if obs["role"] == "coordinator" and obs.get("simulation", {}).get("instruction_check"):
+            raise AssertionError("Exact closed instruction answer should not call the model")
+        return super().decide(obs, **kwargs)
+
+
+def test_exact_yes_to_pending_instruction_check_is_deterministic(simulated_runtime):
+    runtime, tools, source, source_engine = simulated_runtime
+    set_note(source, "DEMO-ANTENATAL-VISIT-01", SCAN_NOTE)
+    case, _ = start(runtime, "antenatal")
+    drain(runtime, tools=tools)
+    event(runtime[1], case, "demo_reply", "I confirm my attendance").raise_for_status()
+    drain(runtime, tools=tools, model=scan_model())
+
+    model = FailIfModelSeesClosedInstructionAnswer(
+        condition_quote=SCAN_CONDITION,
+        question="Have you completed the mandatory scan advised before this appointment?",
+        if_not_met="RESCHEDULE",
+        consequence_quote=SCAN_CONSEQUENCE,
+    )
+    event(runtime[1], case, "demo_reply", "yes").raise_for_status()
+    drain(runtime, tools=tools, model=model)
+    result = view(runtime[1], case)
+    assert result["run"]["status"] == "completed", result
+    assert source_count(source_engine) == 1
+
+    with runtime[0]() as db:
+        decisions = [
+            step
+            for step in db.scalars(
+                select(AgentStep)
+                .where(AgentStep.run_id == result["run"]["id"])
+                .order_by(AgentStep.sequence)
+            )
+            if (step.decision or {}).get("step_type") == "INTERPRET_INSTRUCTION_CHECK"
+        ]
+    assert decisions
+    latest = decisions[-1]
+    assert latest.origin == "rule"
+    assert latest.decision["outcome"] == "MET"
+
+
+def test_exact_no_to_pending_instruction_check_is_deterministic(simulated_runtime):
+    runtime, tools, source, source_engine = simulated_runtime
+    set_note(source, "DEMO-ANTENATAL-VISIT-01", SCAN_NOTE)
+    add_antenatal_slot(source)
+    case, _ = start(runtime, "antenatal")
+    drain(runtime, tools=tools)
+    event(runtime[1], case, "demo_reply", "I confirm my attendance").raise_for_status()
+    drain(runtime, tools=tools, model=scan_model())
+
+    model = FailIfModelSeesClosedInstructionAnswer(
+        condition_quote=SCAN_CONDITION,
+        question="Have you completed the mandatory scan advised before this appointment?",
+        if_not_met="RESCHEDULE",
+        consequence_quote=SCAN_CONSEQUENCE,
+    )
+    event(runtime[1], case, "demo_reply", "no").raise_for_status()
+    drain(runtime, tools=tools, model=model)
+    result = view(runtime[1], case)
+    assert result["run"]["status"] == "waiting", result
+    assert result["patient_simulator"]["messages"][-1]["kind"] == "options"
+    assert source_count(source_engine) == 0
+
+    with runtime[0]() as db:
+        decisions = [
+            step
+            for step in db.scalars(
+                select(AgentStep)
+                .where(AgentStep.run_id == result["run"]["id"])
+                .order_by(AgentStep.sequence)
+            )
+            if (step.decision or {}).get("step_type") == "INTERPRET_INSTRUCTION_CHECK"
+        ]
+    assert decisions
+    latest = decisions[-1]
+    assert latest.origin == "rule"
+    assert latest.decision["outcome"] == "NOT_MET"
+
+
+def test_closed_binary_protocol_parser_refuses_rich_replies():
+    from forget_lah.runtime.simulation import closed_binary_answer
+
+    assert closed_binary_answer("yes") == "YES"
+    assert closed_binary_answer("YES!") == "YES"
+    assert closed_binary_answer("no") == "NO"
+    assert closed_binary_answer("not yet") == "NO"
+    assert closed_binary_answer("yes, but I have chest pain") is None
+    assert closed_binary_answer("I think so") is None
+    assert closed_binary_answer("still not sure") is None
