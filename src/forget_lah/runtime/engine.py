@@ -2134,6 +2134,7 @@ def process_run(factory, settings, run_id, token, *, model=None, tools=None):
             if settings.mock_clinic_followup_key
             else None
         ),
+        factory=factory,
     )
     if work["phase"] == "pending":
         provider = model or model_for(settings, work["mode"])

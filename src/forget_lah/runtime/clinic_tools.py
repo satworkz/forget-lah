@@ -26,7 +26,7 @@ class AvailableSlot(StrictModel):
 
 
 class ContextData(StrictModel):
-    specialty: Literal["dental", "myopia", "antenatal"]
+    specialty: Literal["dental", "myopia", "antenatal", "general"]
     source_status: Literal["due", "scheduled", "no_show", "cancelled", "completed"]
     scheduled_at: str | None = Field(max_length=40)
     due_at: str | None = Field(max_length=40)
@@ -54,13 +54,16 @@ class SourceEnvelope(StrictModel):
 class ClinicTools:
     """Read-only allowlist. No patient, URL or clinic is chosen by the model."""
 
-    def __init__(self, base_url: str, transport=None, followup_key=None):
+    def __init__(self, base_url: str, transport=None, followup_key=None, factory=None):
         self.base_url = base_url.rstrip("/")
         self.transport = transport
         self.followup_key = followup_key
+        self.factory = factory
 
     def confirm(self, binding, operation):
         name = "record_simulated_confirmation"
+        if binding.get("source_episode_ref", "").startswith("bridge:"):
+            return self.failure(name, "SOURCE_READ_ONLY", False)
         if not self.followup_key:
             return self.failure(name, "SOURCE_INVALID", False)
         episode = quote(binding["source_episode_ref"], safe="")
@@ -119,6 +122,12 @@ class ClinicTools:
             return self.failure(name, "SOURCE_INVALID", False)
 
     def execute(self, tool_name: str, binding: dict) -> ToolResult:
+        if binding.get("source_episode_ref", "").startswith("bridge:"):
+            if self.factory is None:
+                return self.failure(tool_name, "SOURCE_INVALID", False)
+            from forget_lah.bridge import bridge_tool_result
+
+            return bridge_tool_result(self.factory, binding, tool_name)
         if tool_name not in {
             "read_followup_context",
             "get_approved_instructions",

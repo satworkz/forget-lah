@@ -530,7 +530,13 @@ class ToolResult(StrictModel):
     source_version: str | None
     data: dict
     error_code: (
-        Literal["SOURCE_UNAVAILABLE", "SOURCE_INVALID", "SOURCE_NOT_FOUND", "SOURCE_CONFLICT"]
+        Literal[
+            "SOURCE_UNAVAILABLE",
+            "SOURCE_INVALID",
+            "SOURCE_NOT_FOUND",
+            "SOURCE_CONFLICT",
+            "SOURCE_READ_ONLY",
+        ]
         | None
     )
     retryable: bool

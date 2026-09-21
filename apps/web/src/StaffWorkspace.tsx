@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, mutationHeaders } from "./client";
 import { PatientPreferences } from "./PatientPreferences";
+import { BridgeIntake } from "./BridgeIntake";
 import type { Preferences } from "./PatientPreferences";
 
 type Case = { id: string; patient: string; specialty: string; trigger: string; agent_status: string | null };
@@ -62,14 +63,15 @@ export function StaffWorkspace({ onLogout }: { onLogout: () => void }) {
   return <div className="workspace staff-workspace">
     <aside className="sidebar">
       <div className="wordmark">forget-lah<span>●</span></div><p className="sidebar-label">STAFF WORKSPACE</p>
-      <nav aria-label="Staff navigation">{[["overview", "Overview"], ["attention", "Needs attention"], ["statistics", "Statistics"]].map(([key, title]) => <button key={key} className={tab === key ? "staff-nav active" : "staff-nav"} onClick={() => { setTab(key); setSelected(null); }}>{title}{key === "attention" && <span>{attention.length}</span>}</button>)}</nav>
+      <nav aria-label="Staff navigation">{[["overview", "Overview"], ["attention", "Needs attention"], ["bridge", "Intelligent intake"], ["statistics", "Statistics"]].map(([key, title]) => <button key={key} className={tab === key ? "staff-nav active" : "staff-nav"} onClick={() => { setTab(key); setSelected(null); }}>{title}{key === "attention" && <span>{attention.length}</span>}</button>)}</nav>
       <div className="sidebar-bottom"><span className="tag">SYNTHETIC DEMO</span><p>Patient follow-up, with a clear next step.</p><a className="sim-nav" href="#/developer">Developer testing ↗</a><button className="text-button" onClick={onLogout}>Sign out</button></div>
     </aside>
     <main className="content">
-      <header><div><p className="eyebrow">CARE THAT CONTINUES</p><h1>{selected ? selected.patient : tab === "statistics" ? "Follow-up at a glance" : tab === "attention" ? "Your attention matters" : "A clear next step for everyone"}</h1><p className="muted">{selected ? `${selected.specialty} · ${reason(selected.trigger)}` : "Keep conversations moving and give each open concern an owner."}</p></div><button className="secondary" onClick={() => setRefresh(n => n + 1)}>Refresh</button></header>
+      <header><div><p className="eyebrow">CARE THAT CONTINUES</p><h1>{selected ? selected.patient : tab === "statistics" ? "Follow-up at a glance" : tab === "attention" ? "Your attention matters" : tab === "bridge" ? "Bring any follow-up export" : "A clear next step for everyone"}</h1><p className="muted">{selected ? `${selected.specialty} · ${reason(selected.trigger)}` : tab === "bridge" ? "Forget-lah understands legacy clinic exports without forcing a fixed template." : "Keep conversations moving and give each open concern an owner."}</p></div><button className="secondary" onClick={() => setRefresh(n => n + 1)}>Refresh</button></header>
       <p className="small">Team demonstration · synthetic patient records and clinic appointments.</p>
       {error && <p className="error" role="alert">{error}</p>}
-      {!selected && <>
+      {!selected && tab === "bridge" && <BridgeIntake onImported={() => setRefresh(n => n + 1)} />}
+      {!selected && tab !== "bridge" && <>
         <section className="metrics staff-metrics" aria-label="Current case totals">{[["Open follow-ups", cases.filter(c => c.agent_status !== "completed").length], ["Needs attention", attention.length], ["Waiting for response", cases.filter(c => c.agent_status === "waiting").length], ["Completed", cases.filter(c => c.agent_status === "completed").length]].map(([title, count]) => <article className="metric" key={title}><span>{title}</span><strong>{count}</strong><small>Current cases</small></article>)}</section>
         {tab === "statistics" ? <section className="panel staff-panel"><h2>Case mix</h2><p className="muted">Live counts of current cases. These are not historical response rates or clinical outcomes.</p>{["UPCOMING", "RECALL_OVERDUE", "MISSED"].map(trigger => <div className="staff-stat" key={trigger}><span>{reason(trigger)}</span><meter min={0} max={Math.max(cases.length, 1)} value={cases.filter(c => c.trigger === trigger).length} /><strong>{cases.filter(c => c.trigger === trigger).length}</strong></div>)}</section> : <section className="panel staff-panel"><div className="section-heading"><h2>{tab === "attention" ? "Follow-ups to review" : "Patient follow-ups"}</h2><label>Find a patient<input type="search" placeholder="Name or specialty" value={query} onChange={e => setQuery(e.target.value)} /></label></div><div className="staff-case-grid">{visible.map(c => <button className="staff-case" key={c.id} onClick={() => { setSelected(c); setResolution(""); }}><span className={`pill staff-${c.agent_status}`}>{status(c.agent_status)}</span><h3>{c.patient}</h3><p className="capitalize">{c.specialty} · {reason(c.trigger)}</p><strong>Open follow-up →</strong></button>)}</div>{!visible.length && <p>No matching follow-ups.</p>}</section>}
       </>}

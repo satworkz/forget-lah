@@ -13,6 +13,7 @@ from sqlalchemy import select, text
 
 from forget_lah.agents import AGENT_CATALOG
 from forget_lah.auth import authenticate, digest, session_principal
+from forget_lah.bridge import install_bridge_routes
 from forget_lah.channel import WEBHOOK, install_channel_routes
 from forget_lah.db import (
     AuditEvent,
@@ -67,7 +68,7 @@ class LoginLimiter:
             return True
 
 
-def create_app(settings: Settings | None = None, engine=None) -> FastAPI:
+def create_app(settings: Settings | None = None, engine=None, bridge_analyzer=None) -> FastAPI:
     settings = settings or Settings()
     owns_engine = engine is None
     engine = engine or make_engine(settings.database_url.get_secret_value())
@@ -142,7 +143,7 @@ def create_app(settings: Settings | None = None, engine=None) -> FastAPI:
     def ready():
         try:
             with factory() as db:
-                if db.scalar(text("SELECT version_num FROM alembic_version")) != "0010":
+                if db.scalar(text("SELECT version_num FROM alembic_version")) != "0011":
                     raise ValueError("Agent migration is required")
                 db.execute(select(Clinic.id).limit(1))
                 db.execute(select(AgentRun.id).limit(1))
@@ -286,6 +287,7 @@ def create_app(settings: Settings | None = None, engine=None) -> FastAPI:
 
     install_routes(app, factory, settings, authorise)
     install_channel_routes(app, factory, settings, authorise)
+    install_bridge_routes(app, factory, settings, authorise, analyzer=bridge_analyzer)
     install_demo_routes(app, factory, settings, authorise)
     install_simulator_routes(app, factory, settings, authorise)
     return app

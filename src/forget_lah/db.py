@@ -78,7 +78,10 @@ class FollowupCase(Base):
         UniqueConstraint("clinic_id", "id"),
         CheckConstraint("trigger IN ('UPCOMING','MISSED','RECALL_OVERDUE')"),
         CheckConstraint("state = 'NEW'"),
-        CheckConstraint("specialty IN ('dental','myopia','antenatal')"),
+        CheckConstraint(
+            "specialty IN ('dental','myopia','antenatal','general')",
+            name="ck_followup_case_specialty",
+        ),
     )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
     clinic_id: Mapped[str] = mapped_column(ForeignKey("clinic.id"))
@@ -109,6 +112,66 @@ class Job(Base):
     lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     lease_token: Mapped[str | None] = mapped_column(String(36))
     attempts: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class BridgeIntakeBatch(Base):
+    __tablename__ = "bridge_intake_batch"
+    __table_args__ = (
+        UniqueConstraint("clinic_id", "id"),
+        CheckConstraint("file_type IN ('csv','tsv','xlsx')"),
+        CheckConstraint("status IN ('ANALYSED','APPROVED','REJECTED')"),
+        CheckConstraint(
+            "purpose IN ('UPCOMING_APPOINTMENTS','MISSED_APPOINTMENTS','RECALLS','MIXED','UNKNOWN')"
+        ),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    clinic_id: Mapped[str] = mapped_column(ForeignKey("clinic.id"), index=True)
+    uploaded_by: Mapped[str] = mapped_column(ForeignKey("principal.id"))
+    filename: Mapped[str] = mapped_column(String(180))
+    file_type: Mapped[str] = mapped_column(String(10))
+    sha256: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(16), default="ANALYSED")
+    purpose: Mapped[str] = mapped_column(String(32), default="UNKNOWN")
+    confidence: Mapped[int] = mapped_column(Integer, default=0)
+    row_count: Mapped[int] = mapped_column(Integer, default=0)
+    analysis_version: Mapped[int] = mapped_column(Integer, default=1)
+    mapping: Mapped[list] = mapped_column(JSON, default=list)
+    warnings: Mapped[list] = mapped_column(JSON, default=list)
+    staff_instruction: Mapped[str | None] = mapped_column(String(600))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class BridgeIntakeRecord(Base):
+    __tablename__ = "bridge_intake_record"
+    __table_args__ = (
+        UniqueConstraint("batch_id", "row_number"),
+        CheckConstraint("status IN ('READY','REVIEW','IMPORTED','SKIPPED')"),
+        ForeignKeyConstraint(
+            ["clinic_id", "batch_id"],
+            ["bridge_intake_batch.clinic_id", "bridge_intake_batch.id"],
+        ),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    clinic_id: Mapped[str] = mapped_column(String(36), index=True)
+    batch_id: Mapped[str] = mapped_column(String(36), index=True)
+    row_number: Mapped[int] = mapped_column(Integer)
+    raw: Mapped[dict] = mapped_column(JSON, default=dict)
+    normalized: Mapped[dict] = mapped_column(JSON, default=dict)
+    confidence: Mapped[int] = mapped_column(Integer, default=0)
+    issues: Mapped[list] = mapped_column(JSON, default=list)
+    status: Mapped[str] = mapped_column(String(16), default="REVIEW")
+    patient_id: Mapped[str | None] = mapped_column(String(36))
+    source_episode_ref: Mapped[str | None] = mapped_column(String(100), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class BridgeImportProfile(Base):
+    __tablename__ = "bridge_import_profile"
+    clinic_id: Mapped[str] = mapped_column(ForeignKey("clinic.id"), primary_key=True)
+    mapping: Mapped[list] = mapped_column(JSON, default=list)
+    last_batch_id: Mapped[str | None] = mapped_column(String(36))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class AuditEvent(Base):
