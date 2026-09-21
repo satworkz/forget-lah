@@ -1,7 +1,7 @@
 """One persisted decision per worker tick. Network calls never hold DB locks."""
 
 import json
-from datetime import UTC, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 from sqlalchemy import and_, or_, select
 
@@ -99,6 +99,69 @@ def authority_revoked(run):
         "SERVICE_AUTHORITY_REVOKED"
         if run.authorised_by == AUTOMATION_PRINCIPAL_ID
         else "STAFF_AUTHORITY_REVOKED"
+    )
+
+
+def _minute_label(minute):
+    hour, value = divmod(minute, 60)
+    suffix = "AM" if hour < 12 else "PM"
+    display_hour = hour % 12 or 12
+    return f"{display_hour}:{value:02d} {suffix} SGT"
+
+
+def attendance_qualification_state(qualification, facts):
+    """Compare an explicit attendance qualification with source appointment facts.
+
+    The model extracts the patient's statement; application code owns the
+    deterministic source comparison. We never infer that a clinic accepts late
+    arrival or that an unrelated practical plan changes attendance consent.
+    """
+    if qualification is None:
+        return None
+    state = {**qualification.model_dump(), "status": "UNRESOLVED"}
+    if qualification.kind == "CONDITION":
+        return state
+    if not facts or not facts.get("scheduled_at"):
+        return state
+    scheduled = datetime.fromisoformat(facts["scheduled_at"]).astimezone(
+        timezone(timedelta(hours=8))
+    )
+    scheduled_minute = scheduled.hour * 60 + scheduled.minute
+    state["scheduled_minute"] = scheduled_minute
+    state["source_step_id"] = facts.get("source_step_id")
+    if qualification.kind == "ARRIVAL_TIME":
+        state["status"] = (
+            "CONFLICT" if qualification.arrival_minute > scheduled_minute else "COMPATIBLE"
+        )
+    elif qualification.kind == "ARRIVAL_OFFSET":
+        state["status"] = "CONFLICT" if qualification.arrival_offset_minutes > 0 else "COMPATIBLE"
+    return state
+
+
+def attendance_qualification_message(state):
+    quote = state["quote"]
+    if state["status"] == "UNRESOLVED":
+        return (
+            f'You said: "{quote}". That makes your attendance conditional. '
+            "I don't have verified clinic information confirming that condition, so I haven't "
+            "recorded your attendance yet. Please contact the clinic to confirm the condition, "
+            "or ask me to show alternative appointment slots."
+        )
+    scheduled = _minute_label(state["scheduled_minute"])
+    if state["kind"] == "ARRIVAL_TIME":
+        stated = _minute_label(state["arrival_minute"])
+        detail = f"you said you expect to arrive at {stated}"
+    else:
+        offset = state["arrival_offset_minutes"]
+        detail = f"you said you expect to arrive {abs(offset)} minutes " + (
+            "late" if offset > 0 else "early"
+        )
+    return (
+        f"The appointment in this reminder is for {scheduled}, but {detail}. "
+        "I can't confirm that arrival after the scheduled time will be accepted by the clinic, "
+        "so I haven't recorded your attendance yet. Please plan to arrive by the scheduled time, "
+        "contact the clinic if you need them to confirm a later arrival, or ask me to show "
+        "alternative appointment slots."
     )
 
 
@@ -955,6 +1018,35 @@ def apply_control(db, run, case, step, decision, settings):
             )
             request_handoff(db, run, "CANCELLATION_REQUESTED", risk="AMBER")
             return
+
+        facts = appointment_facts(db, run)
+        qualification = attendance_qualification_state(decision.attendance_qualification, facts)
+        if qualification is not None:
+            run.checkpoint = {
+                **run.checkpoint,
+                "attendance_qualification": {
+                    **qualification,
+                    "decision_step_id": step.id,
+                    "reply_event_id": decision.reply_event_id,
+                },
+            }
+            if qualification["status"] in {"CONFLICT", "UNRESOLVED"}:
+                # A stated confirmation with a conflicting/conditional attendance
+                # detail is not write consent. Preserve the model decision for audit,
+                # but block downstream confirmation until the patient supplies a
+                # compatible plan or explicitly asks for another slot.
+                run.checkpoint = {
+                    **run.checkpoint,
+                    "appointment_intent": "UNSPECIFIED",
+                    "wait_reason": "ATTENDANCE_QUALIFICATION",
+                }
+                say(
+                    attendance_qualification_message(qualification),
+                    "attendance_qualification",
+                )
+                release(run, "waiting")
+                return
+
         language_changes = [
             u for u in decision.updates if u.key in {"preferred_language", "excluded_languages"}
         ]

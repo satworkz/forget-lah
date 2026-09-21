@@ -332,6 +332,12 @@ def attendance_interpretation(db, run):
 def reply_evidence(db, run):
     reply = saved_reply(db, run)
     choice = booking_choice(db, run)
+    qualification = run.checkpoint.get("attendance_qualification", {})
+    if qualification.get("status") in {"CONFLICT", "UNRESOLVED"}:
+        # A qualified/late attendance statement is not confirmation consent.
+        # The patient must provide a compatible attendance plan or choose a
+        # different slot on a later turn.
+        return None
     # A doctor-authored NOT_MET -> RESCHEDULE consequence supersedes any prior
     # attendance acceptance while we search for a new slot. Once the patient
     # explicitly selects an offered slot, that fresh selection is the consent

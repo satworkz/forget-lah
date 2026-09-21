@@ -121,6 +121,11 @@ def policy_for(db, run, case, step, decision):
             or decision.appointment_request_quote not in reply.content
         ):
             deny = "APPOINTMENT_INTENT_QUOTE_NOT_IN_REPLY"
+        elif decision.attendance_qualification is not None and (
+            not decision.attendance_qualification.quote.strip()
+            or decision.attendance_qualification.quote not in reply.content
+        ):
+            deny = "ATTENDANCE_QUALIFICATION_QUOTE_NOT_IN_REPLY"
         else:
             reasons.append("REPORTED_NEEDS_BOUND_TO_REPLY")
     elif isinstance(decision, ClarifyDecision):

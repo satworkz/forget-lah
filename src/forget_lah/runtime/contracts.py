@@ -320,6 +320,32 @@ class MemoryChange(StrictModel):
         return self
 
 
+class AttendanceQualification(StrictModel):
+    """Explicit qualification attached to an apparent attendance confirmation.
+
+    The model extracts only what the patient said. Application code compares
+    structured timing with the source appointment; the model never decides
+    whether late arrival is acceptable to the clinic.
+    """
+
+    quote: str = Field(min_length=1, max_length=240)
+    kind: Literal["ARRIVAL_TIME", "ARRIVAL_OFFSET", "CONDITION"]
+    arrival_minute: int | None = Field(default=None, ge=0, le=1439)
+    arrival_offset_minutes: int | None = Field(default=None, ge=-240, le=240)
+
+    @model_validator(mode="after")
+    def consistent(self):
+        if self.kind == "ARRIVAL_TIME":
+            if self.arrival_minute is None or self.arrival_offset_minutes is not None:
+                raise ValueError("ARRIVAL_TIME requires only arrival_minute")
+        elif self.kind == "ARRIVAL_OFFSET":
+            if self.arrival_offset_minutes is None or self.arrival_minute is not None:
+                raise ValueError("ARRIVAL_OFFSET requires only arrival_offset_minutes")
+        elif self.arrival_minute is not None or self.arrival_offset_minutes is not None:
+            raise ValueError("CONDITION does not carry invented timing")
+        return self
+
+
 class NeedsDecision(BoundDecision):
     preparation_plans: list[str] = Field(
         default_factory=list,
@@ -337,6 +363,7 @@ class NeedsDecision(BoundDecision):
     updates: list[MemoryChange] = Field(max_length=5)
     appointment_intent: Literal["UNSPECIFIED", "CHANGE", "CONFIRM", "CANCEL"] = "UNSPECIFIED"
     appointment_request_quote: str | None = Field(default=None, max_length=240)
+    attendance_qualification: AttendanceQualification | None = None
     question: str | None = Field(default=None, max_length=240)
     comprehension_quote: str | None = Field(default=None, max_length=240)
     concern_quote: str | None = Field(default=None, max_length=200)
@@ -356,6 +383,10 @@ class NeedsDecision(BoundDecision):
             raise ValueError("One change per key per decision")
         if self.appointment_intent != "UNSPECIFIED" and not self.appointment_request_quote:
             raise ValueError("Appointment intent needs supporting words")
+        if self.attendance_qualification is not None and self.appointment_intent != "CONFIRM":
+            raise ValueError(
+                "Attendance qualification is valid only with stated confirmation intent"
+            )
         return self
 
 
