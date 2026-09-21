@@ -61,6 +61,7 @@ from forget_lah.runtime.simulation import (
     closed_binary_answer,
     current_tools,
     future_scheduled,
+    instruction_resume_context,
     latest_selection_offer,
     latest_tool,
     read_already_available,
@@ -1225,6 +1226,7 @@ def apply_control(db, run, case, step, decision, settings):
                     resume_appointment_intent=evidence.get(
                         "resume_appointment_intent", "UNSPECIFIED"
                     ),
+                    resume_context=evidence.get("resume_context"),
                     attempt=int(evidence.get("attempt", 1)) + 1,
                 )
                 run.checkpoint = {**run.checkpoint, "wait_reason": "AWAITING_PATIENT_REPLY"}
@@ -1265,45 +1267,105 @@ def apply_control(db, run, case, step, decision, settings):
                 source_version=question.source_version,
                 resolutions=resolutions,
                 resume_appointment_intent=evidence.get("resume_appointment_intent", "UNSPECIFIED"),
+                resume_context=evidence.get("resume_context"),
             )
             run.checkpoint = {**run.checkpoint, "wait_reason": "AWAITING_PATIENT_REPLY"}
             release(run, "waiting")
             return
 
+        resume_context = evidence.get("resume_context") or {}
+        parent_event = resume_context.get("latest_event")
         resume_intent = evidence.get("resume_appointment_intent", "UNSPECIFIED")
         if decision.outcome == "NOT_MET":
             resume_intent = "CHANGE"
-        checkpoint = {
-            **run.checkpoint,
-            "instruction_check_processed": reply.id,
-            "instruction_check_resume_intent": resume_intent,
-            "instruction_check_resolutions": resolutions,
-            "needs_reviewed": reply.id,
-            "appointment_intent": resume_intent,
-        }
-        if decision.outcome == "NOT_MET":
-            checkpoint["barriers"] = {
-                "reply_event_id": reply.id,
-                "evidence_quotes": [decision.answer_quote],
-                "earliest_minute": None,
-                "latest_minute": None,
-                "weekdays": [],
-                "requested_date": None,
-                "date_from": None,
-                "date_to": None,
-                "clarification_question": None,
-                "excluded_minutes": [],
-                "rejects_current_offer": False,
-                "concern_quote": None,
-                "remember_exclusions": False,
-                "preparation_issue": "NONE",
-                "clarification_reason": "NONE",
-                "next_action": "SEARCH_SLOTS",
-                "step_id": step.id,
-                "doctor_instruction_reschedule": True,
-                "rejected_slot_ids": [],
+
+        # A doctor-instruction answer is a child protocol turn. Once resolved,
+        # consume that child reply and restore the parent turn that was
+        # interrupted by the check. This prevents the same bare "yes"/"no"
+        # from being reinterpreted as a fresh scheduling/preparation request.
+        if parent_event:
+            parent_reply_id = parent_event.get("reply_event_id", parent_event.get("id"))
+            checkpoint = {
+                **resume_context,
+                "patient_simulator_enabled": run.checkpoint.get("patient_simulator_enabled", True),
+                "instruction_check_processed": reply.id,
+                "instruction_check_consumed_reply_event_id": reply.id,
+                "instruction_check_resume_intent": resume_intent,
+                "instruction_check_resolutions": resolutions,
+                "appointment_intent": resume_intent,
+                # The resumed parent turn gets a fresh bounded execution slice.
+                "turn_start_step": step.sequence,
+                "coordinator_resume_after": step.sequence,
+                "delegation_start": 0,
             }
-        run.checkpoint = checkpoint
+            if run.checkpoint.get("reopened_from_run_id") and not checkpoint.get(
+                "reopened_from_run_id"
+            ):
+                checkpoint["reopened_from_run_id"] = run.checkpoint["reopened_from_run_id"]
+            if decision.outcome == "NOT_MET":
+                # The clinic-authored consequence becomes the resumed parent
+                # workflow. It is not evidence that the patient's original
+                # message requested a different appointment.
+                checkpoint["needs_reviewed"] = parent_reply_id
+                checkpoint["barriers"] = {
+                    "reply_event_id": parent_reply_id,
+                    "evidence_quotes": [],
+                    "earliest_minute": None,
+                    "latest_minute": None,
+                    "weekdays": [],
+                    "requested_date": None,
+                    "date_from": None,
+                    "date_to": None,
+                    "clarification_question": None,
+                    "excluded_minutes": [],
+                    "rejects_current_offer": False,
+                    "concern_quote": None,
+                    "remember_exclusions": False,
+                    "preparation_issue": "NONE",
+                    "clarification_reason": "NONE",
+                    "next_action": "SEARCH_SLOTS",
+                    "step_id": step.id,
+                    "doctor_instruction_reschedule": True,
+                    "instruction_answer_event_id": reply.id,
+                    "instruction_answer_quote": decision.answer_quote,
+                    "rejected_slot_ids": [],
+                }
+            run.checkpoint = checkpoint
+        else:
+            # Backward-compatible fallback for questions created before resume
+            # context was persisted. New questions always use the parent-turn
+            # resume path above.
+            checkpoint = {
+                **run.checkpoint,
+                "instruction_check_processed": reply.id,
+                "instruction_check_resume_intent": resume_intent,
+                "instruction_check_resolutions": resolutions,
+                "needs_reviewed": reply.id,
+                "appointment_intent": resume_intent,
+            }
+            if decision.outcome == "NOT_MET":
+                checkpoint["barriers"] = {
+                    "reply_event_id": reply.id,
+                    "evidence_quotes": [decision.answer_quote],
+                    "earliest_minute": None,
+                    "latest_minute": None,
+                    "weekdays": [],
+                    "requested_date": None,
+                    "date_from": None,
+                    "date_to": None,
+                    "clarification_question": None,
+                    "excluded_minutes": [],
+                    "rejects_current_offer": False,
+                    "concern_quote": None,
+                    "remember_exclusions": False,
+                    "preparation_issue": "NONE",
+                    "clarification_reason": "NONE",
+                    "next_action": "SEARCH_SLOTS",
+                    "step_id": step.id,
+                    "doctor_instruction_reschedule": True,
+                    "rejected_slot_ids": [],
+                }
+            run.checkpoint = checkpoint
         release(run, "queued", delay=delay)
     elif isinstance(decision, SelectionDecision):
         if decision.option_number is None:
@@ -1453,6 +1515,7 @@ def apply_control(db, run, case, step, decision, settings):
                     source_version=instruction_source.tool_result["source_version"],
                     resolutions=resolutions,
                     resume_appointment_intent=appointment_intent,
+                    resume_context=instruction_resume_context(run),
                 )
                 run.checkpoint = {**run.checkpoint, "wait_reason": "AWAITING_PATIENT_REPLY"}
                 release(run, "waiting")

@@ -1,6 +1,7 @@
 """Application evidence and local-only message delivery for synthetic testing."""
 
 import re
+from copy import deepcopy
 from datetime import UTC, datetime, timedelta, timezone
 
 from sqlalchemy import select
@@ -97,6 +98,39 @@ def pending_instruction_question(db, run):
     return None
 
 
+_INSTRUCTION_RESUME_KEYS = (
+    "latest_event",
+    "needs_reviewed",
+    "patient_questions",
+    "patient_task_types",
+    "appointment_intent",
+    "barriers",
+    "question_answers",
+    "question_review_step_id",
+    "scheduling_review",
+    "returned_specialists",
+    "selection",
+    "attendance",
+    "response_parts",
+    "reopened_from_run_id",
+)
+
+
+def instruction_resume_context(run):
+    """Capture the interrupted parent turn before asking a clinic check.
+
+    The patient's answer to a doctor-instruction check is a child protocol turn,
+    not a new request. Store only the parent workflow fields needed to resume
+    after the check is resolved. The snapshot is persisted with the question, so
+    normal inbound-turn checkpoint resets cannot destroy it.
+    """
+    return {
+        key: deepcopy(run.checkpoint[key])
+        for key in _INSTRUCTION_RESUME_KEYS
+        if key in run.checkpoint
+    }
+
+
 def save_instruction_question(
     db,
     run,
@@ -106,6 +140,7 @@ def save_instruction_question(
     source_version,
     resolutions=None,
     resume_appointment_intent="UNSPECIFIED",
+    resume_context=None,
     attempt=1,
 ):
     reply = saved_reply(db, run)
@@ -136,6 +171,7 @@ def save_instruction_question(
             "scheduling_review": review,
             "resolutions": resolutions or [],
             "resume_appointment_intent": resume_appointment_intent,
+            "resume_context": resume_context or instruction_resume_context(run),
             "attempt": attempt,
         },
     )
@@ -295,6 +331,13 @@ def attendance_interpretation(db, run):
 
 def reply_evidence(db, run):
     reply = saved_reply(db, run)
+    choice = booking_choice(db, run)
+    # A doctor-authored NOT_MET -> RESCHEDULE consequence supersedes any prior
+    # attendance acceptance while we search for a new slot. Once the patient
+    # explicitly selects an offered slot, that fresh selection is the consent
+    # evidence and the guarded write may proceed.
+    if run.checkpoint.get("barriers", {}).get("doctor_instruction_reschedule") and not choice:
+        return None
     interpretation = attendance_interpretation(db, run)
     resumed_confirmation = bool(
         reply
@@ -306,7 +349,7 @@ def reply_evidence(db, run):
         if reply
         and (
             explicit_confirmation(reply.content)
-            or booking_choice(db, run)
+            or choice
             or resumed_confirmation
             or (interpretation and interpretation.decision.get("confirmed") is True)
         )
