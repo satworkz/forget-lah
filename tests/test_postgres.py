@@ -21,6 +21,99 @@ from services.mock_clinic.fixtures import candidates
 
 
 @pytest.mark.postgres
+@pytest.mark.parametrize("legacy_receipt", [False, True])
+def test_postgres_bridge_review_reaches_waiting_with_reminder(postgres_schema, legacy_receipt):
+    from test_bridge import FakeBridgeAnalyzer, bridge_client, mutation_headers, upload_csv
+
+    from forget_lah.db import BridgeEpisode
+    from forget_lah.runtime.clinic_tools import ClinicTools
+    from forget_lah.runtime.engine import process_run
+    from forget_lah.runtime.models import AgentStep, SimulatedMessage
+    from forget_lah.runtime.provider import MockModel
+    from forget_lah.runtime.startup import queue_case_review
+    from forget_lah.seed import seed_automation
+
+    _, factory = postgres_schema
+    command.upgrade(Config("alembic.ini"), "head")
+    seed(factory, "staff@forget-lah.example", "unit-test-only-not-a-live-credential")
+    seed_automation(factory)
+    client = bridge_client(postgres_schema, FakeBridgeAnalyzer())
+    try:
+        batch = upload_csv(client).json()
+        approved = client.post(
+            f"/api/bridge/batches/{batch['id']}/approve",
+            headers=mutation_headers(client),
+            json={"include_review_rows": False},
+        )
+        assert approved.status_code == 200, approved.text
+    finally:
+        client.__exit__(None, None, None)
+    settings = Settings(
+        agent_model_mode="mock",
+        agent_min_interval_seconds=0,
+        patient_simulator_enabled=True,
+        mock_clinic_followup_key="test-only-key",
+    )
+    with factory.begin() as db:
+        case = db.scalar(select(FollowupCase).where(FollowupCase.trigger == "UPCOMING"))
+        run_id = queue_case_review(db, case, settings).id
+        binding = {
+            "clinic_id": case.clinic_id,
+            "patient_id": case.patient_id,
+            "source_episode_ref": case.source_episode_ref,
+        }
+    tools = ClinicTools("http://must-not-be-used", factory=factory)
+    context = tools.execute("read_followup_context", binding)
+    assert len(context.source_version) == 40
+    assert (
+        tools.execute("get_approved_instructions", binding).source_version == context.source_version
+    )
+    assert tools.execute("check_prerequisites", binding).source_version == context.source_version
+    for _ in range(2):
+        claim = claim_run(factory)
+        assert claim and claim[0] == run_id
+        process_run(factory, settings, *claim, model=MockModel(), tools=tools)
+    with factory.begin() as db:
+        run = db.get(AgentRun, run_id)
+        assert run.step_count == 2 and run.active_role == "engagement"
+        source = db.scalar(
+            select(AgentStep).where(AgentStep.run_id == run_id, AgentStep.sequence == 1)
+        )
+        source_id = source.id
+        if legacy_receipt:
+            source.tool_result = {
+                **source.tool_result,
+                "source_version": f"bridge:{batch['id']}:{batch['analysis_version']}",
+            }
+        saved_version = source.tool_result["source_version"]
+    claim = claim_run(factory)
+    assert claim and claim[0] == run_id
+    process_run(factory, settings, *claim, model=MockModel(), tools=tools)
+    with factory.begin() as db:
+        run = db.get(AgentRun, run_id)
+        assert run.status == "waiting" and run.step_count == 3
+        message = db.scalar(select(SimulatedMessage).where(SimulatedMessage.run_id == run_id))
+        assert message.kind == "reminder"
+        from forget_lah.runtime.source_versions import compact_bridge_source_version
+
+        assert message.source_version == compact_bridge_source_version(saved_version)
+        assert message.evidence["source_step_id"] == source_id
+        assert db.get(AgentStep, source_id).tool_result["source_version"] == saved_version
+        if legacy_receipt:
+            assert message.evidence["original_source_version"] == saved_version
+        # A staff review creates a different receipt, even at large revision numbers.
+        db.scalar(
+            select(BridgeEpisode).where(
+                BridgeEpisode.source_episode_ref == binding["source_episode_ref"]
+            )
+        ).version = 2147483647
+    revised = tools.execute("read_followup_context", binding)
+    assert len(revised.source_version) == 40
+    assert revised.source_version != context.source_version
+    assert tools.execute("read_followup_context", binding).source_version == revised.source_version
+
+
+@pytest.mark.postgres
 def test_postgres_simulator_migration_and_competing_editors(postgres_schema):
     from alembic.autogenerate import compare_metadata
     from alembic.migration import MigrationContext
@@ -202,7 +295,7 @@ def test_postgres_migration_preserves_existing_cases_and_creates_budget(postgres
     with factory() as db:
         assert set(db.scalars(select(FollowupCase.id))) == before
         assert len(before) == 3
-        assert db.scalar(text("SELECT version_num FROM alembic_version")) == "0010"
+        assert db.scalar(text("SELECT version_num FROM alembic_version")) == "0015"
         assert db.get(ModelBudget, "organiser").calls == 0
     # No differences between the explicit migration and mapped runtime schema.
     from alembic.autogenerate import compare_metadata

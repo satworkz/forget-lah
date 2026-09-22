@@ -1,9 +1,10 @@
 """One persisted decision per worker tick. Network calls never hold DB locks."""
 
 import json
-from datetime import UTC, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 from sqlalchemy import and_, or_, select
+from sqlalchemy.orm import object_session
 
 from forget_lah.db import FollowupCase, uid, utcnow
 from forget_lah.runtime.adaptation import preferences_for, remember_reported_exclusions
@@ -58,8 +59,10 @@ from forget_lah.runtime.simulation import (
     booking_choice,
     clarification_allowed,
     clarification_count,
+    closed_binary_answer,
     current_tools,
     future_scheduled,
+    instruction_resume_context,
     latest_selection_offer,
     latest_tool,
     read_already_available,
@@ -83,6 +86,28 @@ def as_utc(value):
 
 def release(run, status, *, delay=None):
     run.status = status
+    db = object_session(run)
+    if db is not None and not run.checkpoint.get("staff_review_restore"):
+        from forget_lah.bridge_source import episode_query
+
+        case = db.get(FollowupCase, run.case_id)
+        if case and case.source_episode_ref.startswith("bridge:"):
+            episode = db.scalar(
+                episode_query(
+                    {
+                        "clinic_id": case.clinic_id,
+                        "patient_id": case.patient_id,
+                        "source_episode_ref": case.source_episode_ref,
+                    }
+                )
+            )
+            if episode:
+                episode.followup_status = {
+                    "running": "in_progress",
+                    "waiting": "awaiting_reply",
+                    "escalated": "needs_staff",
+                }.get(status, status)
+                episode.updated_at = utcnow()
     run.lease_until = run.lease_token = None
     run.available_at = utcnow() + timedelta(seconds=delay) if delay is not None else None
 
@@ -97,6 +122,69 @@ def authority_revoked(run):
         "SERVICE_AUTHORITY_REVOKED"
         if run.authorised_by == AUTOMATION_PRINCIPAL_ID
         else "STAFF_AUTHORITY_REVOKED"
+    )
+
+
+def _minute_label(minute):
+    hour, value = divmod(minute, 60)
+    suffix = "AM" if hour < 12 else "PM"
+    display_hour = hour % 12 or 12
+    return f"{display_hour}:{value:02d} {suffix} SGT"
+
+
+def attendance_qualification_state(qualification, facts):
+    """Compare an explicit attendance qualification with source appointment facts.
+
+    The model extracts the patient's statement; application code owns the
+    deterministic source comparison. We never infer that a clinic accepts late
+    arrival or that an unrelated practical plan changes attendance consent.
+    """
+    if qualification is None:
+        return None
+    state = {**qualification.model_dump(), "status": "UNRESOLVED"}
+    if qualification.kind == "CONDITION":
+        return state
+    if not facts or not facts.get("scheduled_at"):
+        return state
+    scheduled = datetime.fromisoformat(facts["scheduled_at"]).astimezone(
+        timezone(timedelta(hours=8))
+    )
+    scheduled_minute = scheduled.hour * 60 + scheduled.minute
+    state["scheduled_minute"] = scheduled_minute
+    state["source_step_id"] = facts.get("source_step_id")
+    if qualification.kind == "ARRIVAL_TIME":
+        state["status"] = (
+            "CONFLICT" if qualification.arrival_minute > scheduled_minute else "COMPATIBLE"
+        )
+    elif qualification.kind == "ARRIVAL_OFFSET":
+        state["status"] = "CONFLICT" if qualification.arrival_offset_minutes > 0 else "COMPATIBLE"
+    return state
+
+
+def attendance_qualification_message(state):
+    quote = state["quote"]
+    if state["status"] == "UNRESOLVED":
+        return (
+            f'You said: "{quote}". That makes your attendance conditional. '
+            "I don't have verified clinic information confirming that condition, so I haven't "
+            "recorded your attendance yet. Please contact the clinic to confirm the condition, "
+            "or ask me to show alternative appointment slots."
+        )
+    scheduled = _minute_label(state["scheduled_minute"])
+    if state["kind"] == "ARRIVAL_TIME":
+        stated = _minute_label(state["arrival_minute"])
+        detail = f"you said you expect to arrive at {stated}"
+    else:
+        offset = state["arrival_offset_minutes"]
+        detail = f"you said you expect to arrive {abs(offset)} minutes " + (
+            "late" if offset > 0 else "early"
+        )
+    return (
+        f"The appointment in this reminder is for {scheduled}, but {detail}. "
+        "I can't confirm that arrival after the scheduled time will be accepted by the clinic, "
+        "so I haven't recorded your attendance yet. Please plan to arrive by the scheduled time, "
+        "contact the clinic if you need them to confirm a later arrival, or ask me to show "
+        "alternative appointment slots."
     )
 
 
@@ -294,7 +382,13 @@ def observation_for(db, run, case, step_id):
         "expected_case_version": case.case_version,
         "role": run.active_role,
         "goal": delegation.goal if delegation else run.goal,
-        "case": {"specialty": case.specialty, "trigger": case.trigger},
+        "case": {
+            "specialty": case.specialty,
+            "trigger": case.trigger,
+            "source_kind": "bridge_upload"
+            if case.source_episode_ref.startswith("bridge:")
+            else "clinic_api",
+        },
         "latest_event": event,
         "recent_messages": conversation,
         "today_sgt": utcnow().astimezone(timezone(timedelta(hours=8))).date().isoformat(),
@@ -451,7 +545,7 @@ def apply_initial_demo_wait(db, settings, run, case, step):
         step.status, step.error_code = "rejected", "POLICY_DENIED"
         pause(run, "POLICY_DENIED")
     else:
-        if simulation_enabled(run) and settings.simulation_configured:
+        if simulation_enabled(run) and settings.conversation_configured_for(case):
             block = delivery_block(db, case, proactive=True, settings=settings)
             if block:
                 step.observation["application_rule"].update(
@@ -528,6 +622,60 @@ def apply_required_read(db, settings, run, case, step):
         pause(run, "POLICY_DENIED")
     else:
         step.status = "tool_pending"
+    return True
+
+
+def apply_closed_instruction_answer(db, settings, run, case, step):
+    """Resolve exact yes/no protocol answers without spending a model call.
+
+    Only a currently pending doctor-instruction check qualifies, and only when
+    the entire patient reply is an unambiguous closed answer. Any richer reply
+    (including symptoms, uncertainty, explanation or another request) stays on
+    the model path. The normal policy gateway and apply_control() remain
+    authoritative.
+    """
+    if run.active_role != "coordinator":
+        return False
+    check = step.observation.get("simulation", {}).get("instruction_check")
+    if not check:
+        return False
+    reply = saved_reply(db, run)
+    if not reply:
+        return False
+    polarity = closed_binary_answer(reply.content)
+    if polarity is None:
+        return False
+
+    decision = InstructionCheckDecision(
+        request_id=step.id,
+        expected_case_version=case.case_version,
+        step_type="INTERPRET_INSTRUCTION_CHECK",
+        reason_code="DOCTOR_INSTRUCTION_CHECK_REVIEWED",
+        reply_event_id=check["reply_event_id"],
+        question_message_id=check["question_message_id"],
+        outcome="MET" if polarity == "YES" else "NOT_MET",
+        answer_quote=reply.content.strip(),
+    )
+    step.origin = "rule"
+    step.observation = {
+        **step.observation,
+        "application_rule": {
+            "name": "CLOSED_BINARY_PROTOCOL_ANSWER",
+            "explanation": (
+                "The patient gave an exact unambiguous answer to the currently "
+                "pending yes/no clinic check. The deterministic protocol parser "
+                "interpreted only that closed answer; richer replies still use "
+                "the model. Policy and persisted workflow state remain authoritative."
+            ),
+        },
+    }
+    step.decision = decision.model_dump()
+    step.policy = policy_for(db, run, case, step, decision)
+    if step.policy["decision"] == "ALLOW":
+        apply_control(db, run, case, step, decision, settings)
+    else:
+        step.status, step.error_code = "rejected", "POLICY_DENIED"
+        pause(run, "POLICY_DENIED")
     return True
 
 
@@ -660,7 +808,13 @@ def prepare_step(factory, settings, run_id, token):
             retry_tool = (
                 run.checkpoint.get("next_source_retry") if simulation_enabled(run) else None
             )
-            if retry_tool and run.checkpoint["latest_event"].get("wake_reason") == "timer":
+            if run.checkpoint.get("staff_review_restore") and run.active_role == "coordinator":
+                from forget_lah.staff_review import coordinator_review
+
+                coordinator_review(db, settings, run, case, pending)
+                if pending.status != "tool_pending":
+                    return None
+            elif retry_tool and run.checkpoint["latest_event"].get("wake_reason") == "timer":
                 retries = run.checkpoint.get("simulated_tool_retries", {})
                 run.checkpoint = {
                     **run.checkpoint,
@@ -697,7 +851,7 @@ def prepare_step(factory, settings, run_id, token):
                     return None
                 pending.status = "tool_pending"
             elif (
-                settings.simulation_configured
+                settings.conversation_configured_for(case)
                 and run.active_role == "engagement"
                 and pending.observation["simulation"]["record_ready"]
                 and not any(
@@ -760,6 +914,8 @@ def prepare_step(factory, settings, run_id, token):
                     pause(run, "POLICY_DENIED")
                     return None
                 pending.status = "tool_pending"
+            elif apply_closed_instruction_answer(db, settings, run, case, pending):
+                return None
             elif apply_accepted_handoff(db, settings, run, case, pending):
                 return None
             elif apply_initial_demo_wait(db, settings, run, case, pending):
@@ -897,6 +1053,35 @@ def apply_control(db, run, case, step, decision, settings):
             )
             request_handoff(db, run, "CANCELLATION_REQUESTED", risk="AMBER")
             return
+
+        facts = appointment_facts(db, run)
+        qualification = attendance_qualification_state(decision.attendance_qualification, facts)
+        if qualification is not None:
+            run.checkpoint = {
+                **run.checkpoint,
+                "attendance_qualification": {
+                    **qualification,
+                    "decision_step_id": step.id,
+                    "reply_event_id": decision.reply_event_id,
+                },
+            }
+            if qualification["status"] in {"CONFLICT", "UNRESOLVED"}:
+                # A stated confirmation with a conflicting/conditional attendance
+                # detail is not write consent. Preserve the model decision for audit,
+                # but block downstream confirmation until the patient supplies a
+                # compatible plan or explicitly asks for another slot.
+                run.checkpoint = {
+                    **run.checkpoint,
+                    "appointment_intent": "UNSPECIFIED",
+                    "wait_reason": "ATTENDANCE_QUALIFICATION",
+                }
+                say(
+                    attendance_qualification_message(qualification),
+                    "attendance_qualification",
+                )
+                release(run, "waiting")
+                return
+
         language_changes = [
             u for u in decision.updates if u.key in {"preferred_language", "excluded_languages"}
         ]
@@ -1168,6 +1353,7 @@ def apply_control(db, run, case, step, decision, settings):
                     resume_appointment_intent=evidence.get(
                         "resume_appointment_intent", "UNSPECIFIED"
                     ),
+                    resume_context=evidence.get("resume_context"),
                     attempt=int(evidence.get("attempt", 1)) + 1,
                 )
                 run.checkpoint = {**run.checkpoint, "wait_reason": "AWAITING_PATIENT_REPLY"}
@@ -1208,45 +1394,105 @@ def apply_control(db, run, case, step, decision, settings):
                 source_version=question.source_version,
                 resolutions=resolutions,
                 resume_appointment_intent=evidence.get("resume_appointment_intent", "UNSPECIFIED"),
+                resume_context=evidence.get("resume_context"),
             )
             run.checkpoint = {**run.checkpoint, "wait_reason": "AWAITING_PATIENT_REPLY"}
             release(run, "waiting")
             return
 
+        resume_context = evidence.get("resume_context") or {}
+        parent_event = resume_context.get("latest_event")
         resume_intent = evidence.get("resume_appointment_intent", "UNSPECIFIED")
         if decision.outcome == "NOT_MET":
             resume_intent = "CHANGE"
-        checkpoint = {
-            **run.checkpoint,
-            "instruction_check_processed": reply.id,
-            "instruction_check_resume_intent": resume_intent,
-            "instruction_check_resolutions": resolutions,
-            "needs_reviewed": reply.id,
-            "appointment_intent": resume_intent,
-        }
-        if decision.outcome == "NOT_MET":
-            checkpoint["barriers"] = {
-                "reply_event_id": reply.id,
-                "evidence_quotes": [decision.answer_quote],
-                "earliest_minute": None,
-                "latest_minute": None,
-                "weekdays": [],
-                "requested_date": None,
-                "date_from": None,
-                "date_to": None,
-                "clarification_question": None,
-                "excluded_minutes": [],
-                "rejects_current_offer": False,
-                "concern_quote": None,
-                "remember_exclusions": False,
-                "preparation_issue": "NONE",
-                "clarification_reason": "NONE",
-                "next_action": "SEARCH_SLOTS",
-                "step_id": step.id,
-                "doctor_instruction_reschedule": True,
-                "rejected_slot_ids": [],
+
+        # A doctor-instruction answer is a child protocol turn. Once resolved,
+        # consume that child reply and restore the parent turn that was
+        # interrupted by the check. This prevents the same bare "yes"/"no"
+        # from being reinterpreted as a fresh scheduling/preparation request.
+        if parent_event:
+            parent_reply_id = parent_event.get("reply_event_id", parent_event.get("id"))
+            checkpoint = {
+                **resume_context,
+                "patient_simulator_enabled": run.checkpoint.get("patient_simulator_enabled", True),
+                "instruction_check_processed": reply.id,
+                "instruction_check_consumed_reply_event_id": reply.id,
+                "instruction_check_resume_intent": resume_intent,
+                "instruction_check_resolutions": resolutions,
+                "appointment_intent": resume_intent,
+                # The resumed parent turn gets a fresh bounded execution slice.
+                "turn_start_step": step.sequence,
+                "coordinator_resume_after": step.sequence,
+                "delegation_start": 0,
             }
-        run.checkpoint = checkpoint
+            if run.checkpoint.get("reopened_from_run_id") and not checkpoint.get(
+                "reopened_from_run_id"
+            ):
+                checkpoint["reopened_from_run_id"] = run.checkpoint["reopened_from_run_id"]
+            if decision.outcome == "NOT_MET":
+                # The clinic-authored consequence becomes the resumed parent
+                # workflow. It is not evidence that the patient's original
+                # message requested a different appointment.
+                checkpoint["needs_reviewed"] = parent_reply_id
+                checkpoint["barriers"] = {
+                    "reply_event_id": parent_reply_id,
+                    "evidence_quotes": [],
+                    "earliest_minute": None,
+                    "latest_minute": None,
+                    "weekdays": [],
+                    "requested_date": None,
+                    "date_from": None,
+                    "date_to": None,
+                    "clarification_question": None,
+                    "excluded_minutes": [],
+                    "rejects_current_offer": False,
+                    "concern_quote": None,
+                    "remember_exclusions": False,
+                    "preparation_issue": "NONE",
+                    "clarification_reason": "NONE",
+                    "next_action": "SEARCH_SLOTS",
+                    "step_id": step.id,
+                    "doctor_instruction_reschedule": True,
+                    "instruction_answer_event_id": reply.id,
+                    "instruction_answer_quote": decision.answer_quote,
+                    "rejected_slot_ids": [],
+                }
+            run.checkpoint = checkpoint
+        else:
+            # Backward-compatible fallback for questions created before resume
+            # context was persisted. New questions always use the parent-turn
+            # resume path above.
+            checkpoint = {
+                **run.checkpoint,
+                "instruction_check_processed": reply.id,
+                "instruction_check_resume_intent": resume_intent,
+                "instruction_check_resolutions": resolutions,
+                "needs_reviewed": reply.id,
+                "appointment_intent": resume_intent,
+            }
+            if decision.outcome == "NOT_MET":
+                checkpoint["barriers"] = {
+                    "reply_event_id": reply.id,
+                    "evidence_quotes": [decision.answer_quote],
+                    "earliest_minute": None,
+                    "latest_minute": None,
+                    "weekdays": [],
+                    "requested_date": None,
+                    "date_from": None,
+                    "date_to": None,
+                    "clarification_question": None,
+                    "excluded_minutes": [],
+                    "rejects_current_offer": False,
+                    "concern_quote": None,
+                    "remember_exclusions": False,
+                    "preparation_issue": "NONE",
+                    "clarification_reason": "NONE",
+                    "next_action": "SEARCH_SLOTS",
+                    "step_id": step.id,
+                    "doctor_instruction_reschedule": True,
+                    "rejected_slot_ids": [],
+                }
+            run.checkpoint = checkpoint
         release(run, "queued", delay=delay)
     elif isinstance(decision, SelectionDecision):
         if decision.option_number is None:
@@ -1366,6 +1612,11 @@ def apply_control(db, run, case, step, decision, settings):
         returned = run.checkpoint.get("returned_specialists", []) + [run.active_role]
         run.active_role = "coordinator"
         run.checkpoint = {**run.checkpoint, "returned_specialists": returned, "delegation_start": 0}
+        if run.checkpoint.get("staff_review_restore"):
+            from forget_lah.staff_review import restore_review
+
+            restore_review(run, step.id)
+            return
         appointment_intent = run.checkpoint.get("appointment_intent", "UNSPECIFIED")
         if appointment_intent not in {"CONFIRM", "CHANGE"} and reply_evidence(db, run):
             # Explicit/verified attendance can skip REVIEW_NEEDS entirely, so the
@@ -1396,6 +1647,7 @@ def apply_control(db, run, case, step, decision, settings):
                     source_version=instruction_source.tool_result["source_version"],
                     resolutions=resolutions,
                     resume_appointment_intent=appointment_intent,
+                    resume_context=instruction_resume_context(run),
                 )
                 run.checkpoint = {**run.checkpoint, "wait_reason": "AWAITING_PATIENT_REPLY"}
                 release(run, "waiting")
@@ -1767,7 +2019,7 @@ def execute_pending_tool(factory, settings, run_id, token, step_id, tools):
             }
             request_handoff(db, run, "LANGUAGE_SUPPORT_REQUIRED", risk="AMBER")
             return False
-        if simulation_action and not settings.simulation_configured:
+        if simulation_action and not settings.conversation_configured_for(case):
             step.status, step.error_code = "rejected", "SIMULATOR_DISABLED"
             pause(run, "SIMULATOR_DISABLED")
             return False
@@ -1778,6 +2030,8 @@ def execute_pending_tool(factory, settings, run_id, token, step_id, tools):
                 "run_id": run.id,
                 "expected_version": context.tool_result["data"]["episode_version"],
             }
+            if case.source_episode_ref.startswith("bridge:"):
+                operation["expected_source_version"] = context.tool_result["source_version"]
             choice = booking_choice(db, run)
             if choice:
                 operation.update(
@@ -1922,6 +2176,7 @@ def process_run(factory, settings, run_id, token, *, model=None, tools=None):
             if settings.mock_clinic_followup_key
             else None
         ),
+        factory=factory,
     )
     if work["phase"] == "pending":
         provider = model or model_for(settings, work["mode"])

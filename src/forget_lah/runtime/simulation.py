@@ -1,6 +1,7 @@
 """Application evidence and local-only message delivery for synthetic testing."""
 
 import re
+from copy import deepcopy
 from datetime import UTC, datetime, timedelta, timezone
 
 from sqlalchemy import select
@@ -18,6 +19,21 @@ def simulation_enabled(run):
     return (
         run.clinic_id == DEMO_CLINIC_ID and run.checkpoint.get("patient_simulator_enabled") is True
     )
+
+
+def closed_binary_answer(text):
+    """Resolve only exact closed-protocol acknowledgements.
+
+    This is intentionally narrow: it is a generic conversation-protocol parser,
+    not a domain rule. Rich, qualified, multilingual or clinically meaningful
+    replies remain with the model and normal safety flow.
+    """
+    normalized = re.sub(r"\s+", " ", text.strip().casefold()).rstrip(".!? ")
+    if normalized in {"yes", "yes please", "yes pls"}:
+        return "YES"
+    if normalized in {"no", "no thanks", "not yet"}:
+        return "NO"
+    return None
 
 
 def explicit_confirmation(text):
@@ -82,6 +98,39 @@ def pending_instruction_question(db, run):
     return None
 
 
+_INSTRUCTION_RESUME_KEYS = (
+    "latest_event",
+    "needs_reviewed",
+    "patient_questions",
+    "patient_task_types",
+    "appointment_intent",
+    "barriers",
+    "question_answers",
+    "question_review_step_id",
+    "scheduling_review",
+    "returned_specialists",
+    "selection",
+    "attendance",
+    "response_parts",
+    "reopened_from_run_id",
+)
+
+
+def instruction_resume_context(run):
+    """Capture the interrupted parent turn before asking a clinic check.
+
+    The patient's answer to a doctor-instruction check is a child protocol turn,
+    not a new request. Store only the parent workflow fields needed to resume
+    after the check is resolved. The snapshot is persisted with the question, so
+    normal inbound-turn checkpoint resets cannot destroy it.
+    """
+    return {
+        key: deepcopy(run.checkpoint[key])
+        for key in _INSTRUCTION_RESUME_KEYS
+        if key in run.checkpoint
+    }
+
+
 def save_instruction_question(
     db,
     run,
@@ -91,6 +140,7 @@ def save_instruction_question(
     source_version,
     resolutions=None,
     resume_appointment_intent="UNSPECIFIED",
+    resume_context=None,
     attempt=1,
 ):
     reply = saved_reply(db, run)
@@ -121,6 +171,7 @@ def save_instruction_question(
             "scheduling_review": review,
             "resolutions": resolutions or [],
             "resume_appointment_intent": resume_appointment_intent,
+            "resume_context": resume_context or instruction_resume_context(run),
             "attempt": attempt,
         },
     )
@@ -280,6 +331,19 @@ def attendance_interpretation(db, run):
 
 def reply_evidence(db, run):
     reply = saved_reply(db, run)
+    choice = booking_choice(db, run)
+    qualification = run.checkpoint.get("attendance_qualification", {})
+    if qualification.get("status") in {"CONFLICT", "UNRESOLVED"}:
+        # A qualified/late attendance statement is not confirmation consent.
+        # The patient must provide a compatible attendance plan or choose a
+        # different slot on a later turn.
+        return None
+    # A doctor-authored NOT_MET -> RESCHEDULE consequence supersedes any prior
+    # attendance acceptance while we search for a new slot. Once the patient
+    # explicitly selects an offered slot, that fresh selection is the consent
+    # evidence and the guarded write may proceed.
+    if run.checkpoint.get("barriers", {}).get("doctor_instruction_reschedule") and not choice:
+        return None
     interpretation = attendance_interpretation(db, run)
     resumed_confirmation = bool(
         reply
@@ -291,7 +355,7 @@ def reply_evidence(db, run):
         if reply
         and (
             explicit_confirmation(reply.content)
-            or booking_choice(db, run)
+            or choice
             or resumed_confirmation
             or (interpretation and interpretation.decision.get("confirmed") is True)
         )
@@ -410,6 +474,12 @@ def simulation_evidence(db, run):
             SimulatedMessage.kind == "reminder",
         )
     )
+    staff_change_message = db.scalar(
+        select(SimulatedMessage).where(
+            SimulatedMessage.run_id == run.id,
+            SimulatedMessage.kind == "staff_appointment_change",
+        )
+    )
     reminder_source = (
         db.get(AgentStep, reminder.evidence.get("source_step_id")) if reminder else None
     )
@@ -424,6 +494,14 @@ def simulation_evidence(db, run):
         and future_scheduled(context.tool_result["data"])
         and (
             run.checkpoint.get("reopened_from_run_id")
+            or (
+                staff_change_message
+                and staff_change_message.evidence.get("staff_change_receipt", {}).get(
+                    "scheduled_at"
+                )
+                == context.tool_result["data"]["scheduled_at"]
+                and staff_change_message.source_version == context.tool_result["source_version"]
+            )
             or (
                 reminder_source
                 and reminder_source.tool_result["data"].get("scheduled_at")
@@ -669,6 +747,8 @@ def save_acknowledgement(db, run):
         context = latest_tool(steps, "read_followup_context", "engagement")
         if context and context.tool_result["data"].get("source_status") == "scheduled":
             body = f"Your appointment has been moved in the clinic simulator from {appointment_time(context.tool_result['data']['scheduled_at'])} to {appointment_time(receipt.tool_result['data']['scheduled_at'])}. Thank you for confirming."
+    if receipt.tool_result["data"].get("record_owner") == "forget_lah":
+        body = body.replace("in the clinic simulator", "in Forget-lah")
     notes = instructions.tool_result["data"]["instructions"]
     quoted_answers = {
         (a.get("instruction_id"), a.get("quote"))

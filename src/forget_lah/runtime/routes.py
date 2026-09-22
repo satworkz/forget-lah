@@ -21,6 +21,7 @@ from forget_lah.runtime.models import (
     PatientMemory,
     PatientPreference,
     SimulatedMessage,
+    StaffAppointmentChange,
     StaffHandoff,
     message_order,
 )
@@ -98,6 +99,16 @@ def install_routes(app, factory, settings, authorise):
         case = db.scalar(query.with_for_update() if lock else query)
         if case is None:
             raise HTTPException(404, "Case not found")
+        if lock and db.scalar(
+            select(StaffAppointmentChange.id).where(
+                StaffAppointmentChange.case_id == case.id,
+                StaffAppointmentChange.status == "pending",
+            )
+        ):
+            raise HTTPException(409, "Recover the pending staff appointment change first")
+        run = latest_run(db, case.id) if lock else None
+        if run and run.checkpoint.get("staff_review_restore"):
+            raise HTTPException(409, "Finish or cancel the appointment instruction review first")
         return case
 
     @app.get("/api/cases/{case_id}/agent")
@@ -106,7 +117,15 @@ def install_routes(app, factory, settings, authorise):
             _, clinics = identity(db, request)
             case = scoped_case(db, case_id, clinics)
             run = latest_run(db, case.id)
+            from forget_lah.bridge_source import managed_view
+
             result = {
+                "bridge": managed_view(db, case)
+                if case.source_episode_ref.startswith("bridge:")
+                else None,
+                "source_kind": "bridge_upload"
+                if case.source_episode_ref.startswith("bridge:")
+                else "clinic_api",
                 "preferences": {
                     **preferences_for(db, case),
                     **({"records": memory_view(db, case)} if memory_view(db, case) else {}),
@@ -122,7 +141,7 @@ def install_routes(app, factory, settings, authorise):
                 "events": [],
                 "handoff": None,
                 "patient_simulator": {
-                    "available": settings.simulation_configured
+                    "available": settings.conversation_configured_for(case)
                     and case.clinic_id == DEMO_CLINIC_ID,
                     "enabled": False,
                     "messages": [],
@@ -220,9 +239,24 @@ def install_routes(app, factory, settings, authorise):
                     else "open",
                     "callback": run.checkpoint.get("callback"),
                     "clinical_review": run.checkpoint.get("clinical_review"),
+                    "legacy_bridge_capabilities": (
+                        case.source_episode_ref.startswith("bridge:")
+                        and handoff.reason_code == "CAPABILITY_UNAVAILABLE"
+                        and next(
+                            (
+                                s["tool_result"]["data"].get("can_simulate_confirmation") is False
+                                for s in reversed(result["steps"])
+                                if s["tool_result"]
+                                and s["tool_result"]["tool_name"] == "read_followup_context"
+                                and s["tool_result"]["status"] == "succeeded"
+                            ),
+                            False,
+                        )
+                    ),
                 }
             result["patient_simulator"] = {
-                "available": settings.simulation_configured and case.clinic_id == DEMO_CLINIC_ID,
+                "available": settings.conversation_configured_for(case)
+                and case.clinic_id == DEMO_CLINIC_ID,
                 "enabled": bool(run and simulation_enabled(run)),
                 "messages": [
                     {
@@ -274,7 +308,7 @@ def install_routes(app, factory, settings, authorise):
             if active and active.status != "completed":
                 if not (
                     body.fresh_simulation
-                    and settings.simulation_configured
+                    and settings.conversation_configured_for(case)
                     and case.clinic_id == DEMO_CLINIC_ID
                     and active.status in {"escalated", "paused", "waiting"}
                     and active.available_at is None
@@ -301,11 +335,11 @@ def install_routes(app, factory, settings, authorise):
                 started_by=user.id,
                 authorised_by=user.id,
                 mode=settings.agent_model_mode,
-                goal=SIMULATOR_GOAL if settings.simulation_configured else REVIEW_GOAL,
+                goal=SIMULATOR_GOAL if settings.conversation_configured_for(case) else REVIEW_GOAL,
                 checkpoint={
                     "latest_event": {"id": run_id, "kind": "started", "content": ""},
                     "returned_specialists": [],
-                    "patient_simulator_enabled": settings.simulation_configured
+                    "patient_simulator_enabled": settings.conversation_configured_for(case)
                     and case.clinic_id == DEMO_CLINIC_ID,
                 },
             )
@@ -458,7 +492,7 @@ def install_routes(app, factory, settings, authorise):
                 and run.checkpoint.get("pause_reason")
                 in {"ROLE_BUDGET_EXHAUSTED", "MODEL_REQUEST_TOO_LARGE"}
                 and run.active_role == "coordinator"
-                and settings.simulation_configured
+                and settings.conversation_configured_for(case)
                 and (proof["ack_ready"] or proof["complete_evidence_ids"])
             ):
                 # Explicit recovery of a legacy read loop. Keep the original reply,
@@ -599,7 +633,7 @@ def install_routes(app, factory, settings, authorise):
         with factory.begin() as db:
             user, clinics = identity(db, request)
             case = scoped_case(db, case_id, clinics, lock=True)
-            if case.clinic_id != DEMO_CLINIC_ID or not settings.simulation_configured:
+            if case.clinic_id != DEMO_CLINIC_ID or not settings.conversation_configured_for(case):
                 raise HTTPException(403, "Preferences are available only in the patient simulator")
             if case.case_version != body.expected_case_version:
                 raise HTTPException(409, "Case changed. Refresh and try again")
@@ -657,7 +691,7 @@ def install_routes(app, factory, settings, authorise):
         with factory.begin() as db:
             user, clinics = identity(db, request)
             case = scoped_case(db, case_id, clinics, lock=True)
-            if case.clinic_id != DEMO_CLINIC_ID or not settings.simulation_configured:
+            if case.clinic_id != DEMO_CLINIC_ID or not settings.conversation_configured_for(case):
                 raise HTTPException(403, "Available only in the patient simulator")
             if case.case_version != body.expected_case_version:
                 raise HTTPException(409, "Case changed. Refresh and try again")

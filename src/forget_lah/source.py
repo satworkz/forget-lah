@@ -13,7 +13,7 @@ class Candidate(BaseModel):
     patient_id: UUID
     display_alias: str = Field(min_length=1, max_length=100)
     source_episode_ref: str = Field(min_length=1, max_length=100)
-    specialty: Literal["dental", "myopia", "antenatal"]
+    specialty: Literal["dental", "myopia", "antenatal", "general"]
     record_type: Literal["appointment", "recall"]
     source_status: Literal["scheduled", "no_show", "due", "cancelled", "completed"]
     scheduled_at: datetime | None = None

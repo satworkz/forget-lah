@@ -26,7 +26,7 @@ class AvailableSlot(StrictModel):
 
 
 class ContextData(StrictModel):
-    specialty: Literal["dental", "myopia", "antenatal"]
+    specialty: Literal["dental", "myopia", "antenatal", "general"]
     source_status: Literal["due", "scheduled", "no_show", "cancelled", "completed"]
     scheduled_at: str | None = Field(max_length=40)
     due_at: str | None = Field(max_length=40)
@@ -52,15 +52,55 @@ class SourceEnvelope(StrictModel):
 
 
 class ClinicTools:
-    """Read-only allowlist. No patient, URL or clinic is chosen by the model."""
+    """Bound tools for Forget-lah imports or an external clinic API."""
 
-    def __init__(self, base_url: str, transport=None, followup_key=None):
+    def __init__(self, base_url: str, transport=None, followup_key=None, factory=None):
         self.base_url = base_url.rstrip("/")
         self.transport = transport
         self.followup_key = followup_key
+        self.factory = factory
+
+    def staff_change(self, binding, operation):
+        # Bridge is committed in the owning application transaction, never over HTTP.
+        if binding["source_episode_ref"].startswith("bridge:"):
+            raise ValueError("Bridge staff changes require the owned transaction")
+        if not self.followup_key:
+            raise ValueError("Source authorization is not configured")
+        episode = quote(binding["source_episode_ref"], safe="")
+        with httpx.Client(timeout=10, follow_redirects=False, transport=self.transport) as client:
+            response = client.post(
+                f"{self.base_url}/internal/followup/{episode}/staff-change",
+                json=operation,
+                headers={"X-Followup-Key": self.followup_key},
+            )
+            response.raise_for_status()
+            if len(response.content) > 16000:
+                raise ValueError("Source receipt too large")
+            receipt = response.json()
+            from forget_lah.staff_change_contract import StaffChangeReceipt
+
+            StaffChangeReceipt.model_validate(receipt)
+        if (
+            receipt.get("operation_id") != operation["operation_id"]
+            or receipt.get("patient_id") != binding["patient_id"]
+            or receipt.get("source_episode_ref") != binding["source_episode_ref"]
+            or receipt.get("actor_id") != operation["actor_id"]
+            or receipt.get("slot_id") != operation["slot_id"]
+            or receipt.get("episode_version") != operation["expected_version"] + 1
+            or receipt.get("status") != "STAFF_CHANGED_AWAITING_PATIENT"
+            or receipt.get("record_owner") != "clinic_api"
+        ):
+            raise ValueError("Source receipt binding mismatch")
+        return receipt
 
     def confirm(self, binding, operation):
         name = "record_simulated_confirmation"
+        if binding.get("source_episode_ref", "").startswith("bridge:"):
+            if self.factory is None:
+                return self.failure(name, "SOURCE_INVALID", False)
+            from forget_lah.bridge_source import bridge_confirm
+
+            return bridge_confirm(self.factory, binding, operation)
         if not self.followup_key:
             return self.failure(name, "SOURCE_INVALID", False)
         episode = quote(binding["source_episode_ref"], safe="")
@@ -119,6 +159,12 @@ class ClinicTools:
             return self.failure(name, "SOURCE_INVALID", False)
 
     def execute(self, tool_name: str, binding: dict) -> ToolResult:
+        if binding.get("source_episode_ref", "").startswith("bridge:"):
+            if self.factory is None:
+                return self.failure(tool_name, "SOURCE_INVALID", False)
+            from forget_lah.bridge_source import bridge_tool_result
+
+            return bridge_tool_result(self.factory, binding, tool_name)
         if tool_name not in {
             "read_followup_context",
             "get_approved_instructions",

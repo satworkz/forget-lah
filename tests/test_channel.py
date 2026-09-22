@@ -800,3 +800,22 @@ def test_staff_wait_notice_reflects_ownership_and_cancellation(channel, owned):
         assert "not been cancelled yet" in message
         assert db.get(AgentRun, run_id).status == "escalated"
         assert db.scalar(select(ChannelInbox)).status == "needs_staff"
+
+
+def test_staff_instruction_review_defers_reply_until_conversation_restored(channel):
+    client, factory, settings, case_id, run_id = channel
+    with factory.begin() as db:
+        run = db.get(AgentRun, run_id)
+        original = run.checkpoint
+        run.checkpoint = {**original, "staff_review_restore": {"checkpoint": original}}
+        run.status, run.available_at = "paused", None
+    post(client, settings)
+    ingest_one(factory)
+    with factory.begin() as db:
+        assert db.scalar(select(ChannelInbox)).status == "queued"
+        assert db.scalar(select(func.count()).select_from(SimulatedMessage)) == 0
+        run = db.get(AgentRun, run_id)
+        run.checkpoint, run.status = original, "waiting"
+    ingest_one(factory)
+    with factory() as db:
+        assert db.scalar(select(ChannelInbox)).status == "processed"

@@ -2,12 +2,14 @@ import json
 import re
 from datetime import UTC, datetime, timedelta
 
+from sqlalchemy import select
 from test_patient_simulation import simulated_runtime as simulated_runtime
 from test_patient_simulation import source_count
 from test_runtime import drain, event, start, view
 from test_simulator import ADMIN, episode_body, new_slot
 from test_simulator import simulator as simulator
 
+from forget_lah.runtime.models import AgentStep
 from forget_lah.runtime.provider import MockModel, ModelReply
 
 
@@ -555,3 +557,279 @@ def test_preparation_question_prompt_preserves_scheduling_contract():
     assert "still return the complete scheduling_review required above" in prompt
     assert "non-clinical administrative question" in prompt
     assert "after-appointment effect/restriction" in prompt
+
+
+class FailIfModelSeesClosedInstructionAnswer(DoctorActionModel):
+    """Prove exact closed answers are handled by protocol code, not the LLM."""
+
+    def decide(self, obs, **kwargs):
+        if obs["role"] == "coordinator" and obs.get("simulation", {}).get("instruction_check"):
+            raise AssertionError("Exact closed instruction answer should not call the model")
+        return super().decide(obs, **kwargs)
+
+
+def test_exact_yes_to_pending_instruction_check_is_deterministic(simulated_runtime):
+    runtime, tools, source, source_engine = simulated_runtime
+    set_note(source, "DEMO-ANTENATAL-VISIT-01", SCAN_NOTE)
+    case, _ = start(runtime, "antenatal")
+    drain(runtime, tools=tools)
+    event(runtime[1], case, "demo_reply", "I confirm my attendance").raise_for_status()
+    drain(runtime, tools=tools, model=scan_model())
+
+    model = FailIfModelSeesClosedInstructionAnswer(
+        condition_quote=SCAN_CONDITION,
+        question="Have you completed the mandatory scan advised before this appointment?",
+        if_not_met="RESCHEDULE",
+        consequence_quote=SCAN_CONSEQUENCE,
+    )
+    event(runtime[1], case, "demo_reply", "yes").raise_for_status()
+    drain(runtime, tools=tools, model=model)
+    result = view(runtime[1], case)
+    assert result["run"]["status"] == "completed", result
+    assert source_count(source_engine) == 1
+
+    with runtime[0]() as db:
+        decisions = [
+            step
+            for step in db.scalars(
+                select(AgentStep)
+                .where(AgentStep.run_id == result["run"]["id"])
+                .order_by(AgentStep.sequence)
+            )
+            if (step.decision or {}).get("step_type") == "INTERPRET_INSTRUCTION_CHECK"
+        ]
+    assert decisions
+    latest = decisions[-1]
+    assert latest.origin == "rule"
+    assert latest.decision["outcome"] == "MET"
+
+
+def test_exact_no_to_pending_instruction_check_is_deterministic(simulated_runtime):
+    runtime, tools, source, source_engine = simulated_runtime
+    set_note(source, "DEMO-ANTENATAL-VISIT-01", SCAN_NOTE)
+    add_antenatal_slot(source)
+    case, _ = start(runtime, "antenatal")
+    drain(runtime, tools=tools)
+    event(runtime[1], case, "demo_reply", "I confirm my attendance").raise_for_status()
+    drain(runtime, tools=tools, model=scan_model())
+
+    model = FailIfModelSeesClosedInstructionAnswer(
+        condition_quote=SCAN_CONDITION,
+        question="Have you completed the mandatory scan advised before this appointment?",
+        if_not_met="RESCHEDULE",
+        consequence_quote=SCAN_CONSEQUENCE,
+    )
+    event(runtime[1], case, "demo_reply", "no").raise_for_status()
+    drain(runtime, tools=tools, model=model)
+    result = view(runtime[1], case)
+    assert result["run"]["status"] == "waiting", result
+    assert result["patient_simulator"]["messages"][-1]["kind"] == "options"
+    assert source_count(source_engine) == 0
+
+    with runtime[0]() as db:
+        decisions = [
+            step
+            for step in db.scalars(
+                select(AgentStep)
+                .where(AgentStep.run_id == result["run"]["id"])
+                .order_by(AgentStep.sequence)
+            )
+            if (step.decision or {}).get("step_type") == "INTERPRET_INSTRUCTION_CHECK"
+        ]
+    assert decisions
+    latest = decisions[-1]
+    assert latest.origin == "rule"
+    assert latest.decision["outcome"] == "NOT_MET"
+
+
+def test_closed_binary_protocol_parser_refuses_rich_replies():
+    from forget_lah.runtime.simulation import closed_binary_answer
+
+    assert closed_binary_answer("yes") == "YES"
+    assert closed_binary_answer("YES!") == "YES"
+    assert closed_binary_answer("no") == "NO"
+    assert closed_binary_answer("not yet") == "NO"
+    assert closed_binary_answer("yes, but I have chest pain") is None
+    assert closed_binary_answer("I think so") is None
+    assert closed_binary_answer("still not sure") is None
+
+
+class SlotSearchDoctorActionModel(DoctorActionModel):
+    """Replay the live CHANGE -> SEARCH_SLOTS path plus doctor-note extraction."""
+
+    def decide(self, obs, **kwargs):
+        event = obs["latest_event"]
+        if (
+            obs["role"] == "coordinator"
+            and event.get("kind") == "demo_reply"
+            and event.get("content") == "available slots pls"
+            and not obs.get("needs_reviewed")
+        ):
+            return ModelReply(
+                json.dumps(
+                    {
+                        "request_id": obs["request_id"],
+                        "expected_case_version": obs["expected_case_version"],
+                        "step_type": "REVIEW_NEEDS",
+                        "reason_code": "PATIENT_NEEDS_REVIEWED",
+                        "reply_event_id": event.get("reply_event_id", event["id"]),
+                        "updates": [],
+                        "patient_questions": [],
+                        "preparation_plans": [],
+                        "appointment_intent": "CHANGE",
+                        "appointment_request_quote": event["content"],
+                        "question": None,
+                        "comprehension_quote": None,
+                        "concern_quote": None,
+                    }
+                )
+            )
+        if (
+            obs["role"] == "coordinator"
+            and obs.get("needs_reviewed")
+            and obs.get("barriers", {}).get("reply_event_id")
+            != event.get("reply_event_id", event.get("id"))
+        ):
+            return ModelReply(
+                json.dumps(
+                    {
+                        "request_id": obs["request_id"],
+                        "expected_case_version": obs["expected_case_version"],
+                        "step_type": "ASSESS_BARRIERS",
+                        "reason_code": "PATIENT_BARRIERS_REVIEWED",
+                        "reply_event_id": event.get("reply_event_id", event["id"]),
+                        "evidence_quotes": [event["content"]],
+                        "earliest_minute": None,
+                        "latest_minute": None,
+                        "weekdays": [],
+                        "requested_date": None,
+                        "date_from": None,
+                        "date_to": None,
+                        "clarification_question": None,
+                        "excluded_minutes": [],
+                        "rejects_current_offer": False,
+                        "concern_quote": None,
+                        "remember_exclusions": False,
+                        "preparation_issue": "NONE",
+                        "clarification_reason": "NONE",
+                        "next_action": "SEARCH_SLOTS",
+                    }
+                )
+            )
+        return super().decide(obs, **kwargs)
+
+
+def slot_search_scan_model():
+    return SlotSearchDoctorActionModel(
+        condition_quote=SCAN_CONDITION,
+        question="Have you completed the mandatory scan advised before this appointment?",
+        if_not_met="RESCHEDULE",
+        consequence_quote=SCAN_CONSEQUENCE,
+    )
+
+
+def test_exact_yes_resumes_suspended_slot_search_without_reprocessing_child_reply(
+    simulated_runtime,
+):
+    """A prerequisite answer is a child protocol turn, not a new patient request."""
+    runtime, tools, source, source_engine = simulated_runtime
+    set_note(source, "DEMO-ANTENATAL-VISIT-01", SCAN_NOTE)
+    alt = add_antenatal_slot(source)
+    case, _ = start(runtime, "antenatal")
+    drain(runtime, tools=tools)
+
+    event(runtime[1], case, "demo_reply", "available slots pls").raise_for_status()
+    drain(runtime, tools=tools, model=slot_search_scan_model())
+    result = view(runtime[1], case)
+    assert result["run"]["status"] == "waiting", result
+    assert result["patient_simulator"]["messages"][-1]["kind"] == "doctor_instruction_check"
+
+    model = slot_search_scan_model()
+    event(runtime[1], case, "demo_reply", "yes").raise_for_status()
+    drain(runtime, tools=tools, model=model)
+    result = view(runtime[1], case)
+
+    assert result["run"]["status"] == "waiting", result
+    assert result["handoff"] is None
+    offer = result["patient_simulator"]["messages"][-1]
+    assert offer["kind"] == "options", result
+    assert alt in [slot["id"] for slot in offer["evidence"]["slots"]]
+    assert source_count(source_engine) == 0
+    assert (
+        sum(
+            message["kind"] == "doctor_instruction_check"
+            for message in result["patient_simulator"]["messages"]
+        )
+        == 1
+    )
+
+    with runtime[0]() as db:
+        steps = list(
+            db.scalars(
+                select(AgentStep)
+                .where(AgentStep.run_id == result["run"]["id"])
+                .order_by(AgentStep.sequence)
+            )
+        )
+    child_steps = [
+        step for step in steps if step.observation.get("latest_event", {}).get("content") == "yes"
+    ]
+    assert any(
+        step.origin == "rule"
+        and (step.decision or {}).get("step_type") == "INTERPRET_INSTRUCTION_CHECK"
+        and (step.decision or {}).get("outcome") == "MET"
+        for step in child_steps
+    )
+    assert not any(
+        (step.decision or {}).get("step_type") in {"REVIEW_NEEDS", "ASSESS_BARRIERS"}
+        for step in child_steps
+    )
+
+
+def test_exact_no_resumes_doctor_authorized_reschedule_without_reprocessing_child_reply(
+    simulated_runtime,
+):
+    runtime, tools, source, source_engine = simulated_runtime
+    set_note(source, "DEMO-ANTENATAL-VISIT-01", SCAN_NOTE)
+    alt = add_antenatal_slot(source)
+    case, _ = start(runtime, "antenatal")
+    drain(runtime, tools=tools)
+
+    event(runtime[1], case, "demo_reply", "I confirm my attendance").raise_for_status()
+    drain(runtime, tools=tools, model=scan_model())
+    assert (
+        view(runtime[1], case)["patient_simulator"]["messages"][-1]["kind"]
+        == "doctor_instruction_check"
+    )
+
+    model = FailIfModelSeesClosedInstructionAnswer(
+        condition_quote=SCAN_CONDITION,
+        question="Have you completed the mandatory scan advised before this appointment?",
+        if_not_met="RESCHEDULE",
+        consequence_quote=SCAN_CONSEQUENCE,
+    )
+    event(runtime[1], case, "demo_reply", "no").raise_for_status()
+    drain(runtime, tools=tools, model=model)
+    result = view(runtime[1], case)
+
+    assert result["run"]["status"] == "waiting", result
+    assert result["handoff"] is None
+    offer = result["patient_simulator"]["messages"][-1]
+    assert offer["kind"] == "options", result
+    assert alt in [slot["id"] for slot in offer["evidence"]["slots"]]
+    assert source_count(source_engine) == 0
+
+    with runtime[0]() as db:
+        child_steps = [
+            step
+            for step in db.scalars(
+                select(AgentStep)
+                .where(AgentStep.run_id == result["run"]["id"])
+                .order_by(AgentStep.sequence)
+            )
+            if step.observation.get("latest_event", {}).get("content") == "no"
+        ]
+    assert not any(
+        (step.decision or {}).get("step_type") in {"REVIEW_NEEDS", "ASSESS_BARRIERS"}
+        for step in child_steps
+    )

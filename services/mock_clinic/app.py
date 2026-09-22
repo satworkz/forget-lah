@@ -48,6 +48,9 @@ def create_app(settings=None, engine=None):
     from services.mock_clinic.confirmations import install_confirmation_routes
 
     install_confirmation_routes(app, factory, settings)
+    from services.mock_clinic.staff_changes import install_staff_changes
+
+    install_staff_changes(app, factory, settings)
 
     @app.middleware("http")
     async def secure_admin(request: Request, call_next):
@@ -67,7 +70,7 @@ def create_app(settings=None, engine=None):
     def health():
         try:
             with factory() as db:
-                if db.scalar(text("SELECT version_num FROM alembic_version")) != "sim0003":
+                if db.scalar(text("SELECT version_num FROM alembic_version")) != "sim0004":
                     raise ValueError("Migration required")
             return {"status": "ok", "synthetic": True}
         except Exception as exc:

@@ -13,6 +13,7 @@ from sqlalchemy import select, text
 
 from forget_lah.agents import AGENT_CATALOG
 from forget_lah.auth import authenticate, digest, session_principal
+from forget_lah.bridge import install_bridge_routes
 from forget_lah.channel import WEBHOOK, install_channel_routes
 from forget_lah.db import (
     AuditEvent,
@@ -23,12 +24,11 @@ from forget_lah.db import (
     make_engine,
     session_factory,
 )
-from forget_lah.demo_reset import install_demo_routes, reset_enabled
+from forget_lah.demo_reset import demo_reset_cases, install_demo_routes, reset_enabled
 from forget_lah.runtime.models import AgentRun
 from forget_lah.runtime.routes import install_routes, latest_run
 from forget_lah.settings import Settings
 from forget_lah.simulator import install_simulator_routes
-from forget_lah.source import DEMO_CLINIC_ID
 
 
 class LoginInput(BaseModel):
@@ -67,7 +67,7 @@ class LoginLimiter:
             return True
 
 
-def create_app(settings: Settings | None = None, engine=None) -> FastAPI:
+def create_app(settings: Settings | None = None, engine=None, bridge_analyzer=None) -> FastAPI:
     settings = settings or Settings()
     owns_engine = engine is None
     engine = engine or make_engine(settings.database_url.get_secret_value())
@@ -142,7 +142,7 @@ def create_app(settings: Settings | None = None, engine=None) -> FastAPI:
     def ready():
         try:
             with factory() as db:
-                if db.scalar(text("SELECT version_num FROM alembic_version")) != "0010":
+                if db.scalar(text("SELECT version_num FROM alembic_version")) != "0015":
                     raise ValueError("Agent migration is required")
                 db.execute(select(Clinic.id).limit(1))
                 db.execute(select(AgentRun.id).limit(1))
@@ -200,10 +200,25 @@ def create_app(settings: Settings | None = None, engine=None) -> FastAPI:
         with factory() as db:
             _, _, clinics = authorise(db, request)
             demo_reset = reset_enabled(settings, clinics)
-            demo_case_ids = (
+            demo_case_ids = [case.id for case in demo_reset_cases(db)] if demo_reset else []
+            from forget_lah.db import BridgeIntakeBatch
+            from forget_lah.source import DEMO_CLINIC_ID
+
+            intake_case_ids = (
+                [
+                    case.id
+                    for case in demo_reset_cases(db, include_intake=True)
+                    if case.id not in demo_case_ids
+                ]
+                if demo_reset
+                else []
+            )
+            intake_batch_ids = (
                 list(
                     db.scalars(
-                        select(FollowupCase.id).where(FollowupCase.clinic_id == DEMO_CLINIC_ID)
+                        select(BridgeIntakeBatch.id).where(
+                            BridgeIntakeBatch.clinic_id == DEMO_CLINIC_ID
+                        )
                     )
                 )
                 if demo_reset
@@ -212,6 +227,8 @@ def create_app(settings: Settings | None = None, engine=None) -> FastAPI:
         return {
             "demo_reset_enabled": demo_reset,
             "demo_reset_case_ids": demo_case_ids,
+            "demo_reset_intake_case_ids": intake_case_ids,
+            "demo_reset_intake_batch_ids": intake_batch_ids,
             "milestone": "M2a agent runtime",
             "data_mode": "synthetic",
             "model_mode": settings.agent_model_mode,
@@ -285,7 +302,11 @@ def create_app(settings: Settings | None = None, engine=None) -> FastAPI:
             ]
 
     install_routes(app, factory, settings, authorise)
+    from forget_lah.staff_changes import install_staff_change_routes
+
+    install_staff_change_routes(app, factory, settings, authorise)
     install_channel_routes(app, factory, settings, authorise)
+    install_bridge_routes(app, factory, settings, authorise, analyzer=bridge_analyzer)
     install_demo_routes(app, factory, settings, authorise)
     install_simulator_routes(app, factory, settings, authorise)
     return app

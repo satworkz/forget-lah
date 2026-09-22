@@ -8,6 +8,7 @@ import httpx
 from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import SQLAlchemyError
 
+from forget_lah.bridge import bridge_candidate_groups
 from forget_lah.channel import channel_tick
 from forget_lah.db import AuditEvent, FollowupCase, Job, make_engine, session_factory, uid, utcnow
 from forget_lah.detector import detect
@@ -125,6 +126,13 @@ def worker_tasks(factory, settings):
                     log.info("synthetic_cases_created=%s", created)
             except (httpx.HTTPError, ValueError) as exc:
                 log.warning("source_poll_failed error_type=%s", type(exc).__name__)
+            for clinic_id, candidates in bridge_candidate_groups(factory):
+                try:
+                    created = detect(factory, clinic_id, candidates)
+                    if created:
+                        log.info("bridge_cases_created=%s clinic_id=%s", created, clinic_id)
+                except ValueError as exc:
+                    log.warning("bridge_source_poll_failed error_type=%s", type(exc).__name__)
         for _ in range(50):
             claim = claim_job(factory)
             if not claim:

@@ -17,6 +17,7 @@ from services.mock_clinic.store import (
     can_book_followup,
     confirmation_dict,
     envelope,
+    release_owned_slot,
 )
 
 
@@ -112,26 +113,7 @@ def install_confirmation_routes(app, factory, settings):
             ):
                 raise HTTPException(409, "Recall or slot changed; review current availability")
             if rescheduling:
-                # Release only a slot whose ownership is proven by a source booking receipt
-                # for this exact episode revision. Imported appointments have no such proof.
-                previous = db.scalar(
-                    select(Confirmation)
-                    .where(
-                        Confirmation.episode_ref == episode,
-                        Confirmation.episode_version == row.version,
-                        Confirmation.scheduled_at == row.scheduled_at,
-                        Confirmation.booking_slot_id.is_not(None),
-                    )
-                    .order_by(Confirmation.confirmed_at.desc())
-                )
-                old_slot = db.get(Slot, previous.booking_slot_id) if previous else None
-                if (
-                    old_slot
-                    and not old_slot.available
-                    and old_slot.version == previous.booking_slot_version + 1
-                ):
-                    old_slot.available = True
-                    old_slot.version += 1
+                release_owned_slot(db, row)
             slot.available = False
             slot.version += 1
             row.record_type, row.source_status = "appointment", "scheduled"

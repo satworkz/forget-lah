@@ -1,5 +1,7 @@
 # forget-lah: database design and integrity
 
+**Implemented Bridge ownership (21 September):** imported appointments and follow-up records live in Forget-lah. `bridge_confirmation` (migration `0013`) preserves an idempotent receipt bound to the clinic/case/run, imported row, source version and patient-reply operation ID. Migration `0014` adds `bridge_episode` (current normalized follow-up state, version, status) and `bridge_followup_slot` (reserved alternatives scoped by clinic and episode). Approved imports backfill once. Duplicate imports cannot overwrite later managed changes. Row locks and source/slot versions protect each operation. Upload provenance remains intact. Demo reset can explicitly clear these imported records and their history; the confirmation UI selects this option by default. Staff may uncheck it to preserve imports. Deletion is scoped to the demo clinic and checks the displayed case/batch snapshot. The mock-clinic database remains separate and represents an existing external appointment system.
+
 10 September 2026 | v2.0 | Proposed schema, not executed SQL or applied migrations
 
 ## 1. Database purpose
@@ -48,7 +50,7 @@ One clinic with three specialties is the main demo. Seed an additional isolated 
 
 `id uuid PK; clinic_id uuid; mode text [api, import]; name text; capabilities jsonb; config_ref text; active boolean; freshness_limit_seconds integer; created_at timestamptz; updated_at timestamptz`.
 
-Capabilities follow Guide 01; credentials are referenced, never embedded in config. API endpoints come from operator-reviewed configuration, never uploaded patient data or model output. Import mode cannot advertise slot search/book/reschedule. Changing capabilities is an audited admin operation.
+Capabilities follow Guide 01; credentials are referenced, never embedded in config. API endpoints come from operator-reviewed configuration, never uploaded patient data or model output. Bridge mode advertises supported operations against Forget-lah-owned `bridge_episode` and `bridge_followup_slot` tables; availability must be supplied by staff. Changing capabilities is an audited admin operation.
 
 ### patient_ref and source_patient_link
 

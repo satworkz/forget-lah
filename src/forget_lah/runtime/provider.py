@@ -376,6 +376,17 @@ def decision_formats_for(observation: dict) -> dict:
         formats.pop("ASSESS_BARRIERS", None)
     if observation.get("needs_reviewed"):
         formats.pop("REPORT_SYMPTOMS", None)
+    if observation.get("latest_event", {}).get("kind") == "staff_scheduling_review":
+        formats = {k: v for k, v in formats.items() if k in {"TOOL", "RETURN"}}
+        if "TOOL" in formats:
+            formats["TOOL"] = {
+                "tool_name": [
+                    name
+                    for name in observation["allowed_tools"]
+                    if name
+                    in {"read_followup_context", "get_approved_instructions", "check_prerequisites"}
+                ]
+            }
     return formats
 
 
@@ -450,6 +461,7 @@ def response_schema_for(observation: dict) -> dict:
                 "patient_questions",
                 "preparation_plans",
                 "appointment_request_quote",
+                "attendance_qualification",
             ]
         if kind == "RETURN" and (
             observation["role"] != "preparation" or not observation.get("patient_questions")
@@ -655,6 +667,14 @@ def prompt_for(observation: dict, repair: bool, *, native=False) -> str:
             "When booking_authorized, Engagement FIRST records the selected booking and RETURNs PATIENT_CONFIRMED_ATTENDANCE "
             "with its receipt; Preparation then reads UPDATED notes. Acknowledge and complete as above. "
         )
+    if observation.get("case", {}).get("source_kind") == "bridge_upload":
+        instructions += (
+            " This imported appointment is owned by Forget-lah for a clinic without an appointment system. "
+            "The record_simulated_confirmation tool saves attendance, booking and rescheduling receipts in Forget-lah; "
+            "it does not require an external clinic API. Do not escalate a supported follow-up "
+            "action merely because there is no external system. Respect record_ready and "
+            "all preparation checks. Never invent availability for booking or rescheduling. "
+        )
     if role == "preparation":
         instructions = (
             "You are forget-lah's Preparation agent. Read approved instructions and prerequisites, "
@@ -818,6 +838,7 @@ def prompt_for(observation: dict, repair: bool, *, native=False) -> str:
             "Comprehension repair: if the patient cannot understand our message, requests a simpler explanation or says they cannot understand its language, set comprehension_quote to their exact words. This is not an appointment ambiguity, preparation question or saved practical concern. Do not ask what help they want; the application will restate the current purpose and next step. Keep independent acceptance/questions separate. Use the patient's clearly identified communication language for this visit; future language preference only when explicitly requested. A message written in Tamil saying English is not understood identifies Tamil, so do not ask which language. "
             "No contact: stop future contact without questions; never restore from chat. Explicit named language: emit its preference update even if already saved, question=null, never ask language again; do not exclude other languages unless explicitly rejected. Language-only requests are not patient_questions. Not English with no identifiable supported language: exclude en, set und, ask language. Always late: ask what timing helps; no transport service exists. "
             "appointment_intent CONFIRM/CHANGE needs explicit supporting appointment_request_quote; otherwise UNSPECIFIED. Restrictions alone aren't rescheduling. Use calculated date/weekday to clarify mistaken premises. "
+            "A stated confirmation can still be qualified. If the patient explicitly says they will arrive at a particular clock time for this appointment, arrive a stated number of minutes early/late, or makes attendance depend on an external condition, set attendance_qualification with the smallest exact quote. Use ARRIVAL_TIME with SGT minute-of-day only when the clock time clearly describes arrival for the current appointment; ARRIVAL_OFFSET with a signed number of minutes (positive=late, negative=early); CONDITION for explicit if/unless/dependent attendance without inventing timing. Keep appointment_intent=CONFIRM: application code compares the qualification with the verified source appointment and decides whether confirmation can proceed. Leave attendance_qualification null for unrelated plans/reasons such as a meal, party, transport method or prior-day activity that do not qualify attendance itself. "
             "question is outgoing clarification ONLY for unclear preferences, else null. Never delay independent acceptance for questions/plans. Repeated corrections/complaints: exact concern_quote for apology. No invented booking or missing-history rebuttals. Copy reply_event_id from latest_event.reply_event_id (fallback latest_event.id); a retry event ID is not the patient reply ID. Copy request/version IDs. "
         )
     if observation.get("needs_reviewed"):

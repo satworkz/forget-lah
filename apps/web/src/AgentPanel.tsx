@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api, modelLabel, mutationHeaders } from "./client";
+import { BridgeFollowupOptions, type ManagedFollowup } from "./BridgeFollowupOptions";
 import { PatientPreferences, type Preferences } from "./PatientPreferences";
 
 type Step = {
@@ -27,6 +28,8 @@ type Step = {
   latency_ms: number | null;
 };
 type View = {
+  source_kind: "bridge_upload" | "clinic_api";
+  bridge: ManagedFollowup | null;
   preferences: Preferences;
   plan?: { goal: string; learned: string[]; constraint_source: string; next_action: string; attendance: string; instructions: string; preparation: string; source_prerequisites: string[]; decision_step_id: string | null };
   case_version: number;
@@ -61,6 +64,7 @@ type View = {
     accepted: boolean;
     owner: string | null;
     staff_task_status: string;
+    legacy_bridge_capabilities?: boolean;
     callback?: { status: string; question: string; topic?: string; resolution?: string } | null;
     clinical_review?: { status: string; patient_message: string; symptom_quotes: string[]; attendance_intent: string; attendance_quote?: string | null; resolution?: string } | null;
   } | null;
@@ -205,6 +209,7 @@ export function AgentPanel({
         <p role="status">Loading the latest agent state…</p>
       ) : (
         <>
+          {view.bridge && <BridgeFollowupOptions key={caseId} caseId={caseId} state={view.bridge} reload={() => reloadRef.current()} />}
           {!run && (
             <div className="agent-actions">
               <p role="status">
@@ -240,12 +245,14 @@ export function AgentPanel({
               </section>}
               {view.patient_simulator?.available && <PatientPreferences key={`${caseId}-${view.preferences.updated_at ?? "none"}`} caseId={caseId} version={view.case_version} preferences={view.preferences} onSaved={() => reloadRef.current()} disabled={busy || ["queued", "running"].includes(run.status)} />}
               {view.patient_simulator?.available && ["waiting", "paused", "escalated", "completed"].includes(run.status) && !run.available_at && <div className="agent-actions">
-                <button className="secondary" disabled={busy} onClick={() => void freshSimulation()}>Start fresh simulator test</button>
-                <p className="small">Uses the current clinic records in a new review. Earlier reviews remain in the case journey.</p>
+                <button className="secondary" disabled={busy} onClick={() => void freshSimulation()}>{view.source_kind === "bridge_upload" ? "Start fresh conversation test" : "Start fresh simulator test"}</button>
+                <p className="small">Uses the current appointment records in a new review. Earlier reviews remain in the case journey.</p>
               </div>}
               {(view.patient_simulator?.enabled || conversation.length > 0) && <section className="sim-conversation" aria-label="Patient conversation simulator">
                 <h3>Patient conversation simulator</h3>
-                <p className="small">Local test conversation. Bookings and confirmations update only the synthetic clinic system.</p>
+                <p className="small">{view.source_kind === "bridge_upload"
+                  ? "Test conversation for an imported appointment managed by Forget-lah. Confirmations are saved in Forget-lah. Appointment changes require clinic-provided availability or a staff decision."
+                  : "Local test conversation. Bookings and confirmations update only the synthetic clinic system."}</p>
                 {conversation.map(m => <article key={m.id} className="sim-message">
                   <strong>{m.label}</strong><time>{new Date(m.created_at).toLocaleString()}</time>
                   <p>{m.text}</p>
@@ -315,7 +322,7 @@ export function AgentPanel({
                       : "Staff owner needed"}
                   </strong>
                   <p className="capitalize">
-                    {readable(view.handoff.reason_code)}
+                    {view.handoff.legacy_bridge_capabilities ? "Earlier Bridge confirmation limitation" : readable(view.handoff.reason_code)}
                   </p>
                   {view.handoff.reason_code === "SLOT_SELECTION_CHANGED" && <p>The selected option changed before confirmation. This request did not move the appointment. Review the current alternatives in the conversation and help the patient choose another time.</p>}
                   {view.handoff.reason_code === "NO_AVAILABLE_SLOTS" && <p>The clinic source currently lists no available slots. The existing appointment has not been changed. Staff can help arrange a suitable time.</p>}
@@ -347,7 +354,11 @@ export function AgentPanel({
                     </>}
                   </div>}
                   {view.handoff.reason_code === "CAPABILITY_UNAVAILABLE" && <p>
-                    {view.patient_simulator?.enabled ? "This scenario needs clinic help. Check the tool evidence for an unavailable action, changed slot or preparation issue. The simulator supports recall and missed-appointment follow-up bookings, attendance confirmations and rescheduling future appointments through the clinic API." : "This older review used read-only capabilities. Start a fresh simulator test to exercise attendance confirmation and acknowledgement."}
+                    {view.handoff.legacy_bridge_capabilities
+                      ? "This review stopped before Forget-lah supported confirmation of imported appointments. That support is now available. Start a fresh conversation test above to try the updated flow; this earlier review remains in the case history."
+                      : view.source_kind === "bridge_upload"
+                      ? "Forget-lah manages this imported appointment. Check the saved tool evidence for the action that needs staff help. Confirmations can be recorded in Forget-lah; booking or rescheduling requires clinic-provided availability. A handoff from an earlier review remains part of its history."
+                      : view.patient_simulator?.enabled ? "This scenario needs clinic help. Check the tool evidence for an unavailable action, changed slot or preparation issue. The simulator supports recall and missed-appointment follow-up bookings, attendance confirmations and rescheduling future appointments through the clinic API." : "This older review used read-only capabilities. Start a fresh simulator test to exercise attendance confirmation and acknowledgement."}
                   </p>}
                   {view.handoff.accepted ? (
                     <p>

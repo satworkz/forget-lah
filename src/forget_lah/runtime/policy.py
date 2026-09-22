@@ -72,6 +72,16 @@ def policy_for(db, run, case, step, decision):
         deny = "STALE_OR_WRONG_REQUEST"
     elif step.role != run.active_role:
         deny = "ROLE_CHANGED"
+    elif run.checkpoint.get("staff_review_restore") and not (
+        isinstance(decision, ToolDecision)
+        and decision.tool_name
+        in {"read_followup_context", "get_approved_instructions", "check_prerequisites"}
+        or isinstance(decision, DelegateDecision)
+        and decision.target == "preparation"
+        or isinstance(decision, ReturnDecision)
+        and run.active_role == "preparation"
+    ):
+        deny = "STAFF_REVIEW_READ_ONLY"
     elif (
         isinstance(decision, (ClarifyDecision, BarrierDecision))
         and decision.concern_quote is not None
@@ -121,6 +131,11 @@ def policy_for(db, run, case, step, decision):
             or decision.appointment_request_quote not in reply.content
         ):
             deny = "APPOINTMENT_INTENT_QUOTE_NOT_IN_REPLY"
+        elif decision.attendance_qualification is not None and (
+            not decision.attendance_qualification.quote.strip()
+            or decision.attendance_qualification.quote not in reply.content
+        ):
+            deny = "ATTENDANCE_QUALIFICATION_QUOTE_NOT_IN_REPLY"
         else:
             reasons.append("REPORTED_NEEDS_BOUND_TO_REPLY")
     elif isinstance(decision, ClarifyDecision):
@@ -276,7 +291,11 @@ def policy_for(db, run, case, step, decision):
             else:
                 reasons.append("SYNTHETIC_PATIENT_AND_APPOINTMENT_BOUND")
         else:
-            reasons.append("READ_ONLY_SYNTHETIC_SOURCE")
+            reasons.append(
+                "FORGET_LAH_MANAGED_SOURCE_READ"
+                if case.source_episode_ref.startswith("bridge:")
+                else "READ_ONLY_SYNTHETIC_SOURCE"
+            )
     elif isinstance(decision, DelegateDecision):
         if run.active_role != "coordinator":
             deny = "ONLY_COORDINATOR_CAN_DELEGATE"
