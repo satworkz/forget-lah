@@ -656,6 +656,14 @@ def prompt_for(observation: dict, repair: bool, *, native=False) -> str:
             "When booking_authorized, Engagement FIRST records the selected booking and RETURNs PATIENT_CONFIRMED_ATTENDANCE "
             "with its receipt; Preparation then reads UPDATED notes. Acknowledge and complete as above. "
         )
+    if observation.get("case", {}).get("source_kind") == "bridge_upload":
+        instructions += (
+            " This imported appointment is owned by Forget-lah for a clinic without an appointment system. "
+            "The record_simulated_confirmation tool saves attendance, booking and rescheduling receipts in Forget-lah; "
+            "it does not require an external clinic API. Do not escalate a supported follow-up "
+            "action merely because there is no external system. Respect record_ready and "
+            "all preparation checks. Never invent availability for booking or rescheduling. "
+        )
     if role == "preparation":
         instructions = (
             "You are forget-lah's Preparation agent. Read approved instructions and prerequisites, "

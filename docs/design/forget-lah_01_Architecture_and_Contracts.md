@@ -1,5 +1,7 @@
 # forget-lah: architecture and contracts
 
+**Bridge ownership clarification (21 September):** clinics without an appointment system import records into Forget-lah, which owns their follow-up lifecycle, confirmations and supported booking/rescheduling. Migrations `0013`–`0014` store operation receipts, managed episode state and staff-reserved follow-up options. The clinic API adapter, represented by the mock clinic, is the separate path for clinics with an existing appointment system. Both paths use the same agent, policy and preparation checks; source-specific adapters persist the resulting actions. See [Bridge intake](../BRIDGE_INTAKE.md).
+
 **Current feature reference:** [Feature guide and patient memory](../FEATURE_GUIDE.md) documents implemented behavior, all demo capabilities, preference tests and remaining limitations. Migration `0006` extends time preferences to attributed patient concerns; this supersedes earlier time-only descriptions.
 
 Implementation addendum (16 September): [Adaptive follow-up](../ADAPTIVE_FOLLOWUP.md) adds Coordinator `ASSESS_BARRIERS`, deterministic filtering of source slots, preparation callbacks, an evidence-derived plan panel and explicitly consented time preferences in `patient_preference` (migration `0005`). The existing three-agent delegation and policy boundaries remain. Persistent preferences are editable memory, not model training. The detailed v2.1 design below contains future capabilities that are not all implemented.
@@ -126,9 +128,9 @@ Initial engineering limits: schedule CSV <=5 MB and 500 rows; TXT <=1 MB. Limits
 
 Scanned PDFs/images are a stretch extraction-to-draft flow only, behind file scanning/sandboxed decoding and staff review. The MVP does not accept an unsupported image as if it had been safely interpreted. LLM/OCR text must never auto-create contact permission, clinical instructions or reminders.
 
-Snapshots are revisioned. Each row has a stable source record key; repeat upload is idempotent; conflicting/stale revisions return 409. Missing rows are not cancellations: require an explicit status or a reviewed reconciliation. Pause affected pending actions when schedule/instruction versions change and revalidate acknowledgements. A configurable freshness limit stops outreach using stale sources; 24 hours is only a synthetic-demo setting, not a clinical rule.
+Approved import snapshots remain provenance. Each episode has a stable source record key; repeat upload is idempotent and cannot overwrite Forget-lah-owned state. Missing rows are not cancellations. Managed appointment changes and option changes increment the episode version, so pending choices must be revalidated. Refer to the Bridge intake guide for current formats, limits and implemented staff review fields; the broader publication controls described above are design targets.
 
-No slot search/book/reschedule in import mode. A request to change date becomes a structured preference plus owned staff handoff. Staff resolves by recording the result from the real clinic workflow and publishing a new source snapshot. UI contains imports, cases, responses and handoffs; no drag-and-drop booking calendar, slot editor or patient chart.
+Bridge implements the same logical appointment-source interface in Forget-lah PostgreSQL. Approved import provenance is preserved; mutable episode state, confirmations, follow-up status and supported bookings/rescheduling belong to Bridge. Staff supply reserved alternatives scoped to a patient episode. The gateway validates current versions, patient consent and preparation requirements before the adapter atomically records a choice. Missing an external clinic API is not a capability failure. Missing safe options or unresolved clinical requirements may still require staff. Bridge never reads or writes mock-clinic tables. UI remains scoped to follow-up cases and their options, with no general appointment calendar or patient chart.
 
 ## 6. Patient PWA and channels
 

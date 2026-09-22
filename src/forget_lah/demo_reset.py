@@ -17,13 +17,25 @@ from forget_lah.channel_models import (
     ChannelOutbox,
     ChannelRoutingState,
 )
-from forget_lah.db import AuditEvent, FollowupCase, Job, Patient, utcnow
+from forget_lah.db import (
+    AuditEvent,
+    BridgeEpisode,
+    BridgeFollowupSlot,
+    BridgeImportProfile,
+    BridgeIntakeBatch,
+    BridgeIntakeRecord,
+    FollowupCase,
+    Job,
+    Patient,
+    utcnow,
+)
 from forget_lah.detector import save_candidate, trigger_for
 from forget_lah.runtime.models import (
     AgentDelegation,
     AgentEvent,
     AgentRun,
     AgentStep,
+    BridgeConfirmation,
     PatientMemory,
     PatientPreference,
     SimulatedMessage,
@@ -56,7 +68,9 @@ RESET_MODELS = (
 class ResetInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     confirmation: Literal["RESET"]
-    expected_case_ids: list[UUID] = Field(max_length=200)
+    expected_case_ids: list[UUID] = Field(max_length=2000)
+    include_intake: bool = False
+    expected_intake_batch_ids: list[UUID] = Field(default_factory=list, max_length=2000)
 
 
 def reset_enabled(settings, clinics):
@@ -64,6 +78,28 @@ def reset_enabled(settings, clinics):
         settings.demo_reset_enabled
         and settings.app_env in {"local", "test", "demo"}
         and DEMO_CLINIC_ID in clinics
+    )
+
+
+def demo_reset_cases(db, *, include_intake=False):
+    """Exclude imported cases only when their clinic/patient/episode provenance matches."""
+    if include_intake:
+        return list(
+            db.scalars(select(FollowupCase).where(FollowupCase.clinic_id == DEMO_CLINIC_ID))
+        )
+    imported = (
+        select(BridgeIntakeRecord.id)
+        .where(
+            BridgeIntakeRecord.clinic_id == FollowupCase.clinic_id,
+            BridgeIntakeRecord.patient_id == FollowupCase.patient_id,
+            BridgeIntakeRecord.source_episode_ref == FollowupCase.source_episode_ref,
+            BridgeIntakeRecord.status == "IMPORTED",
+            FollowupCase.source_episode_ref.startswith("bridge:"),
+        )
+        .exists()
+    )
+    return list(
+        db.scalars(select(FollowupCase).where(FollowupCase.clinic_id == DEMO_CLINIC_ID, ~imported))
     )
 
 
@@ -102,6 +138,12 @@ def lock_reset_tables(db):
                 ChannelInbox,
                 ChannelOutbox,
                 ChannelRoutingState,
+                BridgeIntakeRecord,
+                BridgeIntakeBatch,
+                BridgeImportProfile,
+                BridgeEpisode,
+                BridgeFollowupSlot,
+                BridgeConfirmation,
                 *RESET_MODELS,
             )
         )
@@ -113,65 +155,157 @@ def lock_reset_tables(db):
         raise HTTPException(409, "Demo reset is unavailable for this database")
 
 
-def reset_demo(db, expected_case_ids, candidates):
+def reset_demo(
+    db, expected_case_ids, candidates, *, include_intake=False, expected_intake_batch_ids=()
+):
     """Caller holds reset locks and commits deletion/recreation together."""
     validate_candidates(candidates)
-    cases = list(db.scalars(select(FollowupCase).where(FollowupCase.clinic_id == DEMO_CLINIC_ID)))
+    if include_intake:
+        batch_ids = set(
+            db.scalars(
+                select(BridgeIntakeBatch.id).where(BridgeIntakeBatch.clinic_id == DEMO_CLINIC_ID)
+            )
+        )
+        if set(expected_intake_batch_ids) != batch_ids:
+            raise HTTPException(409, "Intelligent Intake changed. Refresh before resetting.")
+    cases = demo_reset_cases(db, include_intake=include_intake)
     if set(expected_case_ids) != {c.id for c in cases} or len(set(expected_case_ids)) != len(
         expected_case_ids
     ):
         raise HTTPException(
             409, "Demo cases changed. Refresh the dashboard before resetting again."
         )
-    patients = list(db.scalars(select(Patient).where(Patient.clinic_id == DEMO_CLINIC_ID)))
+    case_ids = {case.id for case in cases}
+    imported_patient_ids = set(
+        db.scalars(
+            select(BridgeIntakeRecord.patient_id).where(
+                BridgeIntakeRecord.clinic_id == DEMO_CLINIC_ID,
+                BridgeIntakeRecord.status == "IMPORTED",
+                BridgeIntakeRecord.patient_id.is_not(None),
+            )
+        )
+    )
+    patients = list(
+        db.scalars(
+            select(Patient).where(
+                Patient.clinic_id == DEMO_CLINIC_ID,
+                Patient.id.not_in(imported_patient_ids) if not include_intake else True,
+            )
+        )
+    )
+    patient_ids = {patient.id for patient in patients}
     source_patients = {c.source_episode_ref: str(c.patient_id) for c in candidates}
-    if any(
-        c.source_episode_ref not in source_patients
-        or c.patient_id != source_patients[c.source_episode_ref]
-        for c in cases
-    ) or any(
-        p.id not in source_patients.values() or not p.display_alias.endswith("(demo)")
-        for p in patients
+    imported_pairs = set(
+        db.execute(
+            select(BridgeIntakeRecord.patient_id, BridgeIntakeRecord.source_episode_ref).where(
+                BridgeIntakeRecord.clinic_id == DEMO_CLINIC_ID,
+                BridgeIntakeRecord.status == "IMPORTED",
+            )
+        )
+    )
+    if (
+        imported_patient_ids.intersection(source_patients.values())
+        or any(
+            (
+                c.source_episode_ref not in source_patients
+                or c.patient_id != source_patients[c.source_episode_ref]
+            )
+            and not (
+                include_intake
+                and c.source_episode_ref.startswith("bridge:")
+                and (c.patient_id, c.source_episode_ref) in imported_pairs
+            )
+            for c in cases
+        )
+        or any(
+            (p.id not in source_patients.values() or not p.display_alias.endswith("(demo)"))
+            and not (include_intake and p.id in imported_patient_ids)
+            for p in patients
+        )
     ):
         raise HTTPException(409, "Unexpected records found in the demo clinic. Nothing was reset.")
     if db.scalar(
         select(AgentRun.id)
-        .where(AgentRun.clinic_id == DEMO_CLINIC_ID, AgentRun.status.in_(["queued", "running"]))
+        .where(
+            AgentRun.clinic_id == DEMO_CLINIC_ID,
+            AgentRun.case_id.in_(case_ids),
+            AgentRun.status.in_(["queued", "running"]),
+        )
         .limit(1)
     ):
         raise HTTPException(
             409, "A review is queued or processing. Pause active reviews, then reset."
         )
-    if db.scalar(select(ChannelOutbox.id).where(ChannelOutbox.status == "sending").limit(1)):
+    if db.scalar(
+        select(ChannelOutbox.id)
+        .where(
+            ChannelOutbox.clinic_id == DEMO_CLINIC_ID,
+            ChannelOutbox.case_id.in_(case_ids),
+            ChannelOutbox.status == "sending",
+        )
+        .limit(1)
+    ):
         raise HTTPException(409, "A WhatsApp dispatch is in progress. Wait before resetting.")
     # Preserve explicit patient enrollment, never infer it from a name or phone.
     enrolled = []
+    routing_ids = []
     by_id = {case.id: case for case in cases}
     for binding in db.scalars(
-        select(ChannelBinding).where(ChannelBinding.clinic_id == DEMO_CLINIC_ID)
+        select(ChannelBinding).where(
+            ChannelBinding.clinic_id == DEMO_CLINIC_ID, ChannelBinding.case_id.in_(case_ids)
+        )
     ):
+        routing_ids.append(binding.id)
         anchor = by_id.get(binding.case_id)
         if binding.enabled and anchor:
             enrolled.append((binding.id, anchor.patient_id, anchor.source_episode_ref))
         binding.enabled = False
     for message in db.scalars(
-        select(ChannelOutbox).where(ChannelOutbox.clinic_id == DEMO_CLINIC_ID)
+        select(ChannelOutbox).where(
+            ChannelOutbox.clinic_id == DEMO_CLINIC_ID, ChannelOutbox.case_id.in_(case_ids)
+        )
     ):
         message.body = ""
         if message.status == "queued":
             message.status = "canceled"
     for incoming in db.scalars(
-        select(ChannelInbox).where(ChannelInbox.clinic_id == DEMO_CLINIC_ID)
+        select(ChannelInbox).where(
+            ChannelInbox.clinic_id == DEMO_CLINIC_ID, ChannelInbox.case_id.in_(case_ids)
+        )
     ):
+        routing_ids.append(incoming.sid)
         incoming.body = ""
         if incoming.status == "queued":
             incoming.status = "reset"
     # Provider SID tombstones remain to reject redelivery after reset. Old case IDs
     # remain historical; only the binding moves to the same patient in the new generation.
     deleted = {}
+    if include_intake:
+        for model in (
+            BridgeConfirmation,
+            BridgeFollowupSlot,
+            BridgeEpisode,
+            BridgeIntakeRecord,
+            BridgeImportProfile,
+            BridgeIntakeBatch,
+        ):
+            deleted[model.__tablename__] = db.execute(
+                delete(model).where(model.clinic_id == DEMO_CLINIC_ID),
+                execution_options={"synchronize_session": False},
+            ).rowcount
     for model in RESET_MODELS:
+        if model is ChannelRoutingState:
+            scope = model.id.in_(routing_ids)
+        elif model is Patient:
+            scope = model.id.in_(patient_ids)
+        elif model in (PatientMemory, PatientPreference):
+            scope = model.patient_id.in_(patient_ids)
+        else:
+            scope = (
+                model.case_id.in_(case_ids) if model is not FollowupCase else model.id.in_(case_ids)
+            )
         deleted[model.__tablename__] = db.execute(
-            delete(model).where(model.clinic_id == DEMO_CLINIC_ID),
+            delete(model).where(model.clinic_id == DEMO_CLINIC_ID, scope),
             execution_options={"synchronize_session": False},
         ).rowcount
     db.expunge_all()
@@ -236,7 +370,13 @@ def install_demo_routes(app, factory, settings, authorise):
             with factory.begin() as db:
                 lock_reset_tables(db)
                 authorised(db, request)
-                result = reset_demo(db, [str(i) for i in body.expected_case_ids], candidates)
+                result = reset_demo(
+                    db,
+                    [str(i) for i in body.expected_case_ids],
+                    candidates,
+                    include_intake=body.include_intake,
+                    expected_intake_batch_ids=[str(i) for i in body.expected_intake_batch_ids],
+                )
             return result
         except DBAPIError as exc:
             if getattr(exc.orig, "sqlstate", None) != "55P03":

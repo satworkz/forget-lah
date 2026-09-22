@@ -536,6 +536,7 @@ class ToolResult(StrictModel):
             "SOURCE_NOT_FOUND",
             "SOURCE_CONFLICT",
             "SOURCE_READ_ONLY",
+            "CONFIRMATION_EVIDENCE_REQUIRED",
         ]
         | None
     )

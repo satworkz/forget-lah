@@ -140,7 +140,7 @@ def upload_csv(client):
     )
 
 
-def test_bridge_analyse_preview_then_approve_creates_read_only_followups(store):
+def test_bridge_analyse_preview_then_approve_creates_managed_followups(store):
     analyzer = FakeBridgeAnalyzer()
     client = bridge_client(store, analyzer)
     try:
@@ -187,12 +187,14 @@ def test_bridge_analyse_preview_then_approve_creates_read_only_followups(store):
         context = tools.execute("read_followup_context", binding)
         assert context.status == "succeeded"
         assert context.data["source_kind"] == "bridge_upload"
+        assert context.data["record_owner"] == "forget_lah"
+        assert context.data["can_simulate_confirmation"] is True
         assert context.data["can_write_appointments"] is False
         instructions = tools.execute("get_approved_instructions", binding)
         assert instructions.status == "succeeded"
         assert instructions.data["instructions"][0]["approved_text"] == "Bring the referral letter."
         write = tools.confirm(binding, {"operation_id": "x", "run_id": "y"})
-        assert write.status == "failed" and write.error_code == "SOURCE_READ_ONLY"
+        assert write.status == "failed" and write.error_code == "SOURCE_INVALID"
     finally:
         client.__exit__(None, None, None)
 

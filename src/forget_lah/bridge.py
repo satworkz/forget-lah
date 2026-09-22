@@ -3,7 +3,7 @@
 The Bridge intentionally lives in the forget-lah database and never writes to the
 mock-clinic schema. Uploaded files are interpreted into a bounded canonical
 follow-up contract, reviewed by staff, then exposed to the existing agent runtime
-as a read-only source.
+as a Forget-lah-owned source with durable follow-up confirmations.
 """
 
 from __future__ import annotations
@@ -28,14 +28,16 @@ from sqlalchemy import delete, select
 
 from forget_lah.auth import digest
 from forget_lah.db import (
+    BridgeEpisode,
     BridgeImportProfile,
     BridgeIntakeBatch,
     BridgeIntakeRecord,
+    Clinic,
     FollowupCase,
     utcnow,
 )
 from forget_lah.detector import detect
-from forget_lah.runtime.contracts import ToolResult, reject_constant, unique_object
+from forget_lah.runtime.contracts import reject_constant, unique_object
 from forget_lah.runtime.provider import ModelError, post_model_json
 from forget_lah.settings import Settings
 from forget_lah.source import Candidate
@@ -122,6 +124,20 @@ class ReviseBatchInput(StrictModel):
 
 class ApproveBatchInput(StrictModel):
     include_review_rows: bool = False
+
+
+class ReviewRecordInput(StrictModel):
+    external_ref: str | None = Field(default=None, max_length=100)
+    patient_name: str = Field(min_length=1, max_length=120)
+    phone: str | None = Field(default=None, max_length=40)
+    appointment_at: str | None = Field(default=None, max_length=40)
+    due_at: str | None = Field(default=None, max_length=40)
+    record_type: Literal["appointment", "recall"]
+    source_status: Literal["scheduled", "no_show", "due", "cancelled", "completed"]
+    specialty: Literal["dental", "myopia", "antenatal", "general"]
+    doctor_notes: str | None = Field(default=None, max_length=600)
+    preferred_language: Literal["en", "zh", "ms", "ta", "und"] = "und"
+    review_note: str | None = Field(default=None, max_length=240)
 
 
 def _clean_cell(value: object) -> str:
@@ -601,6 +617,44 @@ def _validate_record(item: BridgeRecordAnalysis, raw: dict) -> tuple[dict, list[
     return normalized, issues, "READY" if not issues else "REVIEW"
 
 
+def _validate_staff_review(body: ReviewRecordInput, raw: dict) -> tuple[dict, list[str], str]:
+    """Validate a staff correction without turning Bridge into free-form clinical entry.
+
+    Staff may correct administrative normalization. Doctor notes remain source-bound to
+    the uploaded row so a review cannot silently create new clinical instructions.
+    """
+    normalized = {
+        "external_ref": body.external_ref.strip() if body.external_ref else None,
+        "patient_name": body.patient_name.strip(),
+        "phone": body.phone.strip() if body.phone else None,
+        "appointment_at": _normalize_iso(body.appointment_at),
+        "due_at": _normalize_iso(body.due_at),
+        "record_type": body.record_type,
+        "source_status": body.source_status,
+        "specialty": body.specialty,
+        "doctor_notes": _clean_cell(body.doctor_notes) if body.doctor_notes else None,
+        "preferred_language": body.preferred_language,
+    }
+    issues: list[str] = []
+    raw_text = _clean_cell(_cell_text(raw)).casefold()
+    if normalized["doctor_notes"] and normalized["doctor_notes"].casefold() not in raw_text:
+        raise HTTPException(
+            422,
+            "Doctor notes must be copied from the uploaded row (or cleared); staff review cannot invent a clinical instruction",
+        )
+    if body.appointment_at and not normalized["appointment_at"]:
+        issues.append("Appointment date/time is invalid")
+    if body.due_at and not normalized["due_at"]:
+        issues.append("Recall due date is invalid")
+    if body.record_type == "appointment" and body.source_status in {"scheduled", "no_show"}:
+        if not normalized["appointment_at"]:
+            issues.append("Appointment date/time is required for this appointment record")
+    if body.record_type == "recall" and body.source_status == "due" and not normalized["due_at"]:
+        issues.append("Recall due date is required for an overdue recall")
+    issues = list(dict.fromkeys(issues))[:8]
+    return normalized, issues, "READY" if not issues else "REVIEW"
+
+
 def _patient_id(clinic_id: str, normalized: dict) -> str:
     identity = normalized.get("phone") or normalized.get("patient_name") or "unknown"
     return str(uuid5(NAMESPACE_URL, f"forget-lah-bridge:{clinic_id}:{identity.casefold()}"))
@@ -647,9 +701,8 @@ def bridge_candidate_groups(factory) -> list[tuple[str, list[Candidate]]]:
     with factory() as db:
         records = list(
             db.scalars(
-                select(BridgeIntakeRecord)
-                .where(BridgeIntakeRecord.status == "IMPORTED")
-                .order_by(BridgeIntakeRecord.created_at)
+                select(BridgeEpisode)
+                .order_by(BridgeEpisode.updated_at, BridgeEpisode.id)
                 .limit(1000)
             )
         )
@@ -661,80 +714,6 @@ def bridge_candidate_groups(factory) -> list[tuple[str, list[Candidate]]]:
             continue
         grouped.setdefault(record.clinic_id, []).append(candidate)
     return list(grouped.items())
-
-
-def bridge_tool_result(factory, binding: dict, tool_name: str) -> ToolResult:
-    source_ref = binding.get("source_episode_ref", "")
-    if not source_ref.startswith("bridge:"):
-        raise ValueError("Not a Bridge source")
-    with factory() as db:
-        record = db.scalar(
-            select(BridgeIntakeRecord)
-            .where(
-                BridgeIntakeRecord.clinic_id == binding["clinic_id"],
-                BridgeIntakeRecord.source_episode_ref == source_ref,
-                BridgeIntakeRecord.status == "IMPORTED",
-            )
-            .order_by(BridgeIntakeRecord.created_at.desc(), BridgeIntakeRecord.id.desc())
-            .limit(1)
-        )
-        if not record or record.patient_id != binding.get("patient_id"):
-            return ToolResult(
-                tool_name=tool_name,
-                status="failed",
-                source_version=None,
-                data={},
-                error_code="SOURCE_NOT_FOUND",
-                retryable=False,
-            )
-        data = record.normalized
-        batch = db.get(BridgeIntakeBatch, record.batch_id)
-        source_version = f"bridge:{batch.id}:{batch.analysis_version}"
-        if tool_name == "read_followup_context":
-            payload = {
-                "specialty": data.get("specialty") or "general",
-                "source_status": data["source_status"],
-                "scheduled_at": data.get("appointment_at"),
-                "due_at": data.get("due_at"),
-                "can_contact_patient": False,
-                "can_write_appointments": False,
-                "episode_version": batch.analysis_version,
-                "can_simulate_confirmation": False,
-                "can_simulate_booking": False,
-                "can_simulate_rescheduling": False,
-                "available_slots": [],
-                "more_available_slots": False,
-                "source_kind": "bridge_upload",
-            }
-        elif tool_name == "get_approved_instructions":
-            note = (data.get("doctor_notes") or "").strip()
-            payload = {
-                "instructions": (
-                    [
-                        {
-                            "instruction_id": f"BRIDGE-{record.id}",
-                            "version": str(batch.analysis_version),
-                            "locale": "en-SG",
-                            "approved_text": note,
-                            "synthetic": False,
-                        }
-                    ]
-                    if note
-                    else []
-                )
-            }
-        elif tool_name == "check_prerequisites":
-            payload = {"prerequisites": ["NOT_APPLICABLE"]}
-        else:
-            raise ValueError("Tool not supported")
-        return ToolResult(
-            tool_name=tool_name,
-            status="succeeded",
-            source_version=source_version,
-            data=payload,
-            error_code=None,
-            retryable=False,
-        )
 
 
 def _batch_payload(db, batch: BridgeIntakeBatch) -> dict:
@@ -768,6 +747,10 @@ def _batch_payload(db, batch: BridgeIntakeBatch) -> dict:
                 "issues": record.issues,
                 "status": record.status,
                 "source_episode_ref": record.source_episode_ref,
+                "raw": record.raw,
+                "staff_overrides": record.staff_overrides or {},
+                "reviewed_by": record.reviewed_by,
+                "reviewed_at": record.reviewed_at.isoformat() if record.reviewed_at else None,
             }
             for record in records
         ],
@@ -818,6 +801,10 @@ def install_bridge_routes(app, factory, settings: Settings, authorise, analyzer=
         if not secrets.compare_digest(supplied, session.csrf_hash):
             raise HTTPException(403, "Invalid CSRF token")
         return user, clinics
+
+    from forget_lah.bridge_source import install_source_routes
+
+    install_source_routes(app, factory, authorise, mutation_auth)
 
     def clinic_for(clinics: list[str], requested: str | None) -> str:
         if requested:
@@ -935,6 +922,51 @@ def install_bridge_routes(app, factory, settings: Settings, authorise, analyzer=
             db.flush()
             return _batch_payload(db, batch)
 
+    @app.post("/api/bridge/batches/{batch_id}/records/{record_id}/review")
+    def review_record(batch_id: str, record_id: str, body: ReviewRecordInput, request: Request):
+        with factory.begin() as db:
+            user, clinics = mutation_auth(db, request)
+            batch = db.scalar(
+                select(BridgeIntakeBatch).where(
+                    BridgeIntakeBatch.id == batch_id,
+                    BridgeIntakeBatch.clinic_id.in_(clinics),
+                )
+            )
+            if not batch:
+                raise HTTPException(404, "Import not found")
+            if batch.status != "ANALYSED":
+                raise HTTPException(409, "Approved imports cannot be edited")
+            record = db.scalar(
+                select(BridgeIntakeRecord).where(
+                    BridgeIntakeRecord.id == record_id,
+                    BridgeIntakeRecord.batch_id == batch.id,
+                    BridgeIntakeRecord.clinic_id == batch.clinic_id,
+                )
+            )
+            if not record:
+                raise HTTPException(404, "Import row not found")
+            if record.status in {"IMPORTED", "SKIPPED"}:
+                raise HTTPException(409, "Finalised import rows cannot be edited")
+            before = dict(record.normalized or {})
+            normalized, issues, status = _validate_staff_review(body, record.raw or {})
+            changes = {
+                key: {"from": before.get(key), "to": value}
+                for key, value in normalized.items()
+                if before.get(key) != value
+            }
+            record.normalized = normalized
+            record.issues = issues
+            record.status = status
+            record.staff_overrides = {
+                "changes": changes,
+                "review_note": body.review_note.strip() if body.review_note else None,
+            }
+            record.reviewed_by = user.id
+            record.reviewed_at = utcnow()
+            batch.analysis_version += 1
+            db.flush()
+            return _batch_payload(db, batch)
+
     @app.post("/api/bridge/batches/{batch_id}/approve")
     def approve_batch(batch_id: str, body: ApproveBatchInput, request: Request):
         with factory.begin() as db:
@@ -956,6 +988,8 @@ def install_bridge_routes(app, factory, settings: Settings, authorise, analyzer=
                     .order_by(BridgeIntakeRecord.row_number)
                 )
             )
+            # Serialize approvals for this clinic; duplicate imports never overwrite managed state.
+            db.scalar(select(Clinic).where(Clinic.id == batch.clinic_id).with_for_update())
             imported = 0
             for record in records:
                 if record.status == "REVIEW" and not body.include_review_rows:
@@ -974,6 +1008,25 @@ def install_bridge_routes(app, factory, settings: Settings, authorise, analyzer=
                     )
                 )
                 record.status = "IMPORTED"
+                episode = db.scalar(
+                    select(BridgeEpisode).where(
+                        BridgeEpisode.clinic_id == batch.clinic_id,
+                        BridgeEpisode.source_episode_ref == record.source_episode_ref,
+                    )
+                )
+                if episode and episode.patient_id != record.patient_id:
+                    raise HTTPException(409, "Visit reference belongs to another patient")
+                if not episode:
+                    db.add(
+                        BridgeEpisode(
+                            clinic_id=batch.clinic_id,
+                            patient_id=record.patient_id,
+                            source_episode_ref=record.source_episode_ref,
+                            record_id=record.id,
+                            normalized=dict(normalized),
+                        )
+                    )
+                    db.flush()
                 imported += 0 if existing else 1
             batch.status = "APPROVED"
             batch.approved_at = utcnow()

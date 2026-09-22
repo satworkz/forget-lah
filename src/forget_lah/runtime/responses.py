@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import object_session
 
 from forget_lah.runtime.models import AgentStep, SimulatedMessage
+from forget_lah.runtime.source_versions import compact_bridge_source_version
 
 
 def appointment_facts(db, run):
@@ -91,6 +92,16 @@ def defer_response(run, event_id, key, text, step_id):
 def patient_message(run, **fields):
     from forget_lah.db import FollowupCase, Patient
     from forget_lah.runtime.memory import LANGUAGE_QUESTION, effective_memory, language_ack
+
+    # Existing runs may retain the old oversized Bridge version in saved tool results.
+    # Preserve that receipt as evidence while allowing their next message to commit.
+    original_version = fields["source_version"]
+    fields["source_version"] = compact_bridge_source_version(original_version)
+    if fields["source_version"] != original_version:
+        fields["evidence"] = {
+            **fields.get("evidence", {}),
+            "original_source_version": original_version,
+        }
 
     pending = run.checkpoint.get("response_parts", {})
     if pending.get("event_id") == fields.get("event_id"):

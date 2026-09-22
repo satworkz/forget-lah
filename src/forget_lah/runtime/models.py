@@ -177,6 +177,21 @@ def message_order():
     )
 
 
+class BridgeConfirmation(Base):
+    """Forget-lah owns imported appointment confirmations; uploads remain source evidence."""
+
+    __tablename__ = "bridge_confirmation"
+    __table_args__ = (run_fk(),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    clinic_id: Mapped[str] = mapped_column(String(36))
+    case_id: Mapped[str] = mapped_column(String(36))
+    run_id: Mapped[str] = mapped_column(String(36))
+    record_id: Mapped[str] = mapped_column(ForeignKey("bridge_intake_record.id"))
+    source_version: Mapped[str] = mapped_column(String(40))
+    receipt: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class PatientMemory(Base):
     __tablename__ = "patient_memory"
     __table_args__ = (

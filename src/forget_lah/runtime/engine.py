@@ -4,6 +4,7 @@ import json
 from datetime import UTC, datetime, timedelta, timezone
 
 from sqlalchemy import and_, or_, select
+from sqlalchemy.orm import object_session
 
 from forget_lah.db import FollowupCase, uid, utcnow
 from forget_lah.runtime.adaptation import preferences_for, remember_reported_exclusions
@@ -85,6 +86,28 @@ def as_utc(value):
 
 def release(run, status, *, delay=None):
     run.status = status
+    db = object_session(run)
+    if db is not None:
+        from forget_lah.bridge_source import episode_query
+
+        case = db.get(FollowupCase, run.case_id)
+        if case and case.source_episode_ref.startswith("bridge:"):
+            episode = db.scalar(
+                episode_query(
+                    {
+                        "clinic_id": case.clinic_id,
+                        "patient_id": case.patient_id,
+                        "source_episode_ref": case.source_episode_ref,
+                    }
+                )
+            )
+            if episode:
+                episode.followup_status = {
+                    "running": "in_progress",
+                    "waiting": "awaiting_reply",
+                    "escalated": "needs_staff",
+                }.get(status, status)
+                episode.updated_at = utcnow()
     run.lease_until = run.lease_token = None
     run.available_at = utcnow() + timedelta(seconds=delay) if delay is not None else None
 
@@ -359,7 +382,13 @@ def observation_for(db, run, case, step_id):
         "expected_case_version": case.case_version,
         "role": run.active_role,
         "goal": delegation.goal if delegation else run.goal,
-        "case": {"specialty": case.specialty, "trigger": case.trigger},
+        "case": {
+            "specialty": case.specialty,
+            "trigger": case.trigger,
+            "source_kind": "bridge_upload"
+            if case.source_episode_ref.startswith("bridge:")
+            else "clinic_api",
+        },
         "latest_event": event,
         "recent_messages": conversation,
         "today_sgt": utcnow().astimezone(timezone(timedelta(hours=8))).date().isoformat(),
@@ -516,7 +545,7 @@ def apply_initial_demo_wait(db, settings, run, case, step):
         step.status, step.error_code = "rejected", "POLICY_DENIED"
         pause(run, "POLICY_DENIED")
     else:
-        if simulation_enabled(run) and settings.simulation_configured:
+        if simulation_enabled(run) and settings.conversation_configured_for(case):
             block = delivery_block(db, case, proactive=True, settings=settings)
             if block:
                 step.observation["application_rule"].update(
@@ -816,7 +845,7 @@ def prepare_step(factory, settings, run_id, token):
                     return None
                 pending.status = "tool_pending"
             elif (
-                settings.simulation_configured
+                settings.conversation_configured_for(case)
                 and run.active_role == "engagement"
                 and pending.observation["simulation"]["record_ready"]
                 and not any(
@@ -1979,7 +2008,7 @@ def execute_pending_tool(factory, settings, run_id, token, step_id, tools):
             }
             request_handoff(db, run, "LANGUAGE_SUPPORT_REQUIRED", risk="AMBER")
             return False
-        if simulation_action and not settings.simulation_configured:
+        if simulation_action and not settings.conversation_configured_for(case):
             step.status, step.error_code = "rejected", "SIMULATOR_DISABLED"
             pause(run, "SIMULATOR_DISABLED")
             return False
@@ -1990,6 +2019,8 @@ def execute_pending_tool(factory, settings, run_id, token, step_id, tools):
                 "run_id": run.id,
                 "expected_version": context.tool_result["data"]["episode_version"],
             }
+            if case.source_episode_ref.startswith("bridge:"):
+                operation["expected_source_version"] = context.tool_result["source_version"]
             choice = booking_choice(db, run)
             if choice:
                 operation.update(

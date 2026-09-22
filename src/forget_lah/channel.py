@@ -128,7 +128,7 @@ def install_channel_routes(app, factory, settings, authorise):
     @app.post("/api/channels/whatsapp/binding")
     def bind(body: BindingInput, request: Request):
         config = configuration(settings)
-        if not config or not settings.simulation_configured:
+        if not config or not settings.patient_simulator_enabled:
             raise HTTPException(403, "WhatsApp test channel is not configured")
         with factory.begin() as db:
             _, session, clinics = authorise(db, request)
@@ -168,6 +168,8 @@ def install_channel_routes(app, factory, settings, authorise):
             )
             if not case or not automation_authorised(db, case.clinic_id):
                 raise HTTPException(404, "Synthetic case not available")
+            if not settings.conversation_configured_for(case):
+                raise HTTPException(403, "WhatsApp test channel is not configured")
             if binding and binding.enabled and binding.case_id != case.id:
                 raise HTTPException(409, "Disconnect the current case before selecting another")
             if body.enabled:

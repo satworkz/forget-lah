@@ -54,6 +54,12 @@ class Settings(BaseSettings):
             and self.mock_clinic_followup_key.get_secret_value().strip()
         )
 
+    def conversation_configured_for(self, case) -> bool:
+        # Bridge is owned by Forget-lah and needs no external clinic API credential.
+        if case.source_episode_ref.startswith("bridge:"):
+            return self.patient_simulator_enabled
+        return self.simulation_configured
+
     @property
     def model_configured(self) -> bool:
         if self.agent_model_mode == "mock":

@@ -733,6 +733,8 @@ def save_acknowledgement(db, run):
         context = latest_tool(steps, "read_followup_context", "engagement")
         if context and context.tool_result["data"].get("source_status") == "scheduled":
             body = f"Your appointment has been moved in the clinic simulator from {appointment_time(context.tool_result['data']['scheduled_at'])} to {appointment_time(receipt.tool_result['data']['scheduled_at'])}. Thank you for confirming."
+    if receipt.tool_result["data"].get("record_owner") == "forget_lah":
+        body = body.replace("in the clinic simulator", "in Forget-lah")
     notes = instructions.tool_result["data"]["instructions"]
     quoted_answers = {
         (a.get("instruction_id"), a.get("quote"))

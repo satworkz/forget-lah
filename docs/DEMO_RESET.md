@@ -2,6 +2,8 @@
 
 The optional **Reset demo data** button clears the local demo clinic's history and recreates currently eligible cases from the saved [clinic simulator](CLINIC_SIMULATOR.md) records. It preserves simulator schedules, slots and notes. It is intended for rehearsals and presentations.
 
+Reset includes Intelligent Intake by default in the confirmation form. It clears demo-clinic draft uploads, approved imports, saved mappings, managed episodes, available slots, receipts, patients and follow-up history. Imported phone connections are disconnected and pending messages cancelled. Upload the test file again after reset. Uncheck **Also clear Intelligent Intake test records** to preserve imports instead. The reset checks the case and batch IDs shown when confirmation opens; changed data requires refresh. Other clinics, login credentials, API settings, usage accounting and mock-clinic tables are preserved. The control is also available on the staff Intelligent Intake page when demo reset is enabled.
+
 ## Enable the button once
 
 1. Open your project's private `.env` file in VS Code.

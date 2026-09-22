@@ -5,7 +5,7 @@ Read README.md, docs/IMPLEMENTATION_STATUS.md, and the current design guides bef
 - This hackathon is Patient Follow-up. Do not add an appointment-management engine or clinical advice.
 - Three agents: Coordinator, Engagement, Preparation. Only the Coordinator delegates.
 - Model output cannot prove identity, consent, booking success or authority. Validate typed proposals and apply deterministic policy before tools.
-- Source APIs own appointments. Uploaded records cannot invent slot availability. A handoff is owned only after named staff acceptance.
+- API-backed clinics own appointments through authorized APIs. Bridge clinics own approved follow-up episode state in Forget-lah Bridge tables, using the same logical source interface. Bridge must never use or modify mock-clinic tables. Staff must supply scoped follow-up options; uploaded records cannot invent availability. A handoff is owned only after named staff acceptance.
 - Distinguish rule, mock and live-model events. No simulated integration may be labelled live.
 - Keep clinic boundaries in database relationships and request queries. Keep credentials and patient data out of Git and logs.
 - Implement and test in small coherent milestones. Do not deploy publicly or contact real patients from this local foundation.

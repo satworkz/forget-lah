@@ -163,7 +163,51 @@ class BridgeIntakeRecord(Base):
     status: Mapped[str] = mapped_column(String(16), default="REVIEW")
     patient_id: Mapped[str | None] = mapped_column(String(36))
     source_episode_ref: Mapped[str | None] = mapped_column(String(100), index=True)
+    staff_overrides: Mapped[dict | None] = mapped_column(JSON)
+    reviewed_by: Mapped[str | None] = mapped_column(String(36))
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class BridgeEpisode(Base):
+    """Current appointment state owned by Forget-lah after import approval."""
+
+    __tablename__ = "bridge_episode"
+    __table_args__ = (
+        UniqueConstraint("clinic_id", "source_episode_ref"),
+        UniqueConstraint("clinic_id", "id"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    clinic_id: Mapped[str] = mapped_column(ForeignKey("clinic.id"))
+    patient_id: Mapped[str] = mapped_column(String(36))
+    source_episode_ref: Mapped[str] = mapped_column(String(100))
+    record_id: Mapped[str] = mapped_column(ForeignKey("bridge_intake_record.id"))
+    normalized: Mapped[dict] = mapped_column(JSON)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    followup_status: Mapped[str] = mapped_column(String(30), default="pending")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class BridgeFollowupSlot(Base):
+    """Staff-approved alternatives for one imported follow-up, not a clinic calendar."""
+
+    __tablename__ = "bridge_followup_slot"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["clinic_id", "episode_id"], ["bridge_episode.clinic_id", "bridge_episode.id"]
+        ),
+        UniqueConstraint("episode_id", "starts_at", "doctor"),
+        CheckConstraint("status IN ('available','booked','withdrawn')"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    clinic_id: Mapped[str] = mapped_column(String(36))
+    episode_id: Mapped[str] = mapped_column(String(36))
+    starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    doctor: Mapped[str] = mapped_column(String(80))
+    status: Mapped[str] = mapped_column(String(16), default="available")
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    approved_by: Mapped[str] = mapped_column(ForeignKey("principal.id"))
 
 
 class BridgeImportProfile(Base):

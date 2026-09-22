@@ -281,7 +281,11 @@ def policy_for(db, run, case, step, decision):
             else:
                 reasons.append("SYNTHETIC_PATIENT_AND_APPOINTMENT_BOUND")
         else:
-            reasons.append("READ_ONLY_SYNTHETIC_SOURCE")
+            reasons.append(
+                "FORGET_LAH_MANAGED_SOURCE_READ"
+                if case.source_episode_ref.startswith("bridge:")
+                else "READ_ONLY_SYNTHETIC_SOURCE"
+            )
     elif isinstance(decision, DelegateDecision):
         if run.active_role != "coordinator":
             deny = "ONLY_COORDINATOR_CAN_DELEGATE"

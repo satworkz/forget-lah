@@ -46,7 +46,7 @@ def queue_case_review(db, case, settings):
     checkpoint = {
         "latest_event": {"id": run_id, "kind": "started", "content": ""},
         "returned_specialists": [],
-        "patient_simulator_enabled": settings.simulation_configured,
+        "patient_simulator_enabled": settings.conversation_configured_for(case),
     }
     if not configured:
         checkpoint["pause_reason"] = "MODEL_NOT_CONFIGURED"
@@ -62,7 +62,7 @@ def queue_case_review(db, case, settings):
         authorised_by=AUTOMATION_PRINCIPAL_ID,
         mode=settings.agent_model_mode,
         status="queued" if configured else "paused",
-        goal=SIMULATOR_GOAL if settings.simulation_configured else REVIEW_GOAL,
+        goal=SIMULATOR_GOAL if settings.conversation_configured_for(case) else REVIEW_GOAL,
         checkpoint=checkpoint,
     )
     db.add(run)

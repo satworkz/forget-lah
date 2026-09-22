@@ -52,7 +52,7 @@ class SourceEnvelope(StrictModel):
 
 
 class ClinicTools:
-    """Read-only allowlist. No patient, URL or clinic is chosen by the model."""
+    """Bound tools for Forget-lah imports or an external clinic API."""
 
     def __init__(self, base_url: str, transport=None, followup_key=None, factory=None):
         self.base_url = base_url.rstrip("/")
@@ -63,7 +63,11 @@ class ClinicTools:
     def confirm(self, binding, operation):
         name = "record_simulated_confirmation"
         if binding.get("source_episode_ref", "").startswith("bridge:"):
-            return self.failure(name, "SOURCE_READ_ONLY", False)
+            if self.factory is None:
+                return self.failure(name, "SOURCE_INVALID", False)
+            from forget_lah.bridge_source import bridge_confirm
+
+            return bridge_confirm(self.factory, binding, operation)
         if not self.followup_key:
             return self.failure(name, "SOURCE_INVALID", False)
         episode = quote(binding["source_episode_ref"], safe="")
@@ -125,7 +129,7 @@ class ClinicTools:
         if binding.get("source_episode_ref", "").startswith("bridge:"):
             if self.factory is None:
                 return self.failure(tool_name, "SOURCE_INVALID", False)
-            from forget_lah.bridge import bridge_tool_result
+            from forget_lah.bridge_source import bridge_tool_result
 
             return bridge_tool_result(self.factory, binding, tool_name)
         if tool_name not in {

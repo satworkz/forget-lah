@@ -116,7 +116,13 @@ def plan_summary(run, steps):
             if run.status == "completed"
             else run.active_role
         ),
-        "attendance": "Source confirmed" if receipt else "Not confirmed by source",
+        "attendance": (
+            "Confirmation recorded in Forget-lah"
+            if receipt and receipt["tool_result"]["data"].get("record_owner") == "forget_lah"
+            else "Source confirmed"
+            if receipt
+            else "Not confirmed by source"
+        ),
         "instructions": "Retrieved from clinic" if instructions else "Not yet retrieved",
         "preparation": (
             "Staff review resolved; see outcome"
