@@ -21,6 +21,7 @@ from forget_lah.runtime.models import (
     PatientMemory,
     PatientPreference,
     SimulatedMessage,
+    StaffAppointmentChange,
     StaffHandoff,
     message_order,
 )
@@ -98,6 +99,16 @@ def install_routes(app, factory, settings, authorise):
         case = db.scalar(query.with_for_update() if lock else query)
         if case is None:
             raise HTTPException(404, "Case not found")
+        if lock and db.scalar(
+            select(StaffAppointmentChange.id).where(
+                StaffAppointmentChange.case_id == case.id,
+                StaffAppointmentChange.status == "pending",
+            )
+        ):
+            raise HTTPException(409, "Recover the pending staff appointment change first")
+        run = latest_run(db, case.id) if lock else None
+        if run and run.checkpoint.get("staff_review_restore"):
+            raise HTTPException(409, "Finish or cancel the appointment instruction review first")
         return case
 
     @app.get("/api/cases/{case_id}/agent")

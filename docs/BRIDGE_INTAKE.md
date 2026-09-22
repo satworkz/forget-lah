@@ -1,5 +1,7 @@
 # Forget-lah Bridge — Intelligent Follow-up Intake
 
+**Staff-initiated changes (22 September):** [Appointment change ADR](ADR_STAFF_APPOINTMENT_CHANGE.md) specifies the dashboard action, separate staff authority and receipts, doctor constraints, source ownership, durable notification and retry behavior.
+
 Forget-lah Bridge is the Forget-lah-owned intake and follow-up path for clinics without an appointment system. After approval, Forget-lah owns the imported appointment record and its follow-up lifecycle, including confirmations, supported bookings and rescheduling. Clinics with an existing API-based appointment system use the separate clinic API adapter; the mock clinic represents that integration path.
 
 ## Why it exists

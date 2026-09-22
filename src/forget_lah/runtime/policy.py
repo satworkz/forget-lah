@@ -72,6 +72,16 @@ def policy_for(db, run, case, step, decision):
         deny = "STALE_OR_WRONG_REQUEST"
     elif step.role != run.active_role:
         deny = "ROLE_CHANGED"
+    elif run.checkpoint.get("staff_review_restore") and not (
+        isinstance(decision, ToolDecision)
+        and decision.tool_name
+        in {"read_followup_context", "get_approved_instructions", "check_prerequisites"}
+        or isinstance(decision, DelegateDecision)
+        and decision.target == "preparation"
+        or isinstance(decision, ReturnDecision)
+        and run.active_role == "preparation"
+    ):
+        deny = "STAFF_REVIEW_READ_ONLY"
     elif (
         isinstance(decision, (ClarifyDecision, BarrierDecision))
         and decision.concern_quote is not None

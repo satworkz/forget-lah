@@ -376,6 +376,17 @@ def decision_formats_for(observation: dict) -> dict:
         formats.pop("ASSESS_BARRIERS", None)
     if observation.get("needs_reviewed"):
         formats.pop("REPORT_SYMPTOMS", None)
+    if observation.get("latest_event", {}).get("kind") == "staff_scheduling_review":
+        formats = {k: v for k, v in formats.items() if k in {"TOOL", "RETURN"}}
+        if "TOOL" in formats:
+            formats["TOOL"] = {
+                "tool_name": [
+                    name
+                    for name in observation["allowed_tools"]
+                    if name
+                    in {"read_followup_context", "get_approved_instructions", "check_prerequisites"}
+                ]
+            }
     return formats
 
 

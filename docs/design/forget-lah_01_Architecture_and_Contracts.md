@@ -1,5 +1,7 @@
 # forget-lah: architecture and contracts
 
+**Staff-initiated changes (22 September):** [Appointment change ADR](../ADR_STAFF_APPOINTMENT_CHANGE.md) specifies the dashboard action, separate staff authority and receipts, doctor constraints, source ownership, durable notification and retry behavior.
+
 **Bridge ownership clarification (21 September):** clinics without an appointment system import records into Forget-lah, which owns their follow-up lifecycle, confirmations and supported booking/rescheduling. Migrations `0013`–`0014` store operation receipts, managed episode state and staff-reserved follow-up options. The clinic API adapter, represented by the mock clinic, is the separate path for clinics with an existing appointment system. Both paths use the same agent, policy and preparation checks; source-specific adapters persist the resulting actions. See [Bridge intake](../BRIDGE_INTAKE.md).
 
 **Current feature reference:** [Feature guide and patient memory](../FEATURE_GUIDE.md) documents implemented behavior, all demo capabilities, preference tests and remaining limitations. Migration `0006` extends time preferences to attributed patient concerns; this supersedes earlier time-only descriptions.

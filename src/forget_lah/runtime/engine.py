@@ -87,7 +87,7 @@ def as_utc(value):
 def release(run, status, *, delay=None):
     run.status = status
     db = object_session(run)
-    if db is not None:
+    if db is not None and not run.checkpoint.get("staff_review_restore"):
         from forget_lah.bridge_source import episode_query
 
         case = db.get(FollowupCase, run.case_id)
@@ -808,7 +808,13 @@ def prepare_step(factory, settings, run_id, token):
             retry_tool = (
                 run.checkpoint.get("next_source_retry") if simulation_enabled(run) else None
             )
-            if retry_tool and run.checkpoint["latest_event"].get("wake_reason") == "timer":
+            if run.checkpoint.get("staff_review_restore") and run.active_role == "coordinator":
+                from forget_lah.staff_review import coordinator_review
+
+                coordinator_review(db, settings, run, case, pending)
+                if pending.status != "tool_pending":
+                    return None
+            elif retry_tool and run.checkpoint["latest_event"].get("wake_reason") == "timer":
                 retries = run.checkpoint.get("simulated_tool_retries", {})
                 run.checkpoint = {
                     **run.checkpoint,
@@ -1606,6 +1612,11 @@ def apply_control(db, run, case, step, decision, settings):
         returned = run.checkpoint.get("returned_specialists", []) + [run.active_role]
         run.active_role = "coordinator"
         run.checkpoint = {**run.checkpoint, "returned_specialists": returned, "delegation_start": 0}
+        if run.checkpoint.get("staff_review_restore"):
+            from forget_lah.staff_review import restore_review
+
+            restore_review(run, step.id)
+            return
         appointment_intent = run.checkpoint.get("appointment_intent", "UNSPECIFIED")
         if appointment_intent not in {"CONFIRM", "CHANGE"} and reply_evidence(db, run):
             # Explicit/verified attendance can skip REVIEW_NEEDS entirely, so the

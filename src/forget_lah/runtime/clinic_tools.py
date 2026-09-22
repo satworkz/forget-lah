@@ -60,6 +60,39 @@ class ClinicTools:
         self.followup_key = followup_key
         self.factory = factory
 
+    def staff_change(self, binding, operation):
+        # Bridge is committed in the owning application transaction, never over HTTP.
+        if binding["source_episode_ref"].startswith("bridge:"):
+            raise ValueError("Bridge staff changes require the owned transaction")
+        if not self.followup_key:
+            raise ValueError("Source authorization is not configured")
+        episode = quote(binding["source_episode_ref"], safe="")
+        with httpx.Client(timeout=10, follow_redirects=False, transport=self.transport) as client:
+            response = client.post(
+                f"{self.base_url}/internal/followup/{episode}/staff-change",
+                json=operation,
+                headers={"X-Followup-Key": self.followup_key},
+            )
+            response.raise_for_status()
+            if len(response.content) > 16000:
+                raise ValueError("Source receipt too large")
+            receipt = response.json()
+            from forget_lah.staff_change_contract import StaffChangeReceipt
+
+            StaffChangeReceipt.model_validate(receipt)
+        if (
+            receipt.get("operation_id") != operation["operation_id"]
+            or receipt.get("patient_id") != binding["patient_id"]
+            or receipt.get("source_episode_ref") != binding["source_episode_ref"]
+            or receipt.get("actor_id") != operation["actor_id"]
+            or receipt.get("slot_id") != operation["slot_id"]
+            or receipt.get("episode_version") != operation["expected_version"] + 1
+            or receipt.get("status") != "STAFF_CHANGED_AWAITING_PATIENT"
+            or receipt.get("record_owner") != "clinic_api"
+        ):
+            raise ValueError("Source receipt binding mismatch")
+        return receipt
+
     def confirm(self, binding, operation):
         name = "record_simulated_confirmation"
         if binding.get("source_episode_ref", "").startswith("bridge:"):

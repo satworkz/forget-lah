@@ -142,7 +142,7 @@ def create_app(settings: Settings | None = None, engine=None, bridge_analyzer=No
     def ready():
         try:
             with factory() as db:
-                if db.scalar(text("SELECT version_num FROM alembic_version")) != "0014":
+                if db.scalar(text("SELECT version_num FROM alembic_version")) != "0015":
                     raise ValueError("Agent migration is required")
                 db.execute(select(Clinic.id).limit(1))
                 db.execute(select(AgentRun.id).limit(1))
@@ -302,6 +302,9 @@ def create_app(settings: Settings | None = None, engine=None, bridge_analyzer=No
             ]
 
     install_routes(app, factory, settings, authorise)
+    from forget_lah.staff_changes import install_staff_change_routes
+
+    install_staff_change_routes(app, factory, settings, authorise)
     install_channel_routes(app, factory, settings, authorise)
     install_bridge_routes(app, factory, settings, authorise, analyzer=bridge_analyzer)
     install_demo_routes(app, factory, settings, authorise)

@@ -39,6 +39,7 @@ from forget_lah.runtime.models import (
     PatientMemory,
     PatientPreference,
     SimulatedMessage,
+    StaffAppointmentChange,
     StaffHandoff,
 )
 from forget_lah.source import DEMO_CLINIC_ID, read_candidates
@@ -49,11 +50,13 @@ DEMO_EPISODES = {
     "DEMO-ANTENATAL-VISIT-01": "20000000-0000-4000-8000-000000000003",
 }
 RESET_MODELS = (
+    StaffAppointmentChange,
     ChannelRoutingState,
     SimulatedMessage,
     AgentDelegation,
     AgentEvent,
     StaffHandoff,
+    StaffAppointmentChange,
     AgentStep,
     AgentRun,
     AuditEvent,
@@ -169,6 +172,13 @@ def reset_demo(
         if set(expected_intake_batch_ids) != batch_ids:
             raise HTTPException(409, "Intelligent Intake changed. Refresh before resetting.")
     cases = demo_reset_cases(db, include_intake=include_intake)
+    if db.scalar(
+        select(StaffAppointmentChange.id).where(
+            StaffAppointmentChange.case_id.in_([case.id for case in cases]),
+            StaffAppointmentChange.status == "pending",
+        )
+    ):
+        raise HTTPException(409, "Recover pending appointment changes before reset")
     if set(expected_case_ids) != {c.id for c in cases} or len(set(expected_case_ids)) != len(
         expected_case_ids
     ):

@@ -4,7 +4,16 @@ import hashlib
 import json
 from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint, select
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    UniqueConstraint,
+    select,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from forget_lah.source import DEMO_CLINIC_ID
@@ -217,3 +226,47 @@ def envelope(db, row):
         else [],
         "prerequisites": [row.prerequisite],
     }
+
+
+class StaffChange(Base):
+    __tablename__ = "sim_staff_change"
+    operation_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    episode_ref: Mapped[str] = mapped_column(ForeignKey("sim_episode.ref"))
+    request: Mapped[dict] = mapped_column(JSON)
+    receipt: Mapped[dict] = mapped_column(JSON)
+
+
+def release_owned_slot(db, row):
+    """Release capacity only when a receipt proves this episode owns the booked revision."""
+    confirmation = db.scalar(
+        select(Confirmation)
+        .where(
+            Confirmation.episode_ref == row.ref,
+            Confirmation.episode_version == row.version,
+            Confirmation.booking_slot_id.is_not(None),
+        )
+        .order_by(Confirmation.confirmed_at.desc())
+    )
+    slot_id = confirmation.booking_slot_id if confirmation else None
+    version = confirmation.booking_slot_version if confirmation else None
+    scheduled_at = confirmation.scheduled_at if confirmation else None
+    if not confirmation:
+        for change in db.scalars(select(StaffChange).where(StaffChange.episode_ref == row.ref)):
+            if change.receipt.get("episode_version") == row.version:
+                slot_id = change.receipt["slot_id"]
+                version = change.request["slot_version"]
+                scheduled_at = datetime.fromisoformat(change.receipt["scheduled_at"])
+                break
+
+    def utc(value):
+        return value.replace(tzinfo=UTC) if value and value.tzinfo is None else value
+
+    slot = db.scalar(select(Slot).where(Slot.id == slot_id).with_for_update()) if slot_id else None
+    if (
+        slot
+        and not slot.available
+        and slot.version == version + 1
+        and utc(scheduled_at) == utc(row.scheduled_at) == utc(slot.starts_at)
+    ):
+        slot.available = True
+        slot.version += 1

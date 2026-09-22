@@ -381,7 +381,7 @@ def ingest_one(factory, settings=None, binding_id=None):
             return
         if not run:
             return  # Foundation readiness will create the first review.
-        if run.status in {"queued", "running"}:
+        if run.checkpoint.get("staff_review_restore") or run.status in {"queued", "running"}:
             return
         if run.status == "completed":
             previous = run

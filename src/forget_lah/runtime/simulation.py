@@ -474,6 +474,12 @@ def simulation_evidence(db, run):
             SimulatedMessage.kind == "reminder",
         )
     )
+    staff_change_message = db.scalar(
+        select(SimulatedMessage).where(
+            SimulatedMessage.run_id == run.id,
+            SimulatedMessage.kind == "staff_appointment_change",
+        )
+    )
     reminder_source = (
         db.get(AgentStep, reminder.evidence.get("source_step_id")) if reminder else None
     )
@@ -488,6 +494,14 @@ def simulation_evidence(db, run):
         and future_scheduled(context.tool_result["data"])
         and (
             run.checkpoint.get("reopened_from_run_id")
+            or (
+                staff_change_message
+                and staff_change_message.evidence.get("staff_change_receipt", {}).get(
+                    "scheduled_at"
+                )
+                == context.tool_result["data"]["scheduled_at"]
+                and staff_change_message.source_version == context.tool_result["source_version"]
+            )
             or (
                 reminder_source
                 and reminder_source.tool_result["data"].get("scheduled_at")

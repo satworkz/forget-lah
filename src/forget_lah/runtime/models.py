@@ -213,3 +213,20 @@ class PatientMemory(Base):
     step_id: Mapped[str] = mapped_column(String(36))
     supersedes: Mapped[str | None] = mapped_column(String(36))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class StaffAppointmentChange(Base):
+    """Durable staff intent and source receipt; never patient consent."""
+
+    __tablename__ = "staff_appointment_change"
+    __table_args__ = (run_fk(), UniqueConstraint("clinic_id", "client_key"))
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    clinic_id: Mapped[str] = mapped_column(String(36))
+    case_id: Mapped[str] = mapped_column(String(36))
+    run_id: Mapped[str] = mapped_column(String(36))
+    client_key: Mapped[str] = mapped_column(String(64))
+    actor_id: Mapped[str] = mapped_column(ForeignKey("principal.id"))
+    request: Mapped[dict] = mapped_column(JSON)
+    receipt: Mapped[dict | None] = mapped_column(JSON)
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
