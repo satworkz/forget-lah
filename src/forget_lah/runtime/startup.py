@@ -29,6 +29,7 @@ def automation_authorised(db, clinic_id):
                 Principal.active.is_(True),
                 Membership.clinic_id == clinic_id,
                 Membership.active.is_(True),
+                Membership.role.in_({"staff", "admin"}),
             )
         )
         is not None

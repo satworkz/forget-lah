@@ -76,3 +76,14 @@ The initial Lightsail user-data wrapper ran the original installer through `/bin
 ### Decision-repair update
 
 The cloud release now includes migration `0007` for decision-validation evidence. A logical database backup was saved on the host at `backups/before-0007.dump` before applying the forward migration; this is a local recovery copy, not an off-server backup. Priya's original paused case resumed successfully and reached `NO_AVAILABLE_SLOTS` with a patient-facing explanation and an AMBER staff task. No history was reset. The release passed 291 tests including PostgreSQL checks.
+
+
+## 22 September: current appointment-change build deployed
+
+Deployed commit `8d9f7d0` (staff appointment changes with review) to the existing Singapore demo. Built locally and transferred the verified API/worker/source image and production web image. All three runtime services were checked against the exact local image identity. Existing cloud environment and credentials were retained; no local database or local case recovery was copied to AWS.
+
+With application services stopped, both cloud databases were backed up on the host and copied to ignored private local deployment storage. Applied application migrations `0010` to `0015` and source migration `sim0003` to `sim0004`, without fixture seeding or data reset. Checksums of all 25 pre-existing tables matched immediately after migration; eight new tables bring the total to 33. Previous runtime images and Compose configuration were retained for recovery.
+
+Public HTTPS readiness, authenticated case access, secure session cookies, anonymous access rejection, missing-CSRF rejection, the appointment-change read endpoint and the new frontend controls passed. After restart, existing cases, runs, steps, events, messages, handoffs, phone bindings, delivery records, model usage and source appointment tables remained unchanged. Verification created login sessions; runtime channel-routing metadata also updated. No patient action, live model call, case replay or test notification was initiated.
+
+The deployed build includes the instruction-review action and the correction that waits for a patient reply after a staff change. [GAP-STAFF-CHANGE-001](STAFF_APPOINTMENT_CHANGE_GAPS.md), starting/resuming outstanding patient checks from the appointment panel, remains explicitly deferred and unimplemented. Prior validation for this exact code includes the full 570-pass/14-skip regression baseline and the final timer/recovery-related 157-pass/1-skip run; deployment rebuilt the images and performed the cloud checks above.

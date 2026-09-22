@@ -282,6 +282,14 @@ def current_case(db, run):
 
 
 def observation_for(db, run, case, step_id):
+    from forget_lah.security import model_context
+
+    if run.case_id != case.id or run.clinic_id != case.clinic_id:
+        raise ValueError("Observation case binding mismatch")
+    return model_context(_observation_for(db, run, case, step_id), run.active_role)
+
+
+def _observation_for(db, run, case, step_id):
     event = run.checkpoint["latest_event"]
     recent = list(
         db.scalars(

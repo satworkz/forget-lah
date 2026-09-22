@@ -20,6 +20,29 @@ from forget_lah.worker import claim_job
 from services.mock_clinic.fixtures import candidates
 
 
+def seed_legacy_membership(factory):
+    """Seed the delivered pre-role schema, without today's Membership ORM mapping."""
+    from sqlalchemy import MetaData, Table
+
+    from forget_lah.auth import hasher
+    from forget_lah.db import Clinic
+
+    with factory.begin() as db:
+        db.add(Clinic(id=DEMO_CLINIC_ID, name="Legacy clinic"))
+        user = Principal(
+            email="test@forget-lah.example",
+            password_hash=hasher.hash("postgres-test-only-password"),
+        )
+        db.add(user)
+        db.flush()
+        table = Table("clinic_membership", MetaData(), autoload_with=db.connection())
+        db.execute(
+            table.insert().values(
+                id=uid(), principal_id=user.id, clinic_id=DEMO_CLINIC_ID, active=True
+            )
+        )
+
+
 @pytest.mark.postgres
 @pytest.mark.parametrize("legacy_receipt", [False, True])
 def test_postgres_bridge_review_reaches_waiting_with_reminder(postgres_schema, legacy_receipt):
@@ -287,7 +310,7 @@ def postgres_schema(monkeypatch):
 def test_postgres_migration_preserves_existing_cases_and_creates_budget(postgres_schema):
     engine, factory = postgres_schema
     command.upgrade(Config("alembic.ini"), "0001")
-    seed(factory, "test@forget-lah.example", "postgres-test-only-password")
+    seed_legacy_membership(factory)
     detect(factory, DEMO_CLINIC_ID, candidates_from_payload(candidates()))
     with factory() as db:
         before = set(db.scalars(select(FollowupCase.id)))
@@ -295,7 +318,7 @@ def test_postgres_migration_preserves_existing_cases_and_creates_budget(postgres
     with factory() as db:
         assert set(db.scalars(select(FollowupCase.id))) == before
         assert len(before) == 3
-        assert db.scalar(text("SELECT version_num FROM alembic_version")) == "0015"
+        assert db.scalar(text("SELECT version_num FROM alembic_version")) == "0016"
         assert db.get(ModelBudget, "organiser").calls == 0
     # No differences between the explicit migration and mapped runtime schema.
     from alembic.autogenerate import compare_metadata
@@ -305,8 +328,11 @@ def test_postgres_migration_preserves_existing_cases_and_creates_budget(postgres
         assert compare_metadata(MigrationContext.configure(connection), Base.metadata) == []
 
 
-def seed_runs(factory, count, mode="mock"):
-    seed(factory, "test@forget-lah.example", "postgres-test-only-password")
+def seed_runs(factory, count, mode="mock", legacy=False):
+    if legacy:
+        seed_legacy_membership(factory)
+    else:
+        seed(factory, "test@forget-lah.example", "postgres-test-only-password")
     detect(factory, DEMO_CLINIC_ID, candidates_from_payload(candidates())[:count])
     with factory.begin() as db:
         user = db.scalar(select(Principal))
@@ -335,7 +361,7 @@ def seed_runs(factory, count, mode="mock"):
 def test_direct_claude_migration_preserves_existing_run_and_budget(postgres_schema):
     _, factory = postgres_schema
     command.upgrade(Config("alembic.ini"), "0002")
-    seed_runs(factory, 1, "organiser")
+    seed_runs(factory, 1, "organiser", legacy=True)
     with factory.begin() as db:
         run_id = db.scalar(select(AgentRun.id))
         db.get(ModelBudget, "organiser").calls = 17
@@ -473,7 +499,7 @@ def test_team_phone_migration_preserves_enrollment(postgres_schema):
     # Reproduce an existing 0009 installation before the model constraint was added.
     with engine.begin() as conn:
         conn.execute(text("ALTER TABLE channel_binding DROP CONSTRAINT uq_channel_phone"))
-    seed(factory, "test@forget-lah.example", "postgres-test-only-password")
+    seed_legacy_membership(factory)
     detect(factory, DEMO_CLINIC_ID, candidates_from_payload(candidates()))
     with factory.begin() as db:
         case = db.scalar(select(FollowupCase))

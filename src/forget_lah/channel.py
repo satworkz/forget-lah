@@ -23,6 +23,7 @@ from forget_lah.db import Clinic, FollowupCase, uid, utcnow
 from forget_lah.runtime.engine import abort_delegation, as_utc, release
 from forget_lah.runtime.models import AgentEvent, AgentRun, SimulatedMessage, StaffHandoff
 from forget_lah.runtime.startup import SIMULATOR_GOAL, automation_authorised
+from forget_lah.security import mask_identifier
 from forget_lah.service_identity import AUTOMATION_PRINCIPAL_ID
 from forget_lah.source import DEMO_CLINIC_ID
 from forget_lah.whatsapp import WhatsAppClient, WhatsAppError, WhatsAppSettings
@@ -96,7 +97,7 @@ def install_channel_routes(app, factory, settings, authorise):
                 "bindings": [
                     {
                         "id": b.id,
-                        "recipient": b.recipient,
+                        "recipient": mask_identifier(b.recipient),
                         "case_id": b.case_id,
                         "enabled": b.enabled,
                         "case_ids": [c.id for c in patient_cases(db, b)],

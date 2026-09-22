@@ -24,7 +24,7 @@ Supported upload formats in this milestone:
 6. Staff may correct the AI mapping in natural language and re-analyse.
 7. Any row left in `REVIEW` can be opened and edited directly in the preview; no source-file correction or re-upload is required.
 8. Staff-reviewed administrative corrections are recorded with reviewer/time/change provenance. Doctor notes remain source-bound to the original uploaded row.
-9. Staff approves ready records.
+9. Staff approves ready records. Remaining review rows stay editable even after a partial approval; staff can save and approve them later in the same batch. Imported/skipped rows remain locked and are never reprocessed by later approvals. Batch-wide mapping re-analysis stays locked after the first approval.
 10. Approved records become **Forget-lah-managed appointment and follow-up records**, retaining the original upload as provenance.
 11. Existing case detection creates `UPCOMING`, `MISSED` and `RECALL_OVERDUE` cases when the source record becomes eligible.
 12. The existing agents review the reply and preparation evidence, save valid attendance confirmations in Forget-lah, acknowledge them and complete the review using the saved receipt.

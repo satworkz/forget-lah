@@ -12,6 +12,7 @@ import base64
 import csv
 import hashlib
 import io
+import itertools
 import json
 import secrets
 import zipfile
@@ -39,6 +40,7 @@ from forget_lah.db import (
 from forget_lah.detector import detect
 from forget_lah.runtime.contracts import reject_constant, unique_object
 from forget_lah.runtime.provider import ModelError, post_model_json
+from forget_lah.security import record_action
 from forget_lah.settings import Settings
 from forget_lah.source import Candidate
 
@@ -157,6 +159,10 @@ def _unique_headers(values: list[str]) -> list[str]:
 
 
 def _matrix_to_rows(matrix: list[list[str]]) -> list[dict]:
+    if len(matrix) > MAX_ROWS + 1:
+        raise ValueError("Upload exceeds the 200 data row limit")
+    if any(len(row) > MAX_COLUMNS for row in matrix):
+        raise ValueError("Upload exceeds the 40 column limit")
     matrix = [[_clean_cell(cell) for cell in row] for row in matrix]
     matrix = [row for row in matrix if any(row)]
     if len(matrix) < 2:
@@ -187,14 +193,25 @@ def _parse_delimited(data: bytes, delimiter: str | None = None) -> list[dict]:
             delimiter = csv.Sniffer().sniff(text[:4096], delimiters=",;\t|").delimiter
         except csv.Error:
             delimiter = ","
-    return _matrix_to_rows(list(csv.reader(io.StringIO(text), delimiter=delimiter)))
+    return _matrix_to_rows(
+        list(itertools.islice(csv.reader(io.StringIO(text), delimiter=delimiter), MAX_ROWS + 2))
+    )
+
+
+def _safe_xml(archive, name):
+    data = archive.read(name)
+    # OOXML needs neither DTDs nor entities. Reject both, including UTF-16 encodings.
+    probe = data.replace(b"\x00", b"").upper()
+    if b"<!DOCTYPE" in probe or b"<!ENTITY" in probe:
+        raise ValueError("XML entities are not supported")
+    return ET.fromstring(data)
 
 
 def _xlsx_shared_strings(archive: zipfile.ZipFile) -> list[str]:
     name = "xl/sharedStrings.xml"
     if name not in archive.namelist():
         return []
-    root = ET.fromstring(archive.read(name))
+    root = _safe_xml(archive, name)
     ns = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
     return ["".join(node.text or "" for node in item.iter(f"{ns}t")) for item in root]
 
@@ -203,7 +220,7 @@ def _xlsx_date_styles(archive: zipfile.ZipFile) -> set[int]:
     name = "xl/styles.xml"
     if name not in archive.namelist():
         return set()
-    root = ET.fromstring(archive.read(name))
+    root = _safe_xml(archive, name)
     ns = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
     custom = {
         int(item.attrib["numFmtId"]): item.attrib.get("formatCode", "")
@@ -223,7 +240,7 @@ def _xlsx_date_styles(archive: zipfile.ZipFile) -> set[int]:
 
 
 def _xlsx_uses_1904_dates(archive: zipfile.ZipFile) -> bool:
-    root = ET.fromstring(archive.read("xl/workbook.xml"))
+    root = _safe_xml(archive, "xl/workbook.xml")
     ns = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
     props = root.find(f"{ns}workbookPr")
     return bool(props is not None and props.attrib.get("date1904") in {"1", "true", "True"})
@@ -242,8 +259,8 @@ def _excel_serial(value: str, *, date_1904: bool) -> str:
 
 
 def _xlsx_first_sheet(archive: zipfile.ZipFile) -> str:
-    workbook = ET.fromstring(archive.read("xl/workbook.xml"))
-    rels = ET.fromstring(archive.read("xl/_rels/workbook.xml.rels"))
+    workbook = _safe_xml(archive, "xl/workbook.xml")
+    rels = _safe_xml(archive, "xl/_rels/workbook.xml.rels")
     main = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
     office = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
     package = "{http://schemas.openxmlformats.org/package/2006/relationships}"
@@ -266,6 +283,8 @@ def _xlsx_first_sheet(archive: zipfile.ZipFile) -> str:
 
 
 def _cell_column(reference: str) -> int:
+    if len(reference) > 12:
+        raise ValueError("Invalid spreadsheet cell reference")
     letters = "".join(ch for ch in reference if ch.isalpha()).upper()
     value = 0
     for ch in letters:
@@ -275,23 +294,42 @@ def _cell_column(reference: str) -> int:
 
 def _parse_xlsx(data: bytes) -> list[dict]:
     with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        entries = archive.infolist()
+        if len(entries) > 200 or sum(i.file_size for i in entries) > 8_000_000:
+            raise ValueError("Expanded workbook exceeds safe limits")
+        if len({i.filename for i in entries}) != len(entries):
+            raise ValueError("Duplicate workbook parts are not supported")
+        if any(
+            i.flag_bits & 1
+            or "vbaproject" in i.filename.lower()
+            or "externallinks/" in i.filename.lower()
+            for i in entries
+        ):
+            raise ValueError("Encrypted, macro or externally linked workbooks are not supported")
         shared = _xlsx_shared_strings(archive)
         date_styles = _xlsx_date_styles(archive)
         date_1904 = _xlsx_uses_1904_dates(archive)
         sheet_name = _xlsx_first_sheet(archive)
-        root = ET.fromstring(archive.read(sheet_name))
+        root = _safe_xml(archive, sheet_name)
     ns = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
     matrix: list[list[str]] = []
-    for row in root.findall(f".//{ns}row")[: MAX_ROWS + 1]:
+    sheet_rows = root.findall(f".//{ns}row")
+    if len(sheet_rows) > MAX_ROWS + 1:
+        raise ValueError("Upload exceeds the 200 data row limit")
+    for row in sheet_rows:
         values: dict[int, str] = {}
-        for cell in row.findall(f"{ns}c")[:MAX_COLUMNS]:
+        for cell in row.findall(f"{ns}c"):
             column = _cell_column(cell.attrib.get("r", "A1"))
+            if column >= MAX_COLUMNS:
+                raise ValueError("Upload exceeds the 40 column limit")
+            if cell.find(f"{ns}f") is not None:
+                raise ValueError("Formula cells are untrusted; export literal values before upload")
             kind = cell.attrib.get("t")
             if kind == "inlineStr":
                 value = "".join(node.text or "" for node in cell.iter(f"{ns}t"))
             else:
                 node = cell.find(f"{ns}v")
-                value = node.text if node is not None else ""
+                value = (node.text or "") if node is not None else ""
                 if kind == "s" and value.isdigit() and int(value) < len(shared):
                     value = shared[int(value)]
                 elif kind is None and int(cell.attrib.get("s", "0")) in date_styles:
@@ -509,7 +547,10 @@ class AnthropicBridgeAnalyzer:
             context={
                 "canonical_fields": sorted(CANONICAL_FIELDS),
                 "sample_rows": _rows_for_model(rows[:PROFILE_SAMPLE_ROWS]),
-                "previous_mapping": previous_mapping or [],
+                "previous_mapping": [
+                    {k: item[k] for k in ("canonical_field", "source_columns") if k in item}
+                    for item in previous_mapping or []
+                ],
                 "staff_instruction": staff_instruction,
             },
             schema=_profile_schema(),
@@ -533,7 +574,10 @@ class AnthropicBridgeAnalyzer:
                     "Return one result for every input row_number and no others."
                 ),
                 context={
-                    "mapping": [item.model_dump() for item in profile.mapping],
+                    "mapping": [
+                        item.model_dump(include={"canonical_field", "source_columns"})
+                        for item in profile.mapping
+                    ],
                     "staff_instruction": staff_instruction,
                     "rows": _rows_for_model(chunk),
                 },
@@ -860,8 +904,20 @@ def install_bridge_routes(app, factory, settings: Settings, authorise, analyzer=
             try:
                 data = base64.b64decode(body.content_base64, validate=True)
                 file_type, rows = parse_upload(body.filename, data)
-            except (ValueError, UnicodeDecodeError, zipfile.BadZipFile) as exc:
-                raise HTTPException(422, str(exc)) from exc
+            except (
+                ValueError,
+                UnicodeDecodeError,
+                zipfile.BadZipFile,
+                ET.ParseError,
+                KeyError,
+                RuntimeError,
+                OverflowError,
+                csv.Error,
+            ) as exc:
+                raise HTTPException(
+                    422,
+                    "Invalid or unsafe upload. Use CSV/TSV/XLSX with literal values, at most 1.5 MB, 200 rows and 40 columns.",
+                ) from exc
             profile = db.get(BridgeImportProfile, clinic_id)
             try:
                 analysis = analyzer.analyse(
@@ -882,13 +938,21 @@ def install_bridge_routes(app, factory, settings: Settings, authorise, analyzer=
             db.add(batch)
             db.flush()
             _store_analysis(db, batch=batch, rows=rows, analysis=analysis)
+            record_action(
+                db,
+                clinic_id=clinic_id,
+                actor_id=user.id,
+                resource_id=batch.id,
+                action="bridge_upload",
+                details={"sha256": batch.sha256, "filename": batch.filename, "rows": len(rows)},
+            )
             db.flush()
             return _batch_payload(db, batch)
 
     @app.post("/api/bridge/batches/{batch_id}/revise")
     def revise_batch(batch_id: str, body: ReviseBatchInput, request: Request):
         with factory.begin() as db:
-            _, clinics = mutation_auth(db, request)
+            user, clinics = mutation_auth(db, request)
             batch = db.scalar(
                 select(BridgeIntakeBatch).where(
                     BridgeIntakeBatch.id == batch_id,
@@ -918,6 +982,17 @@ def install_bridge_routes(app, factory, settings: Settings, authorise, analyzer=
                 raise HTTPException(503, f"Intelligent intake unavailable ({exc.code})") from exc
             batch.analysis_version += 1
             batch.staff_instruction = body.instruction
+            record_action(
+                db,
+                clinic_id=batch.clinic_id,
+                actor_id=user.id,
+                resource_id=batch.id,
+                action="bridge_revise",
+                details={
+                    "old_version": batch.analysis_version - 1,
+                    "new_version": batch.analysis_version,
+                },
+            )
             _store_analysis(db, batch=batch, rows=rows, analysis=analysis)
             db.flush()
             return _batch_payload(db, batch)
@@ -927,14 +1002,16 @@ def install_bridge_routes(app, factory, settings: Settings, authorise, analyzer=
         with factory.begin() as db:
             user, clinics = mutation_auth(db, request)
             batch = db.scalar(
-                select(BridgeIntakeBatch).where(
+                select(BridgeIntakeBatch)
+                .where(
                     BridgeIntakeBatch.id == batch_id,
                     BridgeIntakeBatch.clinic_id.in_(clinics),
                 )
+                .with_for_update()
             )
             if not batch:
                 raise HTTPException(404, "Import not found")
-            if batch.status != "ANALYSED":
+            if batch.status not in {"ANALYSED", "APPROVED"}:
                 raise HTTPException(409, "Approved imports cannot be edited")
             record = db.scalar(
                 select(BridgeIntakeRecord).where(
@@ -963,6 +1040,14 @@ def install_bridge_routes(app, factory, settings: Settings, authorise, analyzer=
             }
             record.reviewed_by = user.id
             record.reviewed_at = utcnow()
+            record_action(
+                db,
+                clinic_id=batch.clinic_id,
+                actor_id=user.id,
+                resource_id=batch.id,
+                action="bridge_review",
+                details={"record_id": record.id, "changes": changes, "status": status},
+            )
             batch.analysis_version += 1
             db.flush()
             return _batch_payload(db, batch)
@@ -970,16 +1055,18 @@ def install_bridge_routes(app, factory, settings: Settings, authorise, analyzer=
     @app.post("/api/bridge/batches/{batch_id}/approve")
     def approve_batch(batch_id: str, body: ApproveBatchInput, request: Request):
         with factory.begin() as db:
-            _, clinics = mutation_auth(db, request)
+            user, clinics = mutation_auth(db, request)
             batch = db.scalar(
-                select(BridgeIntakeBatch).where(
+                select(BridgeIntakeBatch)
+                .where(
                     BridgeIntakeBatch.id == batch_id,
                     BridgeIntakeBatch.clinic_id.in_(clinics),
                 )
+                .with_for_update()
             )
             if not batch:
                 raise HTTPException(404, "Import not found")
-            if batch.status != "ANALYSED":
+            if batch.status not in {"ANALYSED", "APPROVED"}:
                 raise HTTPException(409, "Import is already finalised")
             records = list(
                 db.scalars(
@@ -988,10 +1075,15 @@ def install_bridge_routes(app, factory, settings: Settings, authorise, analyzer=
                     .order_by(BridgeIntakeRecord.row_number)
                 )
             )
+            if not any(record.status in {"READY", "REVIEW"} for record in records):
+                raise HTTPException(409, "Import is already finalised")
+            old_status = batch.status
             # Serialize approvals for this clinic; duplicate imports never overwrite managed state.
             db.scalar(select(Clinic).where(Clinic.id == batch.clinic_id).with_for_update())
             imported = 0
             for record in records:
+                if record.status in {"IMPORTED", "SKIPPED"}:
+                    continue
                 if record.status == "REVIEW" and not body.include_review_rows:
                     continue
                 normalized = record.normalized
@@ -1030,6 +1122,14 @@ def install_bridge_routes(app, factory, settings: Settings, authorise, analyzer=
                 imported += 0 if existing else 1
             batch.status = "APPROVED"
             batch.approved_at = utcnow()
+            record_action(
+                db,
+                clinic_id=batch.clinic_id,
+                actor_id=user.id,
+                resource_id=batch.id,
+                action="bridge_approve",
+                details={"old_status": old_status, "new_status": "APPROVED", "imported": imported},
+            )
             profile = db.get(BridgeImportProfile, batch.clinic_id)
             if not profile:
                 profile = BridgeImportProfile(clinic_id=batch.clinic_id)

@@ -406,7 +406,9 @@ def test_bridge_migration_backfills_approved_state_without_touching_history(post
 
     engine, factory = postgres_schema
     command.upgrade(Config("alembic.ini"), "0012")
-    seed(factory, "staff@forget-lah.example", TEST_PASSWORD)
+    from test_postgres import seed_legacy_membership
+
+    seed_legacy_membership(factory)
     from forget_lah.db import Principal, utcnow
 
     with factory.begin() as db:

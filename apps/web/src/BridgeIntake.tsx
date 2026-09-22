@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useState } from "react";
 import { api, mutationHeaders } from "./client";
+import { maskPhone } from "./privacy";
 
 type Mapping = {
   canonical_field: string;
@@ -193,6 +194,7 @@ export function BridgeIntake({ onImported }: { onImported: () => void }) {
     finally { setBusy(false); }
   }
 
+  const canReview = batch?.status === "ANALYSED" || batch?.status === "APPROVED";
   const ready = batch?.records.filter(r => r.status === "READY").length ?? 0;
   const review = batch?.records.filter(r => r.status === "REVIEW").length ?? 0;
 
@@ -232,14 +234,14 @@ export function BridgeIntake({ onImported }: { onImported: () => void }) {
       </section>
 
       <section className="panel staff-panel bridge-preview">
-        <div className="section-heading"><div><h2>Follow-up preview</h2><p className="muted">Review uncertain rows directly below. Administrative fields can be corrected by staff; doctor notes remain source-bound to the uploaded row.</p></div>{batch.status === "ANALYSED" && <button className="primary" disabled={busy || ready === 0} onClick={() => void approve()}>Approve {ready} ready {ready === 1 ? "record" : "records"} →</button>}</div>
+        <div className="section-heading"><div><h2>Follow-up preview</h2><p className="muted">Review uncertain rows directly below. Administrative fields can be corrected by staff; doctor notes remain source-bound to the uploaded row.</p></div>{canReview && ready > 0 && <button className="primary" disabled={busy} onClick={() => void approve()}>Approve {ready} ready {ready === 1 ? "record" : "records"} →</button>}</div>
         <div className="bridge-table-wrap"><table><thead><tr><th>Row</th><th>Patient</th><th>Follow-up</th><th>Clinic context</th><th>AI review</th></tr></thead><tbody>{batch.records.map(row => {
           const editing = editingId === row.id && draft;
           return <Fragment key={row.id}><tr>
-            <td>{row.row_number}</td><td><strong>{row.normalized.patient_name ?? "Unknown"}</strong><small>{row.normalized.phone ?? "No phone mapped"}</small></td>
+                      <td>{row.row_number}</td><td><strong>{row.normalized.patient_name || "Unknown"}</strong><small>{maskPhone(row.normalized.phone)}</small></td>
             <td><strong>{when(row)}</strong><small>{row.normalized.record_type} · {row.normalized.source_status}</small></td>
             <td><strong>{row.normalized.specialty ?? "general"}</strong><small>{row.normalized.doctor_notes || "No doctor instruction in row"}</small></td>
-            <td><span className={`pill ${row.status === "READY" || row.status === "IMPORTED" ? "staff-completed" : "staff-paused"}`}>{row.status}</span><small>{row.confidence}% AI confidence</small>{row.reviewed_at && <small className="bridge-reviewed">Staff reviewed</small>}{row.issues.map(issue => <small className="bridge-issue" key={issue}>{issue}</small>)}{batch.status === "ANALYSED" && row.status !== "IMPORTED" && row.status !== "SKIPPED" && <button className="bridge-edit-button secondary" onClick={() => startReview(row)}>{row.status === "REVIEW" ? "Review & edit" : "Edit"}</button>}</td>
+            <td><span className={`pill ${row.status === "READY" || row.status === "IMPORTED" ? "staff-completed" : "staff-paused"}`}>{row.status}</span><small>{row.confidence}% AI confidence</small>{row.reviewed_at && <small className="bridge-reviewed">Staff reviewed</small>}{row.issues.map(issue => <small className="bridge-issue" key={issue}>{issue}</small>)}{canReview && (row.status === "READY" || row.status === "REVIEW") && <button className="bridge-edit-button secondary" onClick={() => startReview(row)}>{row.status === "REVIEW" ? "Review & edit" : "Edit"}</button>}</td>
           </tr>
           {editing && <tr className="bridge-review-row"><td colSpan={5}>
             <div className="bridge-review-shell">

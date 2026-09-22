@@ -47,6 +47,7 @@ def has_authority(db, run):
                 Membership.principal_id == run.authorised_by,
                 Membership.clinic_id == run.clinic_id,
                 Membership.active.is_(True),
+                Membership.role.in_({"staff", "admin"}),
                 Principal.active.is_(True),
             )
         )
