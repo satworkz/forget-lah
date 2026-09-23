@@ -84,3 +84,20 @@ Phone enrollment is an explicit staff action protected by clinic access, Origin 
 Reset preserves all active same-patient registrations and their original window expiry, but clears all demo histories/preferences for everyone. Coordinate resets with teammates. Sandbox membership and the service reply window remain separate: rejoin when membership expires and send a new inbound message when the reply window expires. This adds test-phone enrollment, not production patient identity verification.
 
 Migration `0010` uniquely identifies a recipient within a clinic while retaining the original binding. No demo data reset is required.
+
+
+## Staff English translations (23 September)
+
+The staff case page preserves each original patient reply and displays a separate **English translation**, labelled as machine translated, in both the clinical handoff and Case journey. Clinic messages also retain their delivered wording and show the English source message when different. Developer clinical evidence retains the original quotes.
+
+With multilingual translation configured, new WhatsApp and simulator patient replies queue a display-only English translation. The worker uses the existing bounded Anthropic translator and shared call budget, after active agent processing finishes. Translations cannot change attendance, symptoms, handoff ownership, source receipts, or send a WhatsApp message. An English reply is retained in English by the translator; mixed-language replies are handled from their text rather than inferred from the patient's saved preference.
+
+Older replies are not bulk-translated during migration. Staff can select **Translate to English** on a saved reply; failed translations show **Retry English translation**. Both actions require current clinic access and CSRF. Pending and failed states keep the original visible. Successful translations are cached; refreshing the dashboard does not make model calls. Each newly translated reply uses one additional shared-budget call. Machine translation is a reading aid, not verified clinical interpretation.
+
+Migration `0017` adds a nullable staff-translation field to saved events without rewriting their original content. No source database change or demo reset is needed.
+
+## Doctor notes and instruction-answer typography (23 September)
+
+The staff follow-up page now shows a Doctor notes panel below Current plan. It reads current approved instructions from the case-bound clinic adapter, including imported Bridge records, without invoking the model or writing to either source. Empty and unavailable states are distinct; staff can refresh the notes. Original wording and line breaks are retained.
+
+Instruction-check answer evidence now uses the existing typography-only source-span restoration before strict policy validation. This fixes curly versus straight apostrophes in scan answers without accepting paraphrases, negation changes or invented evidence. Original patient events remain unchanged and quote repairs remain auditable.

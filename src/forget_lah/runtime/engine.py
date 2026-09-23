@@ -403,6 +403,7 @@ def _observation_for(db, run, case, step_id):
         "clarification_count": clarification_count(db, run),
         "patient_memory": effective_memory(db, case),
         "patient_questions": run.checkpoint.get("patient_questions", []),
+        "pending_plan_conflicts": run.checkpoint.get("pending_plan_conflicts", []),
         "patient_task_types": run.checkpoint.get("patient_task_types", []),
         "appointment_intent": run.checkpoint.get("appointment_intent", "UNSPECIFIED"),
         "appointment": appointment_facts(db, run)
@@ -440,6 +441,7 @@ def _observation_for(db, run, case, step_id):
         ],
         "simulation": simulation,
         "barriers": run.checkpoint.get("barriers", {}),
+        "instruction_constraints_pending": run.checkpoint.get("instruction_constraints_pending"),
         "preferences": {
             k: v
             for k, v in preferences_for(db, case).items()
@@ -630,6 +632,104 @@ def apply_required_read(db, settings, run, case, step):
         pause(run, "POLICY_DENIED")
     else:
         step.status = "tool_pending"
+    return True
+
+
+def apply_confirmed_intent_review(db, settings, run, case, step):
+    """Advance an already interpreted, unqualified confirmation to source review."""
+    reply = saved_reply(db, run)
+    pending_plan = bool(
+        run.checkpoint.get("pending_plan_conflicts") and run.checkpoint.get("patient_questions")
+    )
+    if (
+        run.active_role != "coordinator"
+        or not simulation_enabled(run)
+        or not reply
+        or run.checkpoint.get("needs_reviewed") != reply.id
+        or (not pending_plan and run.checkpoint.get("appointment_intent") != "CONFIRM")
+        or (not pending_plan and run.checkpoint.get("patient_questions"))
+        or run.checkpoint.get("attendance_qualification")
+        or run.checkpoint.get("question_review_step_id")
+        or "preparation" in run.checkpoint.get("returned_specialists", [])
+        or step.observation.get("simulation", {}).get("instruction_check")
+    ):
+        return False
+    reviewed = db.scalar(
+        select(AgentStep)
+        .where(
+            AgentStep.run_id == run.id,
+            AgentStep.status == "completed",
+        )
+        .order_by(AgentStep.sequence.desc())
+        .limit(1)
+    )
+    evidence = (reviewed.decision or {}) if reviewed else {}
+    if (
+        evidence.get("step_type") != "REVIEW_NEEDS"
+        or evidence.get("reply_event_id") != reply.id
+        or (not pending_plan and evidence.get("appointment_intent") != "CONFIRM")
+        or evidence.get("question")
+        or evidence.get("concern_quote")
+        or evidence.get("comprehension_quote")
+        or evidence.get("attendance_qualification")
+        or (reviewed.policy or {}).get("decision") != "ALLOW"
+    ):
+        return False
+    decision = DelegateDecision(
+        request_id=step.id,
+        expected_case_version=case.case_version,
+        step_type="DELEGATE",
+        reason_code="PREPARATION_REVIEW_REQUIRED",
+        target="preparation",
+        goal="Review approved clinic instructions and prerequisites before attendance confirmation.",
+    )
+    step.origin = "rule"
+    step.observation = {
+        **step.observation,
+        "application_rule": {
+            "name": "PENDING_PLAN_REQUIRES_PREPARATION"
+            if pending_plan
+            else "CONFIRMED_INTENT_REQUIRES_PREPARATION",
+            "needs_step_id": reviewed.id,
+            "reply_event_id": reply.id,
+        },
+    }
+    step.decision = decision.model_dump()
+    step.policy = policy_for(db, run, case, step, decision)
+    if step.policy["decision"] == "ALLOW":
+        apply_control(db, run, case, step, decision, settings)
+    else:
+        step.status, step.error_code = "rejected", "POLICY_DENIED"
+        pause(run, "POLICY_DENIED")
+    return True
+
+
+def apply_ready_options(db, settings, run, case, step):
+    """Deliver a source-reviewed offer without asking a model to choose the send tool."""
+    if (
+        not settings.agent_required_reads_enabled
+        or run.active_role != "coordinator"
+        or not step.observation.get("simulation", {}).get("options_ready")
+    ):
+        return False
+    decision = ToolDecision(
+        request_id=step.id,
+        expected_case_version=case.case_version,
+        step_type="TOOL",
+        reason_code="SEND_SIMULATED_OPTIONS",
+        tool_name="send_simulated_options",
+    )
+    # Readiness is a dispatch hint, never authority. A failed policy check falls
+    # back to ordinary model recovery rather than overriding a safety decision.
+    policy = policy_for(db, run, case, step, decision)
+    if policy["decision"] != "ALLOW":
+        return False
+    step.origin = "rule"
+    step.observation = {
+        **step.observation,
+        "application_rule": {"name": "SEND_REVIEWED_OPTIONS"},
+    }
+    step.decision, step.policy, step.status = decision.model_dump(), policy, "tool_pending"
     return True
 
 
@@ -924,6 +1024,10 @@ def prepare_step(factory, settings, run_id, token):
                 pending.status = "tool_pending"
             elif apply_closed_instruction_answer(db, settings, run, case, pending):
                 return None
+            elif apply_confirmed_intent_review(db, settings, run, case, pending):
+                return None
+            elif apply_ready_options(db, settings, run, case, pending):
+                pass
             elif apply_accepted_handoff(db, settings, run, case, pending):
                 return None
             elif apply_initial_demo_wait(db, settings, run, case, pending):
@@ -1060,6 +1164,20 @@ def apply_control(db, run, case, step, decision, settings):
                 "I've asked the clinic team to help cancel your appointment and requested a callback. Your appointment has not been cancelled yet."
             )
             request_handoff(db, run, "CANCELLATION_REQUESTED", risk="AMBER")
+            return
+
+        if decision.reply_kind in {"ACKNOWLEDGEMENT", "GREETING"}:
+            say(
+                "You're welcome."
+                if decision.reply_kind == "ACKNOWLEDGEMENT"
+                else "Hello. How can the clinic help with your appointment?",
+                "conversation_acknowledgement",
+            )
+            if run.checkpoint.get("reopened_from_run_id"):
+                run.checkpoint = {**run.checkpoint, "outcome": "CONVERSATION_ACKNOWLEDGED"}
+                release(run, "completed")
+            else:
+                release(run, "waiting")
             return
 
         facts = appointment_facts(db, run)
@@ -1215,7 +1333,17 @@ def apply_control(db, run, case, step, decision, settings):
                 "next_action": effective_action,
                 "step_id": step.id,
                 "rejected_slot_ids": rejected,
+                **(
+                    {
+                        "doctor_instruction_reschedule": True,
+                        "instruction_answer_event_id": decision.reply_event_id,
+                    }
+                    if run.checkpoint.get("instruction_constraints_pending")
+                    == decision.reply_event_id
+                    else {}
+                ),
             },
+            "instruction_constraints_pending": None,
         }
         negative_only = (
             decision.next_action == "SEARCH_SLOTS"
@@ -1323,6 +1451,7 @@ def apply_control(db, run, case, step, decision, settings):
         # pending_instruction_question() here would hide the very question being resolved.
         question = db.get(SimulatedMessage, decision.question_message_id)
         reply = saved_reply(db, run)
+        answer_event = dict(run.checkpoint["latest_event"])
         evidence = question.evidence
         requirement = evidence["requirement"]
         review = evidence.get("scheduling_review", [])
@@ -1501,6 +1630,18 @@ def apply_control(db, run, case, step, decision, settings):
                     "rejected_slot_ids": [],
                 }
             run.checkpoint = checkpoint
+        if decision.outcome == "NOT_MET" and closed_binary_answer(reply.content) is None:
+            # A rich answer can also contain scheduling constraints. Do not
+            # consume those words as a bare protocol answer and search unbounded.
+            run.checkpoint = {
+                **run.checkpoint,
+                "latest_event": answer_event,
+                "needs_reviewed": reply.id,
+                "appointment_intent": "CHANGE",
+                "returned_specialists": [],
+                "barriers": resume_context.get("barriers", {}),
+                "instruction_constraints_pending": reply.id,
+            }
         release(run, "queued", delay=delay)
     elif isinstance(decision, SelectionDecision):
         if decision.option_number is None:
@@ -1615,11 +1756,82 @@ def apply_control(db, run, case, step, decision, settings):
                     [r.model_dump() for r in decision.scheduling_review]
                 ),
             }
+            previous_conflicts = run.checkpoint.get("pending_plan_conflicts", [])
+            conflicts = [
+                a.model_dump()
+                for a in decision.question_answers
+                if a.outcome == "GUIDANCE" and a.relation in {"CONFLICTS", "POSSIBLE_SUBSTITUTION"}
+            ]
+            unresolved = [
+                p
+                for p in previous_conflicts
+                if not any(
+                    a.outcome == "GUIDANCE"
+                    and a.relation == "SATISFIES"
+                    and a.instruction_id == p["instruction_id"]
+                    and a.quote
+                    and p.get("quote")
+                    and (a.quote in p["quote"] or p["quote"] in a.quote)
+                    for a in decision.question_answers
+                )
+            ]
+            run.checkpoint = {**run.checkpoint, "pending_plan_conflicts": conflicts or unresolved}
+            if (
+                previous_conflicts
+                and not (conflicts or unresolved)
+                and run.checkpoint.get("pending_plan_confirmation")
+            ):
+                run.checkpoint = {
+                    **run.checkpoint,
+                    "resolved_plan_confirmation": {
+                        **run.checkpoint["pending_plan_confirmation"],
+                        "resolution_step_id": step.id,
+                        "reply_event_id": saved_reply(db, run).id,
+                    },
+                }
         delegation.status, delegation.evidence_ids = "returned", decision.evidence_ids
         delegation.result_reason_code = decision.reason_code
         returned = run.checkpoint.get("returned_specialists", []) + [run.active_role]
         run.active_role = "coordinator"
         run.checkpoint = {**run.checkpoint, "returned_specialists": returned, "delegation_start": 0}
+        if delegation.target == "preparation" and run.checkpoint.get("pending_plan_conflicts"):
+            reply = saved_reply(db, run)
+            if run.checkpoint.get("appointment_intent") == "CONFIRM" and not run.checkpoint.get(
+                "pending_plan_confirmation"
+            ):
+                facts = appointment_facts(db, run)
+                if facts:
+                    run.checkpoint = {
+                        **run.checkpoint,
+                        "pending_plan_confirmation": {
+                            "consent_reply_id": reply.id,
+                            "scheduled_at": facts["scheduled_at"],
+                        },
+                    }
+            body = question_response(run, reply)
+            body += "\n\nBefore I record your confirmation, please tell us how you will follow the clinic instruction, or ask the clinic team for help. Your appointment has not been changed."
+            db.add(
+                patient_message(
+                    run,
+                    clinic_id=run.clinic_id,
+                    case_id=run.case_id,
+                    run_id=run.id,
+                    event_id=reply.id,
+                    kind="plan_conflict",
+                    body=body.strip(),
+                    source_version="approved-plan-review-v1",
+                    evidence={
+                        "question_review_step_id": step.id,
+                        "conflicts": run.checkpoint["pending_plan_conflicts"],
+                    },
+                )
+            )
+            run.checkpoint = {**run.checkpoint, "wait_reason": "AWAITING_COMPATIBLE_PLAN"}
+            if run.checkpoint.get("callback"):
+                request_handoff(db, run, "PATIENT_QUESTION_CALLBACK", risk="AMBER")
+            else:
+                release(run, "waiting")
+            return
         if run.checkpoint.get("staff_review_restore"):
             from forget_lah.staff_review import restore_review
 

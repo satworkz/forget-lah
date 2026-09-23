@@ -153,7 +153,7 @@ def test_anthropic_missing_key_never_uses_organiser_credentials():
         ).decide(observation())
 
 
-def test_anthropic_timeout_is_bounded_and_redacted():
+def test_anthropic_timeout_is_bounded_and_redacted(capsys):
     def timeout(request):
         raise httpx.ReadTimeout("private diagnostic", request=request)
 
@@ -161,6 +161,10 @@ def test_anthropic_timeout_is_bounded_and_redacted():
         AnthropicModel(settings(), httpx.MockTransport(timeout)).decide(observation())
     assert error.value.code == "MODEL_CONNECTION_FAILED" and error.value.retryable
     assert "private" not in str(error.value)
+    assert error.value.retry_after == 2
+    diagnostic = capsys.readouterr().out
+    assert "ReadTimeout" in diagnostic
+    assert "private" not in diagnostic
 
 
 def test_organiser_wire_contract_and_safe_usage_metadata():

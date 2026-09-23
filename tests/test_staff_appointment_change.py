@@ -33,6 +33,60 @@ def setup_bridge(bridge_runtime):
     return runtime, tools, case_id
 
 
+def test_doctor_notes_read_current_bridge_source_without_changing_case(bridge_runtime):
+    runtime, tools, case_id = setup_bridge(bridge_runtime)
+    client = runtime[1]
+    before = view(client, case_id)
+    endpoint = f"/api/cases/{case_id}/doctor-notes"
+    assert client.get(endpoint).json()["instructions"] == []
+    note = "Bring your spectacles.\nArrange someone to accompany you."
+    with runtime[0].begin() as db:
+        episode = db.scalar(
+            select(BridgeEpisode).where(
+                BridgeEpisode.source_episode_ref == db.get(FollowupCase, case_id).source_episode_ref
+            )
+        )
+        episode.normalized = {**episode.normalized, "doctor_notes": note}
+    result = client.get(endpoint)
+    assert result.status_code == 200
+    assert result.json()["source"] == "Imported clinic record"
+    assert result.json()["instructions"][0]["approved_text"] == note
+    assert view(client, case_id) == before
+    assert client.get(f"/api/cases/{uid()}/doctor-notes").status_code == 404
+
+
+def test_doctor_notes_read_approved_clinic_source_and_report_failure(simulated_runtime):
+    from test_doctor_actions_dynamic import SCAN_NOTE, set_note
+    from test_patient_simulation import source_count
+    from test_runtime import start
+
+    runtime, tools, source, source_engine = simulated_runtime
+    runtime[1].app.state.staff_change_tools = tools
+    set_note(source, "DEMO-ANTENATAL-VISIT-01", SCAN_NOTE)
+    case_id, _ = start(runtime, "antenatal")
+    endpoint = f"/api/cases/{case_id}/doctor-notes"
+    result = runtime[1].get(endpoint)
+    assert result.status_code == 200
+    assert result.json()["instructions"][0]["approved_text"] == SCAN_NOTE
+    assert source_count(source_engine) == 0
+
+    from forget_lah.runtime.contracts import ToolResult
+
+    class Unavailable:
+        def execute(self, name, binding):
+            return ToolResult(
+                tool_name=name,
+                status="failed",
+                error_code="SOURCE_UNAVAILABLE",
+                source_version=None,
+                data={},
+                retryable=True,
+            )
+
+    runtime[1].app.state.staff_change_tools = Unavailable()
+    assert runtime[1].get(endpoint).status_code == 503
+
+
 def choose(client, case_id):
     endpoint = f"/api/cases/{case_id}/appointment-change"
     response = client.get(endpoint)

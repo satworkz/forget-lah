@@ -73,6 +73,10 @@ def policy_for(db, run, case, step, decision):
         deny = "STALE_OR_WRONG_REQUEST"
     elif step.role != run.active_role:
         deny = "ROLE_CHANGED"
+    elif run.checkpoint.get("instruction_constraints_pending") and not isinstance(
+        decision, (BarrierDecision, ClinicalReportDecision)
+    ):
+        deny = "INSTRUCTION_ANSWER_CONSTRAINTS_REQUIRED"
     elif run.checkpoint.get("staff_review_restore") and not (
         isinstance(decision, ToolDecision)
         and decision.tool_name

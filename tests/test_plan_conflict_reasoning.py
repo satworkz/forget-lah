@@ -277,8 +277,9 @@ def test_google_maps_real_turn_does_not_dump_unrelated_spectacles_note(simulated
         ),
     )
     result = view(runtime[1], case)
-    assert result["run"]["status"] == "completed", result
-    assert source_count(engine) == 1
+    assert result["run"]["status"] == "waiting", result
+    assert result["run"]["wait_reason"] == "AWAITING_COMPATIBLE_PLAN"
+    assert source_count(engine) == 0
     response = result["patient_simulator"]["messages"][-1]["body"]
     assert relevant in response
     assert "conflicts with that clinic instruction" in response

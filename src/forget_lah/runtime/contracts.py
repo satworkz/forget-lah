@@ -347,6 +347,7 @@ class AttendanceQualification(StrictModel):
 
 
 class NeedsDecision(BoundDecision):
+    reply_kind: Literal["ACTION", "ACKNOWLEDGEMENT", "GREETING"] = "ACTION"
     preparation_plans: list[str] = Field(
         default_factory=list,
         max_length=3,
@@ -370,6 +371,18 @@ class NeedsDecision(BoundDecision):
 
     @model_validator(mode="after")
     def unique_keys(self):
+        if self.reply_kind != "ACTION" and (
+            self.appointment_intent != "UNSPECIFIED"
+            or self.updates
+            or self.patient_questions
+            or self.preparation_plans
+            or self.question
+            or self.comprehension_quote
+            or self.concern_quote
+            or self.appointment_request_quote
+            or self.attendance_qualification
+        ):
+            raise ValueError("Social-only replies cannot discard an independent request or concern")
         for update in self.updates:
             if update.key == "arrival_support" and any(
                 plan in update.quote or update.quote in plan for plan in self.preparation_plans
@@ -420,13 +433,17 @@ class BarrierDecision(BoundDecision):
             raise ValueError("Lasting scheduling concern requires an excluded time")
         if self.requested_date is not None:
             date.fromisoformat(self.requested_date)
-        if (self.date_from is None) != (self.date_to is None):
-            raise ValueError("Date range needs both date_from and date_to")
-        if self.date_from is not None:
+        for boundary in (self.date_from, self.date_to):
+            if boundary is not None:
+                date.fromisoformat(boundary)
+        if self.date_from is not None and self.date_to is not None:
             if date.fromisoformat(self.date_from) > date.fromisoformat(self.date_to):
                 raise ValueError("Date range is reversed")
-            if self.requested_date and not self.date_from <= self.requested_date <= self.date_to:
-                raise ValueError("Requested date conflicts with date range")
+        if self.requested_date and (
+            (self.date_from and self.requested_date < self.date_from)
+            or (self.date_to and self.requested_date > self.date_to)
+        ):
+            raise ValueError("Requested date conflicts with date range")
         if self.earliest_minute is not None and self.latest_minute is not None:
             if self.earliest_minute > self.latest_minute:
                 raise ValueError("Time window is reversed")

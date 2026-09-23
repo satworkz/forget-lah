@@ -453,7 +453,8 @@ def test_date_range_and_time_window_filter_in_singapore():
 @pytest.mark.parametrize(
     "changes",
     [
-        {"date_from": "2026-10-01"},
+        {"date_from": "2026-10-01", "requested_date": "2026-09-30"},
+        {"date_to": "2026-10-01", "requested_date": "2026-10-02"},
         {"date_from": "2026-10-31", "date_to": "2026-10-01"},
         {"date_from": "2026-02-30", "date_to": "2026-03-01"},
         {"date_from": "2026-10-01", "date_to": "2026-10-31", "requested_date": "2026-11-01"},
@@ -473,6 +474,33 @@ def test_invalid_date_windows_rejected(changes):
             next_action="SEARCH_SLOTS",
             **changes,
         )
+
+
+@pytest.mark.parametrize(
+    "bounds,expected",
+    [
+        ({"date_from": "2026-10-06"}, ["later"]),
+        ({"date_to": "2026-10-05"}, ["earlier"]),
+    ],
+)
+def test_open_date_boundary_filters_without_inventing_other_end(bounds, expected):
+    from forget_lah.runtime.contracts import BarrierDecision
+
+    decision = BarrierDecision(
+        request_id=uid(),
+        expected_case_version=1,
+        reply_event_id=uid(),
+        step_type="ASSESS_BARRIERS",
+        reason_code="PATIENT_BARRIERS_REVIEWED",
+        evidence_quotes=["date restriction"],
+        next_action="SEARCH_SLOTS",
+        **bounds,
+    )
+    slots = [
+        {"id": "earlier", "starts_at": "2026-10-05T02:00:00+00:00"},
+        {"id": "later", "starts_at": "2026-10-06T02:00:00+00:00"},
+    ]
+    assert [s["id"] for s in matching_slots(slots, decision.model_dump())] == expected
 
 
 def test_specific_time_clarification_preserves_month(simulated_runtime):
@@ -524,7 +552,7 @@ def test_specific_time_clarification_preserves_month(simulated_runtime):
         assert barrier["date_to"] == "2026-10-31"
 
 
-def test_refining_time_search_does_not_reinterpret_old_offer(simulated_runtime):
+def test_refining_time_search_does_not_accept_old_offer(simulated_runtime):
     from test_patient_memory import NeedsModel
 
     class RefinementModel(BarrierModel):
@@ -539,8 +567,21 @@ def test_refining_time_search_does_not_reinterpret_old_offer(simulated_runtime):
                 value["earliest_minute"] = 1080
                 return ModelReply(json.dumps(value))
             if obs["role"] == "engagement":
-                assert "selection_offer" not in obs["simulation"]
                 assert "attendance_review" not in obs["simulation"]
+                if obs["simulation"].get("selection_offer"):
+                    # Engagement distinguishes a new time constraint from accepting
+                    # an option, even when both have scheduling intent CHANGE.
+                    return ModelReply(
+                        json.dumps(
+                            dict(
+                                request_id=obs["request_id"],
+                                expected_case_version=obs["expected_case_version"],
+                                step_type="RETURN",
+                                reason_code="PATIENT_REQUESTED_ALTERNATIVE_DATE",
+                                evidence_ids=obs["return_requirements"]["eligible_evidence_ids"],
+                            )
+                        )
+                    )
             return super().decide(obs, **kwargs)
 
     runtime, tools, source, engine = simulated_runtime

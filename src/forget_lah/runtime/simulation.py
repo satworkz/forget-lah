@@ -10,7 +10,7 @@ from forget_lah.db import FollowupCase, utcnow
 from forget_lah.runtime.adaptation import effective_constraints, matching_slots, preferences_for
 from forget_lah.runtime.models import AgentDelegation, AgentEvent, AgentStep, SimulatedMessage
 from forget_lah.runtime.questions import question_response
-from forget_lah.runtime.responses import patient_message
+from forget_lah.runtime.responses import appointment_facts, patient_message
 from forget_lah.runtime.scheduling import compatible, instruction_gate_clear
 from forget_lah.source import DEMO_CLINIC_ID
 
@@ -181,6 +181,8 @@ def save_instruction_question(
 
 
 def current_instruction_gate(db, run, context_step, choice=None):
+    if run.checkpoint.get("pending_plan_conflicts"):
+        return False
     # A selected option is already bound to the exact Preparation review that
     # produced the offer. booking_choice() verifies that review, any patient
     # checks, and slot compatibility. The record gate separately verifies the
@@ -345,6 +347,55 @@ def reply_evidence(db, run):
     if run.checkpoint.get("barriers", {}).get("doctor_instruction_reschedule") and not choice:
         return None
     interpretation = attendance_interpretation(db, run)
+    resumed_plan = run.checkpoint.get("resolved_plan_confirmation") or {}
+    facts = appointment_facts(db, run) if resumed_plan else None
+    plan_step = db.get(AgentStep, resumed_plan.get("resolution_step_id")) if resumed_plan else None
+    plan_consent = bool(
+        reply
+        and resumed_plan.get("reply_event_id") == reply.id
+        and not run.checkpoint.get("pending_plan_conflicts")
+        and facts
+        and facts["scheduled_at"] == resumed_plan.get("scheduled_at")
+        and plan_step
+        and plan_step.run_id == run.id
+        and plan_step.clinic_id == run.clinic_id
+        and plan_step.role == "preparation"
+        and plan_step.status == "completed"
+        and (plan_step.policy or {}).get("decision") == "ALLOW"
+        and any(
+            (s.decision or {}).get("step_type") == "REVIEW_NEEDS"
+            and s.decision.get("reply_event_id") == resumed_plan.get("consent_reply_id")
+            and s.decision.get("appointment_intent") == "CONFIRM"
+            and (s.policy or {}).get("decision") == "ALLOW"
+            for s in db.scalars(
+                select(AgentStep).where(AgentStep.run_id == run.id, AgentStep.status == "completed")
+            )
+        )
+    )
+    # Reuse the policy-validated interpretation of this reply instead of asking
+    # Engagement to classify the same unqualified attendance intent a second time.
+    confirmed_needs = False
+    if (
+        reply
+        and run.checkpoint.get("needs_reviewed") == reply.id
+        and run.checkpoint.get("appointment_intent") == "CONFIRM"
+    ):
+        for needs in db.scalars(
+            select(AgentStep)
+            .where(
+                AgentStep.run_id == run.id,
+                AgentStep.clinic_id == run.clinic_id,
+                AgentStep.status == "completed",
+            )
+            .order_by(AgentStep.sequence.desc())
+        ):
+            d = needs.decision or {}
+            if d.get("step_type") == "REVIEW_NEEDS" and d.get("reply_event_id") == reply.id:
+                confirmed_needs = (
+                    d.get("appointment_intent") == "CONFIRM"
+                    and (needs.policy or {}).get("decision") == "ALLOW"
+                )
+                break
     resumed_confirmation = bool(
         reply
         and run.checkpoint.get("instruction_check_processed") == reply.id
@@ -355,6 +406,8 @@ def reply_evidence(db, run):
         if reply
         and (
             explicit_confirmation(reply.content)
+            or confirmed_needs
+            or plan_consent
             or choice
             or resumed_confirmation
             or (interpretation and interpretation.decision.get("confirmed") is True)
@@ -516,12 +569,14 @@ def simulation_evidence(db, run):
         }
     if (
         offer
-        and not refining_search
         and context
         and context.sequence > run.checkpoint.get("delegation_start", 0)
         and not choice
         and run.active_role == "engagement"
     ):
+        # CHANGE / SEARCH_SLOTS describes scheduling intent, not whether the
+        # reply accepts the existing offer. Engagement must interpret it before
+        # choosing a new search; only its bound selection can authorize a write.
         result["selection_offer"] = {
             "offer_id": offer.id,
             "reply_event_id": saved_reply(db, run).id,
@@ -759,6 +814,14 @@ def save_acknowledgement(db, run):
     remaining_notes = [
         n
         for n in notes
+        if not any(
+            r.get("instruction_id") == n["instruction_id"] and r.get("quote") == n["approved_text"]
+            for r in run.checkpoint.get("instruction_check_resolutions", [])
+        )
+        if not any(
+            r.get("instruction_id") == n["instruction_id"] and r.get("effect") == "PATIENT_CHECK"
+            for r in run.checkpoint.get("scheduling_review", [])
+        )
         if not any(
             ident == n["instruction_id"] and quote and quote in n["approved_text"]
             for ident, quote in quoted_answers

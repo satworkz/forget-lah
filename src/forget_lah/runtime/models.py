@@ -125,6 +125,7 @@ class AgentEvent(Base):
     expected_case_version: Mapped[int] = mapped_column(Integer)
     kind: Mapped[str] = mapped_column(String(40))
     content: Mapped[str] = mapped_column(String(1000), default="")
+    staff_translation: Mapped[dict | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

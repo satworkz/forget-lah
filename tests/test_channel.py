@@ -87,6 +87,34 @@ def post(client, settings, *, sid=None, body="I confirm my attendance", **extra)
     return client.post(WEBHOOK, data=values, headers={"X-Twilio-Signature": signature})
 
 
+def ingest_test_reply(runtime, case_id, content):
+    """Exercise the real inbound channel state transition, without network calls."""
+    factory, _, _ = runtime
+    seed_automation(factory)
+    with factory.begin() as db:
+        binding = db.get(ChannelBinding, "offline-whatsapp-replay")
+        if binding is None:
+            db.add(
+                ChannelBinding(
+                    id="offline-whatsapp-replay",
+                    clinic_id=DEMO_CLINIC_ID,
+                    case_id=case_id,
+                    recipient=RECIPIENT,
+                    enabled=True,
+                    inbound_at=utcnow(),
+                )
+            )
+        db.add(
+            ChannelInbox(
+                sid="SM" + uid().replace("-", ""),
+                clinic_id=DEMO_CLINIC_ID,
+                case_id=case_id,
+                body=content,
+            )
+        )
+    ingest_one(factory)
+
+
 def test_signed_reply_is_durable_deduplicated_and_wakes_bound_case(channel):
     client, factory, settings, case_id, run_id = channel
     assert post(client, settings).status_code == 200

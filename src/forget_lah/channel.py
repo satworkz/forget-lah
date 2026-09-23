@@ -26,6 +26,7 @@ from forget_lah.runtime.startup import SIMULATOR_GOAL, automation_authorised
 from forget_lah.security import mask_identifier
 from forget_lah.service_identity import AUTOMATION_PRINCIPAL_ID
 from forget_lah.source import DEMO_CLINIC_ID
+from forget_lah.staff_translations import initial_translation
 from forget_lah.whatsapp import WhatsAppClient, WhatsAppError, WhatsAppSettings
 
 WEBHOOK = "/api/channels/whatsapp/inbound"
@@ -442,12 +443,24 @@ def ingest_one(factory, settings=None, binding_id=None):
                 actor_id=AUTOMATION_PRINCIPAL_ID,
                 kind="demo_reply",
                 content=reply_content,
+                staff_translation=initial_translation(settings, "demo_reply"),
                 expected_case_version=case.case_version,
             )
         )
         abort_delegation(db, run)
         barriers = run.checkpoint.get("barriers")
+        # WhatsApp must retain the same durable doctor-check evidence as the
+        # staff simulator. A later slot selection is a new turn, not a new scan
+        # requirement. Fresh source reads still invalidate changed instructions.
+        instruction_resolutions = run.checkpoint.get("instruction_check_resolutions")
         run.checkpoint = {
+            "pending_plan_conflicts": run.checkpoint.get("pending_plan_conflicts", []),
+            "pending_plan_confirmation": run.checkpoint.get("pending_plan_confirmation"),
+            **(
+                {"instruction_check_resolutions": instruction_resolutions}
+                if instruction_resolutions
+                else {}
+            ),
             **(
                 {"reopened_from_run_id": run.checkpoint["reopened_from_run_id"]}
                 if run.checkpoint.get("reopened_from_run_id")
