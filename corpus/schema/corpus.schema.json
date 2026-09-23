@@ -1,0 +1,597 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forget-lah.invalid/corpus/schema/corpus.schema.json",
+  "title": "forget-lah multilingual conversation corpus item",
+  "description": "Contract for one corpus variant. Semantics are per docs/corpus/m1/runtime_semantics_map.md; every enum below is taken from the runtime, not invented. Cross-field rules that JSON Schema cannot express are listed in x-cross-field-rules and are enforced by tests/test_corpus_contract.py and the projection.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "corpus_version",
+    "identity",
+    "split",
+    "clock",
+    "environment",
+    "runtime_bounds",
+    "initial_state",
+    "conversation",
+    "meaning_contract",
+    "checkpoint_oracle",
+    "terminal_oracle",
+    "scoring",
+    "governance",
+    "integrity"
+  ],
+  "properties": {
+    "corpus_version": {
+      "type": "string",
+      "description": "Version of the corpus contract this item was authored against."
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["family_id", "variant_id", "scenario_id", "language", "primary_stratum"],
+      "properties": {
+        "family_id": { "type": "string", "minLength": 1 },
+        "variant_id": { "type": "string", "minLength": 1 },
+        "scenario_id": { "type": "string", "minLength": 1 },
+        "language": {
+          "type": "string",
+          "enum": ["en", "zh", "ms", "ta"],
+          "description": "Variant language. Aligned family members share family_id and differ only here and in patient wording."
+        },
+        "primary_stratum": {
+          "type": "string",
+          "enum": [
+            "confirmation",
+            "cancellation",
+            "rescheduling",
+            "timing_constraints",
+            "preparation_acknowledgement",
+            "questions",
+            "wrong_number",
+            "third_party_reply",
+            "refusal_contact_stop",
+            "ambiguous_short_reply"
+          ]
+        },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        },
+        "register_markers": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["romanised_tamil", "code_switching", "singlish", "manglish", "emoji", "typo", "fragment"]
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "split": {
+      "type": "string",
+      "enum": ["development", "evaluation", "holdout"],
+      "description": "holdout is a subset of evaluation held by the custodian alone (approx. 20 per language). Development is the only split the tuner may see."
+    },
+    "clock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reference_datetime", "frozen_date"],
+      "description": "The runtime derives 'today' from the wall clock (engine.py:394), so it is not reproducible unless the fixture injects the date. frozen_date is the injected value and must equal reference_datetime's SGT calendar date.",
+      "properties": {
+        "reference_datetime": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Fixed reference instant with an explicit +08:00 offset."
+        },
+        "frozen_date": {
+          "type": "string",
+          "format": "date",
+          "description": "The SGT date the fixture injects in place of utcnow()."
+        },
+        "per_turn_offset_minutes": {
+          "type": "array",
+          "items": { "type": "integer" },
+          "description": "Optional offset from the reference instant for each turn, in turn order."
+        }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "clinic_id",
+        "patient_simulator_enabled",
+        "translation_configured",
+        "delivery_evidence_source",
+        "fixtures"
+      ],
+      "description": "Runtime gates this pins: simulation_enabled requires the demo clinic id AND the checkpoint flag (simulation.py:18); the delivery gate's supported-language set is {en,zh,ms,ta} only when translation_configured (memory.py:119-120).",
+      "properties": {
+        "clinic_id": { "type": "string", "minLength": 1 },
+        "patient_simulator_enabled": { "const": true },
+        "translation_configured": {
+          "type": "boolean",
+          "description": "When false, the delivery gate supports only {en}."
+        },
+        "delivery_evidence_source": {
+          "type": "string",
+          "enum": ["displayed_in_simulator", "outbox_lookup"],
+          "description": "One authoritative source only. The simulator labels itself displayed_in_simulator (simulation.py:995); the case-view route replaces that field with an outbox lookup (routes.py:264). Grading both would compare a label against a lookup."
+        },
+        "fixtures": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["source_api", "approved_instructions"],
+          "properties": {
+            "source_api": {
+              "type": "array",
+              "description": "Frozen, deterministic tool results. Uploaded records must never establish availability.",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["call", "result"],
+                "properties": {
+                  "call": { "type": "string" },
+                  "result": { "type": "object" }
+                }
+              }
+            },
+            "approved_instructions": {
+              "type": "array",
+              "description": "Approved instruction text. ANSWERED/GUIDANCE quotes must be substrings of approved_text (questions.py:49-54), so these are part of the oracle surface.",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["instruction_id", "approved_text"],
+                "properties": {
+                  "instruction_id": { "type": "string" },
+                  "approved_text": { "type": "string" }
+                }
+              }
+            },
+            "staff_acceptance": {
+              "type": "array",
+              "description": "Named staff acceptance records. A CompleteDecision handoff requires both accepted_by and accepted_at (policy.py:400).",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["handoff_id", "accepted_by", "accepted_at"],
+                "properties": {
+                  "handoff_id": { "type": "string" },
+                  "accepted_by": { "type": "string", "minLength": 1 },
+                  "accepted_at": { "type": "string", "format": "date-time" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "runtime_bounds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["agent_max_steps", "role_limit_coordinator", "role_limit_specialist"],
+      "description": "Recorded, not authored. Per-turn step budget is agent_max_steps, measured from checkpoint turn_start_step (engine.py:753-757). Role limits are simulator-path values (engine.py:784); the non-simulator path would be 4/6 (engine.py:786).",
+      "properties": {
+        "agent_max_steps": { "type": "integer", "minimum": 4, "maximum": 40, "default": 40 },
+        "role_limit_coordinator": { "const": 8 },
+        "role_limit_specialist": { "const": 6 }
+      }
+    },
+    "initial_state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contact_permission", "memory"],
+      "properties": {
+        "appointment_context": { "type": ["object", "null"] },
+        "conversation_phase": { "type": ["string", "null"] },
+        "existing_tasks": { "type": "array", "items": { "type": "string" } },
+        "contact_permission": {
+          "type": "string",
+          "enum": ["unknown", "allowed", "stopped"],
+          "description": "contact_permission can only be resumed by explicit simulator control; the model cannot remove it (contracts.py:289-293)."
+        },
+        "memory": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["key", "value", "scope", "status"],
+            "properties": {
+              "key": {
+                "type": "string",
+                "enum": [
+                  "excluded_weekdays",
+                  "excluded_minutes",
+                  "preferred_language",
+                  "excluded_languages",
+                  "contact_permission",
+                  "arrival_support",
+                  "other_concern"
+                ]
+              },
+              "value": { "type": "string", "maxLength": 160 },
+              "scope": { "type": "string", "enum": ["visit", "future"] },
+              "status": {
+                "type": "string",
+                "enum": ["active", "pending", "superseded", "retracted"]
+              }
+            }
+          }
+        }
+      }
+    },
+    "conversation": {
+      "type": "array",
+      "minItems": 2,
+      "description": "Ordered turns. Scripted clinic turns are controlled inputs; a clinic message generated by the pipeline is an output to score and must never be silently replaced.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["turn_id", "origin", "speaker", "body", "language_tag"],
+        "properties": {
+          "turn_id": { "type": "string", "minLength": 1 },
+          "origin": {
+            "type": "string",
+            "enum": ["history", "replay"],
+            "description": "history is prior context; replay turns are executed."
+          },
+          "speaker": { "type": "string", "enum": ["patient", "clinic", "staff"] },
+          "clinic_turn_kind": {
+            "type": ["string", "null"],
+            "enum": [
+              "reminder",
+              "options",
+              "acknowledgement",
+              "doctor_instruction_check",
+              null
+            ],
+            "description": "Outbound kind; required non-null when speaker is clinic."
+          },
+          "expected_step_type": {
+            "type": ["string", "null"],
+            "enum": [
+              "REVIEW_NEEDS",
+              "CLARIFY",
+              "ASSESS_BARRIERS",
+              "REPORT_SYMPTOMS",
+              "INTERPRET_ATTENDANCE",
+              "INTERPRET_SELECTION",
+              "INTERPRET_INSTRUCTION_CHECK",
+              "TOOL",
+              "DELEGATE",
+              "RETURN",
+              "WAIT",
+              "ESCALATE",
+              "COMPLETE",
+              "COMPLETE_SIMULATED_CONFIRMATION",
+              null
+            ],
+            "description": "Step type the turn is expected to produce. INTERPRET_SELECTION is a real step type that the programme PRD's phase list omits (contracts.py:587)."
+          },
+          "body": { "type": "string", "minLength": 1 },
+          "language_tag": { "type": "string", "enum": ["en", "zh", "ms", "ta", "mixed"] }
+        }
+      }
+    },
+    "meaning_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["intended_meaning_by_turn", "must_not_infer"],
+      "properties": {
+        "intended_meaning_by_turn": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["turn_id", "intended_meaning"],
+            "properties": {
+              "turn_id": { "type": "string" },
+              "intended_meaning": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
+        "unresolved_ambiguity": { "type": "array", "items": { "type": "string" } },
+        "must_not_infer": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "checkpoint_oracle": {
+      "type": "array",
+      "minItems": 1,
+      "description": "One entry per graded checkpoint. Question dispositions are per-task, never thread-level.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["after_turn_id", "appointment_intent", "tasks", "memory", "delivery"],
+        "properties": {
+          "after_turn_id": { "type": "string" },
+          "appointment_intent": {
+            "type": "string",
+            "enum": ["UNSPECIFIED", "CHANGE", "CONFIRM", "CANCEL"]
+          },
+          "appointment_request_quote": {
+            "type": ["string", "null"],
+            "description": "Required non-null whenever appointment_intent is not UNSPECIFIED (contracts.py:384-385)."
+          },
+          "attendance_qualification": {
+            "type": ["object", "null"],
+            "description": "Valid only when appointment_intent is CONFIRM (contracts.py:386-389)."
+          },
+          "tasks": {
+            "type": "array",
+            "maxItems": 3,
+            "description": "Ordered, index-aligned task list mirroring the runtime's concatenation (engine.py:986-988).",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["index", "task_type", "outcome"],
+              "properties": {
+                "index": { "type": "integer", "minimum": 0, "maximum": 2 },
+                "task_type": {
+                  "type": "string",
+                  "enum": ["QUESTION", "PLAN"],
+                  "description": "QUESTION corresponds to an entry in patient_questions; PLAN to an entry in preparation_plans."
+                },
+                "outcome": {
+                  "type": "string",
+                  "enum": ["ANSWERED", "GUIDANCE", "NOT_REQUIRED", "CLINIC_REVIEW", "UNSUPPORTED"],
+                  "description": "Per-question outcome, not a thread outcome. PLAN permits only GUIDANCE or NOT_REQUIRED (questions.py:45-46)."
+                },
+                "instruction_id": { "type": ["string", "null"] },
+                "quote": { "type": ["string", "null"], "maxLength": 600 },
+                "relation": {
+                  "type": ["string", "null"],
+                  "enum": ["CONFLICTS", "MAY_CONFLICT", "SATISFIES", "POSSIBLE_SUBSTITUTION", "RELEVANT", null]
+                },
+                "actions": { "type": "array", "items": { "type": "string" } }
+              }
+            }
+          },
+          "instruction_checks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["question_message_id", "outcome", "answer_quote"],
+              "properties": {
+                "question_message_id": { "type": "string" },
+                "outcome": { "type": "string", "enum": ["MET", "NOT_MET", "UNCLEAR"] },
+                "answer_quote": { "type": "string", "minLength": 1 }
+              }
+            }
+          },
+          "memory": {
+            "type": "array",
+            "maxItems": 5,
+            "description": "Max 5 updates per decision, at most one per key (contracts.py:363, 382-383). 'remove' writes a retracted row rather than deleting (memory.py:74, 87-88).",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["key", "operation", "scope"],
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "enum": [
+                    "excluded_weekdays",
+                    "excluded_minutes",
+                    "preferred_language",
+                    "excluded_languages",
+                    "contact_permission",
+                    "arrival_support",
+                    "other_concern"
+                  ]
+                },
+                "operation": { "type": "string", "enum": ["set", "remove"] },
+                "scope": { "type": "string", "enum": ["visit", "future"] },
+                "value": { "type": ["string", "null"], "maxLength": 160 },
+                "expected_status": {
+                  "type": ["string", "null"],
+                  "enum": ["active", "pending", "retracted", null],
+                  "description": "Runtime: retracted for remove; else pending for arrival_support/other_concern or value 'und'; else active (memory.py:87-91)."
+                }
+              }
+            }
+          },
+          "delivery": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["expected_block"],
+            "properties": {
+              "expected_block": {
+                "type": ["string", "null"],
+                "enum": ["CONTACT_STOPPED", "LANGUAGE_SUPPORT_REQUIRED", null]
+              },
+              "effective_language": {
+                "type": ["string", "null"],
+                "enum": ["en", "zh", "ms", "ta", null],
+                "description": "Expected effective preferred_language after this turn. Kept explicitly: language-dependent values must not be normalised away."
+              }
+            }
+          }
+        }
+      }
+    },
+    "terminal_oracle": {
+      "description": "Exactly one expected end state. The programme PRD's 'permitted terminal alternatives' is deleted by the accepted decision.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "run_status", "outcome", "handoff_id"],
+          "properties": {
+            "kind": { "const": "completed_handoff" },
+            "run_status": { "const": "completed" },
+            "outcome": { "const": "OWNED_STAFF_HANDOFF" },
+            "handoff_id": { "type": "string", "description": "Must match a staff_acceptance fixture entry with accepted_by and accepted_at (policy.py:400)." }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "run_status", "outcome"],
+          "properties": {
+            "kind": { "const": "completed_simulated_confirmation" },
+            "run_status": { "const": "completed" },
+            "outcome": { "const": "SIMULATED_ATTENDANCE_CONFIRMED" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "run_status", "outcome", "intended"],
+          "description": "Correct only for scenarios authored as waiting scenarios.",
+          "properties": {
+            "kind": { "const": "waiting" },
+            "run_status": { "const": "waiting" },
+            "outcome": { "const": "WAITING_FOR_CLARIFICATION" },
+            "intended": { "const": true }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "run_status", "failure_code"],
+          "description": "Only usable when the scenario is authored as a budget/consistency failure case. Step-budget exhaustion is otherwise always a failure.",
+          "properties": {
+            "kind": { "const": "failure" },
+            "run_status": { "const": "paused" },
+            "failure_code": {
+              "type": "string",
+              "enum": ["STEP_BUDGET_EXHAUSTED", "ROLE_BUDGET_EXHAUSTED", "STALE_CHECKPOINT"]
+            }
+          }
+        }
+      ]
+    },
+    "scoring": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scored"],
+      "properties": {
+        "scored": {
+          "type": "boolean",
+          "description": "False for quarantined strata. An unscored item must never be reported as passing."
+        },
+        "unscored_reason": {
+          "type": ["string", "null"],
+          "enum": ["wrong_number_path_absent", "third_party_path_absent", null]
+        }
+      }
+    },
+    "forbidden_actions": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Actions whose occurrence fails the item regardless of other outcomes."
+    },
+    "governance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["synthetic", "pii_free", "authorship", "review", "back_translation", "ai_declarations"],
+      "properties": {
+        "synthetic": { "const": true },
+        "pii_free": { "const": true },
+        "authorship": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["drafter", "drafter_family", "licence"],
+          "properties": {
+            "drafter": { "type": "string" },
+            "drafter_family": { "type": "string" },
+            "licence": {
+              "type": "string",
+              "enum": ["original_synthetic", "pending"],
+              "description": "pending must never be treated as approved."
+            }
+          }
+        },
+        "review": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["reviewer_of_record", "reviewed_at"],
+          "properties": {
+            "reviewer_of_record": { "type": "string", "description": "A human. AI may pre-screen but cannot be the reviewer of record." },
+            "reviewed_at": { "type": "string", "format": "date-time" }
+          }
+        },
+        "back_translation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["model", "model_family", "differs_from_drafter", "spot_check"],
+          "properties": {
+            "model": { "type": "string" },
+            "model_family": { "type": "string" },
+            "differs_from_drafter": { "const": true },
+            "spot_check": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["by", "blind"],
+              "properties": {
+                "by": { "type": "string" },
+                "blind": { "const": true }
+              }
+            }
+          }
+        },
+        "adjudication": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status"],
+          "properties": {
+            "status": { "type": "string", "enum": ["unresolved", "resolved", "excluded"] },
+            "adjudicator": { "type": ["string", "null"] }
+          }
+        },
+        "ai_declarations": {
+          "type": "array",
+          "description": "Every AI contribution, with the step it was used at. No Anthropic model may appear here.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["step", "model", "model_family"],
+            "properties": {
+              "step": {
+                "type": "string",
+                "enum": ["drafting", "back_translation", "pre_screen", "review", "adjudication"]
+              },
+              "model": { "type": "string" },
+              "model_family": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["generation_seed", "replay_seed", "content_hash"],
+      "properties": {
+        "generation_seed": { "type": "integer" },
+        "replay_seed": { "type": "integer" },
+        "content_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      }
+    }
+  },
+  "x-cross-field-rules": {
+    "description": "Not expressible in JSON Schema; enforced by tests/test_corpus_contract.py and the projection. Each must have a negative test fixture.",
+    "rules": [
+      "Every task index in checkpoint_oracle.tasks must form exactly 0..n-1 with no gaps or duplicates (questions.py:16-17).",
+      "task_type PLAN allows only outcome GUIDANCE or NOT_REQUIRED; GUIDANCE or NOT_REQUIRED requires task_type PLAN (questions.py:45-48).",
+      "outcome ANSWERED or GUIDANCE requires non-null instruction_id and a non-empty quote, and the quote must be a substring of the referenced approved_instructions[].approved_text (contracts.py:136-140, questions.py:49-54).",
+      "appointment_intent other than UNSPECIFIED requires a non-null appointment_request_quote (contracts.py:384-385).",
+      "attendance_qualification may be non-null only when appointment_intent is CONFIRM (contracts.py:386-389).",
+      "At most one memory entry per key per checkpoint (contracts.py:382-383).",
+      "A memory entry with key contact_permission and operation remove is invalid (contracts.py:289-293).",
+      "A memory entry with operation remove must have expected_status retracted; operation set must not (memory.py:74, 87-88).",
+      "primary_stratum wrong_number or third_party_reply requires scoring.scored false with the matching unscored_reason (approved policy #3).",
+      "clock.frozen_date must equal the SGT calendar date of clock.reference_datetime.",
+      "governance.back_translation.model_family must differ from governance.authorship.drafter_family, and neither may be an Anthropic family.",
+      "No ai_declarations entry may name an Anthropic family, and none may use step review or adjudication (method rules).",
+      "Scenarios that expect terminal_oracle.kind completed_handoff must supply a matching staff_acceptance fixture with accepted_by and accepted_at (policy.py:400).",
+      "terminal_oracle.kind waiting is valid only when intended is true; an unintended wait is a failure and must be authored as such.",
+      "Aligned family members must share family_id, intended meaning at every patient turn and fixture content, differing only in language and patient wording."
+    ]
+  }
+}
