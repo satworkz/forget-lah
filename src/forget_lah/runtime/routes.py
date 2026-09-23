@@ -156,6 +156,8 @@ def install_routes(app, factory, settings, authorise):
                     "sequence": step.sequence,
                     "role": step.role,
                     "origin": step.origin,
+                    "provider": (step.observation.get("decider") or {}).get("decision_provider"),
+                    "decider": step.observation.get("decider"),
                     "status": step.status,
                     "attempts": step.attempts,
                     "goal": step.observation.get("goal", run.goal),

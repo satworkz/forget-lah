@@ -7,7 +7,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from forget_lah.db import make_engine, session_factory, uid
 from forget_lah.runtime.budget import reserve_call
 from forget_lah.runtime.contracts import ToolDecision, parse_decision
-from forget_lah.runtime.provider import ModelError, model_for
+from forget_lah.runtime.provider import ModelError, base_model_for
 from forget_lah.settings import Settings
 
 
@@ -33,7 +33,7 @@ def check_model(settings, factory, model=None):
         "handoff": None,
     }
     try:
-        reply = (model or model_for(settings, settings.agent_model_mode)).decide(observation)
+        reply = (model or base_model_for(settings, settings.agent_model_mode)).decide(observation)
         decision = parse_decision(reply.text, request_id, 1)
         if not isinstance(decision, ToolDecision) or decision.tool_name != "read_followup_context":
             return {"ok": False, "code": "MODEL_UNEXPECTED_DECISION"}

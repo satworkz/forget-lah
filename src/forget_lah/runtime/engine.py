@@ -1623,6 +1623,13 @@ def store_proposal(factory, settings, run_id, token, step_id, reply):
             if value is not None:
                 setattr(step, field, (getattr(step, field) or 0) + value)
         step.latency_ms = reply.latency_ms
+        provenance = getattr(reply, "provenance", None)
+        if isinstance(provenance, dict):
+            # The run mode sets the default origin. A live decider leg must be visible as a live
+            # model even when the run mode is mock, and the full provenance stays auditable.
+            if provenance.get("origin") == "model":
+                step.origin = "model"
+            step.observation = {**step.observation, "decider": dict(provenance)}
         try:
             patient_reply = saved_reply(db, run)
             repairs = []

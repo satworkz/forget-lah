@@ -868,6 +868,18 @@ def prompt_for(observation: dict, repair: bool, *, native=False) -> str:
                 + json.dumps(observation["validation_errors"], separators=(",", ":"))
                 + ". "
             )
+    candidate = observation.get("_decider_candidate")
+    if isinstance(candidate, dict):
+        target = candidate.get("target")
+        reason = candidate.get("reason_code")
+        if target and reason:
+            # Lane A delegation typing: the runtime has already fixed the binding, so the
+            # provider authors only the bounded goal. The private key never reaches CONTEXT.
+            instructions += (
+                f" Return exactly one DELEGATE decision for target {target} with reason_code "
+                f"{reason}, and author only its goal (1-200 characters). Do not choose another "
+                "step type, target or reason."
+            )
     if native:
         instructions += "Put the decision object inside the required decision envelope. "
     return (
@@ -884,6 +896,7 @@ def prompt_for(observation: dict, repair: bool, *, native=False) -> str:
                 k: v
                 for k, v in observation.items()
                 if k != "validation_errors"
+                and not k.startswith("_")
                 and not (k in {"patient_questions", "patient_task_types"} and not v)
                 and not (k == "appointment_intent" and v == "UNSPECIFIED")
             },
@@ -1151,7 +1164,12 @@ class MockModel:
         return answer("RETURN", reason, evidence_ids=[t["id"] for t in own][-4:], **extra)
 
 
-def model_for(settings: Settings, mode: str):
+def base_model_for(settings: Settings, mode: str):
+    """Return the concrete provider for the mode, never wrapped.
+
+    Diagnostics use this so a wrapper cannot make a report disagree with the provider
+    actually under test.
+    """
     if mode == "mock":
         return MockModel()
     if mode == "organiser":
@@ -1159,3 +1177,13 @@ def model_for(settings: Settings, mode: str):
     if mode == "anthropic":
         return AnthropicModel(settings)
     raise ModelError("MODEL_MODE_INVALID")
+
+
+def model_for(settings: Settings, mode: str):
+    inner = base_model_for(settings, mode)
+    if not settings.agent_decider_enabled:
+        return inner
+    # Imported lazily: decider.py depends on this module for ModelReply and derivation.
+    from forget_lah.runtime.decider import DeciderModel
+
+    return DeciderModel(settings, inner, inner_name=mode)

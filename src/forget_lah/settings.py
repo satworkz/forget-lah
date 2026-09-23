@@ -1,3 +1,4 @@
+import os
 from typing import Literal
 
 from pydantic import Field, SecretStr
@@ -45,6 +46,33 @@ class Settings(BaseSettings):
     source_poll_interval_seconds: float = Field(default=2, ge=1, le=60)
     agent_required_reads_enabled: bool = True
     agent_min_interval_seconds: int = Field(default=2, ge=0, le=30)
+
+    # Optional closed-set decider (Lane A, System One shape). The flag is the rollout
+    # switch: off restores ordinary provider selection with no migration and no data loss.
+    agent_decider_enabled: bool = False
+    # Hosted baseline is the Decision model typesafe/jev on the Provider API.
+    agent_decider_url: str = "https://api.commandcode.ai/provider"
+    # Standby, selected only when AGENT_DECIDER_URL is explicitly empty. A failed selected
+    # endpoint never retries another endpoint; the whole decision falls back to the inner
+    # provider. Local Kev-4B speaks the same route for offline work.
+    agent_decider_fallback_url: str = "http://172.17.0.1:8009"
+    agent_decider_model: str = "typesafe/jev"
+    agent_decider_timeout: float = Field(default=30, gt=0, le=30)
+    # Gate policy is explicit, versioned and sweepable: the A/B harness varies the mode and the
+    # thresholds and replays recorded answers instead of spending live calls (astra GATE: D).
+    # The defaults preserve pre-decision behaviour until measurement chooses thresholds.
+    agent_decider_gate_mode: Literal["confidence", "probability", "joint"] = "confidence"
+    agent_decider_min_confidence: float = Field(default=0.5, ge=0, le=1)
+    agent_decider_min_probability: float = Field(default=0.0, ge=0, le=1)
+    agent_decider_min_margin: float = Field(default=0.0, ge=0, le=1)
+    agent_decider_shadow: bool = False
+    agent_decider_record: str = ""
+
+    @property
+    def agent_decider_api_key(self) -> SecretStr | None:
+        """Environment-only secret: not a settings field, so it cannot be dumped."""
+        value = os.environ.get("AGENT_DECIDER_API_KEY", "")
+        return SecretStr(value) if value.strip() else None
 
     @property
     def simulation_configured(self) -> bool:

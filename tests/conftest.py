@@ -42,3 +42,23 @@ def signed_client(client):
     )
     assert response.status_code == 200
     return client
+
+
+@pytest.fixture(autouse=True)
+def clear_decider_env(monkeypatch):
+    """A developer's enabled shell must never turn ordinary tests into network calls."""
+    for name in (
+        "AGENT_DECIDER_ENABLED",
+        "AGENT_DECIDER_URL",
+        "AGENT_DECIDER_FALLBACK_URL",
+        "AGENT_DECIDER_MODEL",
+        "AGENT_DECIDER_TIMEOUT",
+        "AGENT_DECIDER_GATE_MODE",
+        "AGENT_DECIDER_MIN_CONFIDENCE",
+        "AGENT_DECIDER_MIN_PROBABILITY",
+        "AGENT_DECIDER_MIN_MARGIN",
+        "AGENT_DECIDER_SHADOW",
+        "AGENT_DECIDER_RECORD",
+        "AGENT_DECIDER_API_KEY",
+    ):
+        monkeypatch.delenv(name, raising=False)

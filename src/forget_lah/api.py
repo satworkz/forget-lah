@@ -216,6 +216,20 @@ def create_app(settings: Settings | None = None, engine=None) -> FastAPI:
             "data_mode": "synthetic",
             "model_mode": settings.agent_model_mode,
             "model_configured": settings.model_configured,
+            # Nonsecret decider configuration only. This reports intent, never a successful call:
+            # a configured decider is not evidence that any decision was made by it.
+            "decider": {
+                "enabled": settings.agent_decider_enabled,
+                "shadow": settings.agent_decider_shadow,
+                "model": settings.agent_decider_model,
+                "gate": {
+                    "mode": settings.agent_decider_gate_mode,
+                    "min_confidence": settings.agent_decider_min_confidence,
+                    "min_probability": settings.agent_decider_min_probability,
+                    "min_margin": settings.agent_decider_min_margin,
+                },
+                "recording": bool(settings.agent_decider_record),
+            },
             "outreach_enabled": False,
             "agents": [{**agent, "status": settings.agent_model_mode} for agent in AGENT_CATALOG],
         }

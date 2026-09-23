@@ -82,6 +82,25 @@ def decision_summary(step):
     return descriptions.get(kind, "Recorded agent action")
 
 
+def _step_provider_label(step) -> str:
+    """Prefer saved provider provenance over the historical origin rendering.
+
+    Observations written before provenance existed keep their historical labels: provider
+    identity is never inferred from today's settings.
+    """
+    provenance = (step.observation or {}).get("decider") or {}
+    saved = provenance.get("decision_provider")
+    if isinstance(saved, str) and saved:
+        return saved
+    return (
+        "Claude adapter"
+        if step.origin == "model"
+        else "Simulation"
+        if step.origin == "mock"
+        else "Application rule"
+    )
+
+
 def case_journey(db, case, run_id=None):
     runs = list(
         db.scalars(
@@ -277,13 +296,7 @@ def case_journey(db, case, run_id=None):
             select(AgentStep).where(AgentStep.run_id == run.id).order_by(AgentStep.sequence)
         ):
             role = step.role.title()
-            model = (
-                "Claude adapter"
-                if step.origin == "model"
-                else "Simulation"
-                if step.origin == "mock"
-                else "Application rule"
-            )
+            model = _step_provider_label(step)
             stages = [
                 stage(
                     "PostgreSQL → Worker / Application rule"
