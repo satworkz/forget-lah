@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://forget-lah.invalid/corpus/schema/corpus.schema.json",
   "title": "forget-lah multilingual conversation corpus item",
-  "description": "Contract for one corpus variant. Semantics are per docs/corpus/m1/runtime_semantics_map.md; every enum below is taken from the runtime, not invented. Cross-field rules that JSON Schema cannot express are listed in x-cross-field-rules and are enforced by tests/test_corpus_contract.py and the projection.",
+  "description": "Contract for one corpus variant, revision 2. Semantics are per docs/corpus/m1/runtime_semantics_map.md; every enum below is taken from the runtime, not invented. NOTE: the rules in x-cross-field-rules are NOT yet enforced by any test at this revision - tests/test_corpus_contract.py does not exist yet and is deliberately held back pending standup review. Do not treat a validating item as a correct item until that enforcement exists.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -78,7 +78,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["reference_datetime", "frozen_date"],
-      "description": "The runtime derives 'today' from the wall clock (engine.py:394), so it is not reproducible unless the fixture injects the date. frozen_date is the injected value and must equal reference_datetime's SGT calendar date.",
+      "description": "The runtime derives 'today' from the wall clock (engine.py:394) and utcnow is a free function with no override seam (db.py:20), so reproducibility requires monkeypatching forget_lah.db.utcnow in-process or adding a seam. frozen_date is the injected value and must equal reference_datetime's SGT calendar date.",
       "properties": {
         "reference_datetime": {
           "type": "string",
@@ -102,23 +102,28 @@
       "additionalProperties": false,
       "required": [
         "clinic_id",
+        "is_demo_clinic",
         "patient_simulator_enabled",
         "translation_configured",
         "delivery_evidence_source",
         "fixtures"
       ],
-      "description": "Runtime gates this pins: simulation_enabled requires the demo clinic id AND the checkpoint flag (simulation.py:18); the delivery gate's supported-language set is {en,zh,ms,ta} only when translation_configured (memory.py:119-120).",
+      "description": "Runtime gates this pins. Simulation requires the demo clinic id AND the checkpoint flag (simulation.py:18); the role limits differ by that same gate (engine.py:784 vs :786). translation_configured requires multilingual_enabled AND agent_model_mode == 'anthropic' AND model_configured (settings.py:20-25), which is a human decision for this corpus - see runtime_semantics_map.md section 12.",
       "properties": {
         "clinic_id": { "type": "string", "minLength": 1 },
+        "is_demo_clinic": {
+          "const": true,
+          "description": "Must be true and clinic_id must be the runtime DEMO_CLINIC_ID; otherwise the simulator path and the 8/6 role limits do not apply."
+        },
         "patient_simulator_enabled": { "const": true },
         "translation_configured": {
           "type": "boolean",
-          "description": "When false, the delivery gate supports only {en}."
+          "description": "When false, the delivery gate supports only {en} (memory.py:119-120)."
         },
         "delivery_evidence_source": {
           "type": "string",
-          "enum": ["displayed_in_simulator", "outbox_lookup"],
-          "description": "One authoritative source only. The simulator labels itself displayed_in_simulator (simulation.py:995); the case-view route replaces that field with an outbox lookup (routes.py:264). Grading both would compare a label against a lookup."
+          "enum": ["displayed_in_simulator"],
+          "description": "On a simulator run the route's outbox lookup is null - ChannelOutbox is only created for a bound WhatsApp channel (channel.py:523) - so the simulator label displayed_in_simulator (simulation.py:995, engine.py:2093, engine.py:2123) is the only non-null delivery evidence. The earlier 'two disagreeing sources' framing was wrong."
         },
         "fixtures": {
           "type": "object",
@@ -173,7 +178,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["agent_max_steps", "role_limit_coordinator", "role_limit_specialist"],
-      "description": "Recorded, not authored. Per-turn step budget is agent_max_steps, measured from checkpoint turn_start_step (engine.py:753-757). Role limits are simulator-path values (engine.py:784); the non-simulator path would be 4/6 (engine.py:786).",
+      "description": "Recorded, not authored. agent_max_steps is a PER-TURN budget measured from checkpoint['turn_start_step'] (engine.py:753-757, routes.py:159); the reset that makes it per-turn is routes.py:562-566. Role limits are the simulator-path values (engine.py:784); the non-simulator path is 4/6 (engine.py:786). These consts are only valid when environment.is_demo_clinic is true.",
       "properties": {
         "agent_max_steps": { "type": "integer", "minimum": 4, "maximum": 40, "default": 40 },
         "role_limit_coordinator": { "const": 8 },
@@ -191,7 +196,7 @@
         "contact_permission": {
           "type": "string",
           "enum": ["unknown", "allowed", "stopped"],
-          "description": "contact_permission can only be resumed by explicit simulator control; the model cannot remove it (contracts.py:289-293)."
+          "description": "contact_permission can only be resumed by explicit simulator control; the model cannot remove it (contracts.py:292-294)."
         },
         "memory": {
           "type": "array",
@@ -241,13 +246,7 @@
           "speaker": { "type": "string", "enum": ["patient", "clinic", "staff"] },
           "clinic_turn_kind": {
             "type": ["string", "null"],
-            "enum": [
-              "reminder",
-              "options",
-              "acknowledgement",
-              "doctor_instruction_check",
-              null
-            ],
+            "enum": ["reminder", "options", "acknowledgement", "doctor_instruction_check", null],
             "description": "Outbound kind; required non-null when speaker is clinic."
           },
           "expected_step_type": {
@@ -318,12 +317,21 @@
           },
           "attendance_qualification": {
             "type": ["object", "null"],
-            "description": "Valid only when appointment_intent is CONFIRM (contracts.py:386-389)."
+            "description": "Valid only when appointment_intent is CONFIRM (contracts.py:386-389). Its status is resolved by the runtime and can demote appointment_intent back to UNSPECIFIED (engine.py:135-160, :1058-1076).",
+            "additionalProperties": false,
+            "required": ["status"],
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": ["CONFLICT", "COMPATIBLE", "UNRESOLVED"]
+              },
+              "quote": { "type": ["string", "null"], "maxLength": 600 }
+            }
           },
           "tasks": {
             "type": "array",
             "maxItems": 3,
-            "description": "Ordered, index-aligned task list mirroring the runtime's concatenation (engine.py:986-988).",
+            "description": "Ordered, index-aligned task list mirroring the runtime's concatenation (engine.py:986-988): the runtime emits all QUESTIONs then all PLANs, so an interleave is unrepresentable.",
             "items": {
               "type": "object",
               "additionalProperties": false,
@@ -346,7 +354,48 @@
                   "type": ["string", "null"],
                   "enum": ["CONFLICTS", "MAY_CONFLICT", "SATISFIES", "POSSIBLE_SUBSTITUTION", "RELEVANT", null]
                 },
-                "actions": { "type": "array", "items": { "type": "string" } }
+                "practical_issue": {
+                  "type": ["string", "null"],
+                  "enum": [
+                    "LOCATION_OR_DIRECTIONS",
+                    "TRANSPORT_OR_ACCOMPANIMENT",
+                    "WORK_OR_SOCIAL_COMMITMENT",
+                    "ITEM_OR_DOCUMENT",
+                    "PREPARATION_ROUTINE",
+                    "OTHER",
+                    null
+                  ],
+                  "description": "Required non-null for GUIDANCE (provider.py:859)."
+                },
+                "dependency": {
+                  "type": ["string", "null"],
+                  "enum": [
+                    "SCREEN_USE",
+                    "DRIVING",
+                    "FOOD_OR_DRINK",
+                    "MEDICATION",
+                    "ITEM_OR_DOCUMENT",
+                    "TIMING",
+                    "TRAVEL_OR_NAVIGATION",
+                    "OTHER",
+                    null
+                  ],
+                  "description": "Required non-null for GUIDANCE (provider.py:859). Describes what the patient's plan itself requires; must not encode a diagnosis or medical consequence."
+                },
+                "actions": {
+                  "type": "array",
+                  "description": "Bounded action set (provider.py:859).",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "FOLLOW_CLINIC_INSTRUCTION",
+                      "ARRANGE_ASSISTANCE",
+                      "CONTACT_CLINIC",
+                      "OFFER_RESCHEDULE"
+                    ]
+                  },
+                  "uniqueItems": true
+                }
               }
             }
           },
@@ -366,7 +415,7 @@
           "memory": {
             "type": "array",
             "maxItems": 5,
-            "description": "Max 5 updates per decision, at most one per key (contracts.py:363, 382-383). 'remove' writes a retracted row rather than deleting (memory.py:74, 87-88).",
+            "description": "Max 5 updates per decision, at most one per key (contracts.py:363, 382-383). 'remove' writes a retracted row rather than deleting (memory.py:74, 87-91).",
             "items": {
               "type": "object",
               "additionalProperties": false,
@@ -395,6 +444,21 @@
               }
             }
           },
+          "wait_reason": {
+            "type": ["string", "null"],
+            "enum": [
+              "AWAITING_PATIENT_REPLY",
+              "CONTACT_STOPPED",
+              "AWAITING_LANGUAGE_PREFERENCE",
+              "ATTENDANCE_QUALIFICATION",
+              null
+            ],
+            "description": "The field that actually distinguishes a waiting run (engine.py:1023, :1031, :1076, :1111, :1152, :1247, :1359, :1399, :1522, :1825). A waiting run has no checkpoint outcome."
+          },
+          "callback_requested": {
+            "type": ["boolean", "null"],
+            "description": "True when an unresolved question raises a callback (questions.py:111-120; pairing engine.py:1727-1728)."
+          },
           "delivery": {
             "type": "object",
             "additionalProperties": false,
@@ -408,6 +472,19 @@
                 "type": ["string", "null"],
                 "enum": ["en", "zh", "ms", "ta", null],
                 "description": "Expected effective preferred_language after this turn. Kept explicitly: language-dependent values must not be normalised away."
+              },
+              "expected_message_delivery": {
+                "type": "array",
+                "description": "Expected per-message delivery value. On a simulator run the outbox lookup is null (routes.py:264), so displayed_in_simulator (simulation.py:995) is the only non-null evidence.",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["turn_id", "delivery_status"],
+                  "properties": {
+                    "turn_id": { "type": "string" },
+                    "delivery_status": { "type": "string", "enum": ["displayed_in_simulator"] }
+                  }
+                }
               }
             }
           }
@@ -425,7 +502,10 @@
             "kind": { "const": "completed_handoff" },
             "run_status": { "const": "completed" },
             "outcome": { "const": "OWNED_STAFF_HANDOFF" },
-            "handoff_id": { "type": "string", "description": "Must match a staff_acceptance fixture entry with accepted_by and accepted_at (policy.py:400)." }
+            "handoff_id": {
+              "type": "string",
+              "description": "Must match a staff_acceptance fixture entry with accepted_by and accepted_at (policy.py:400)."
+            }
           }
         },
         {
@@ -441,20 +521,39 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["kind", "run_status", "outcome", "intended"],
-          "description": "Correct only for scenarios authored as waiting scenarios.",
+          "required": ["kind", "run_status", "wait_reason", "intended"],
+          "description": "Correct only for scenarios authored as waiting scenarios. A waiting run has NO checkpoint outcome: the runtime writes checkpoint['wait_reason'] and releases as 'waiting' (engine.py:1825-1826), leaving checkpoint['outcome'] null (routes.py:163).",
           "properties": {
             "kind": { "const": "waiting" },
             "run_status": { "const": "waiting" },
-            "outcome": { "const": "WAITING_FOR_CLARIFICATION" },
+            "wait_reason": {
+              "type": "string",
+              "enum": [
+                "AWAITING_PATIENT_REPLY",
+                "CONTACT_STOPPED",
+                "AWAITING_LANGUAGE_PREFERENCE",
+                "ATTENDANCE_QUALIFICATION"
+              ]
+            },
             "intended": { "const": true }
           }
         },
         {
           "type": "object",
           "additionalProperties": false,
+          "required": ["kind", "run_status", "handoff_reason"],
+          "description": "Escalated by request_handoff (engine.py:200-215), reachable from an unresolved question (engine.py:1728), no slots (:2159), cancellation (:1054) and escalation (:1828). POLICY DEPENDENCY: whether an escalated end after an unresolved CLINIC_REVIEW question is this scenario's single ACCEPTED outcome, or a failure under policy #4, is an open human decision (runtime_semantics_map.md section 12). The arm exists so the runtime fact is expressible; do not author it until that ruling exists.",
+          "properties": {
+            "kind": { "const": "escalated" },
+            "run_status": { "const": "escalated" },
+            "handoff_reason": { "type": "string", "minLength": 1 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
           "required": ["kind", "run_status", "failure_code"],
-          "description": "Only usable when the scenario is authored as a budget/consistency failure case. Step-budget exhaustion is otherwise always a failure.",
+          "description": "Only usable when the scenario is authored as a budget/consistency failure case. Step-budget exhaustion is otherwise always a failure. failure_code is a PROJECTION name: the runtime stores this as checkpoint['pause_reason'] (engine.py:116), surfaced at routes.py:162.",
           "properties": {
             "kind": { "const": "failure" },
             "run_status": { "const": "paused" },
@@ -511,8 +610,9 @@
           "type": "object",
           "additionalProperties": false,
           "required": ["reviewer_of_record", "reviewed_at"],
+          "description": "The reviewer of record is a HUMAN. AI may pre-screen but cannot occupy this role.",
           "properties": {
-            "reviewer_of_record": { "type": "string", "description": "A human. AI may pre-screen but cannot be the reviewer of record." },
+            "reviewer_of_record": { "type": "string" },
             "reviewed_at": { "type": "string", "format": "date-time" }
           }
         },
@@ -546,7 +646,7 @@
         },
         "ai_declarations": {
           "type": "array",
-          "description": "Every AI contribution, with the step it was used at. No Anthropic model may appear here.",
+          "description": "Every AI contribution and the step it was used at. Only steps an AI is PERMITTED to perform appear in the enum: AI may draft, back-translate and pre-screen. AI may NOT be the reviewer of record or the adjudicator, so 'review' and 'adjudication' are deliberately absent (this was an enum/rule contradiction in revision 1). No Anthropic model may appear here.",
           "items": {
             "type": "object",
             "additionalProperties": false,
@@ -554,7 +654,7 @@
             "properties": {
               "step": {
                 "type": "string",
-                "enum": ["drafting", "back_translation", "pre_screen", "review", "adjudication"]
+                "enum": ["drafting", "back_translation", "pre_screen"]
               },
               "model": { "type": "string" },
               "model_family": { "type": "string" }
@@ -575,22 +675,33 @@
     }
   },
   "x-cross-field-rules": {
-    "description": "Not expressible in JSON Schema; enforced by tests/test_corpus_contract.py and the projection. Each must have a negative test fixture.",
+    "description": "NOT YET ENFORCED at this revision: tests/test_corpus_contract.py does not exist and is deliberately held back pending standup review. Each rule below needs a positive and a negative fixture when that file is written. Until then, a validating item is not evidence of correct semantics.",
     "rules": [
       "Every task index in checkpoint_oracle.tasks must form exactly 0..n-1 with no gaps or duplicates (questions.py:16-17).",
+      "Task ordering must be all QUESTIONs then all PLANs, mirroring engine.py:986-988; a PLAN,QUESTION interleave is unrepresentable and must be rejected.",
       "task_type PLAN allows only outcome GUIDANCE or NOT_REQUIRED; GUIDANCE or NOT_REQUIRED requires task_type PLAN (questions.py:45-48).",
       "outcome ANSWERED or GUIDANCE requires non-null instruction_id and a non-empty quote, and the quote must be a substring of the referenced approved_instructions[].approved_text (contracts.py:136-140, questions.py:49-54).",
+      "No outcome other than ANSWERED or GUIDANCE may carry instruction_id, quote, relation, practical_issue, dependency or actions (contracts.py:137-138): a CLINIC_REVIEW task carrying a source quote must be rejected.",
+      "outcome GUIDANCE requires non-null practical_issue and dependency (provider.py:859).",
+      "relation CONFLICTS requires actions to include FOLLOW_CLINIC_INSTRUCTION (questions.py:63-64, provider.py:859).",
+      "relation POSSIBLE_SUBSTITUTION requires actions to include CONTACT_CLINIC or FOLLOW_CLINIC_INSTRUCTION (questions.py:65-68, provider.py:859).",
+      "actions containing OFFER_RESCHEDULE requires appointment_intent in {CONFIRM, CHANGE} (questions.py:69-73).",
+      "outcome UNSUPPORTED is valid only for a non-clinical operational fact absent from the approved sources; a clinical test, medication, procedure or preparation question marked UNSUPPORTED must be rejected (provider.py:857).",
       "appointment_intent other than UNSPECIFIED requires a non-null appointment_request_quote (contracts.py:384-385).",
       "attendance_qualification may be non-null only when appointment_intent is CONFIRM (contracts.py:386-389).",
       "At most one memory entry per key per checkpoint (contracts.py:382-383).",
-      "A memory entry with key contact_permission and operation remove is invalid (contracts.py:289-293).",
-      "A memory entry with operation remove must have expected_status retracted; operation set must not (memory.py:74, 87-88).",
+      "A memory entry with key contact_permission and operation remove is invalid (contracts.py:292-294).",
+      "A memory entry with operation remove must have expected_status retracted; operation set must not (memory.py:74, 87-91).",
+      "A checkpoint entry with wait_reason set must not also set an outcome, and a completed run must not set wait_reason (engine.py:1825-1826, routes.py:161-163).",
+      "An unresolved question outcome (CLINIC_REVIEW) must be paired with callback_requested true or an escalated terminal (questions.py:111-120, engine.py:1727-1728).",
       "primary_stratum wrong_number or third_party_reply requires scoring.scored false with the matching unscored_reason (approved policy #3).",
       "clock.frozen_date must equal the SGT calendar date of clock.reference_datetime.",
+      "environment.is_demo_clinic must be true and environment.clinic_id must be the runtime DEMO_CLINIC_ID, otherwise the 8/6 runtime_bounds are wrong and the runtime yields 4/6 (simulation.py:18, engine.py:786).",
       "governance.back_translation.model_family must differ from governance.authorship.drafter_family, and neither may be an Anthropic family.",
-      "No ai_declarations entry may name an Anthropic family, and none may use step review or adjudication (method rules).",
+      "No ai_declarations entry may name an Anthropic family. Review and adjudication must be performed by humans, so neither appears as an ai_declarations step.",
       "Scenarios that expect terminal_oracle.kind completed_handoff must supply a matching staff_acceptance fixture with accepted_by and accepted_at (policy.py:400).",
       "terminal_oracle.kind waiting is valid only when intended is true; an unintended wait is a failure and must be authored as such.",
+      "terminal_oracle.kind escalated must not be authored until the open policy question resolves whether an escalated end is an accepted single outcome (runtime_semantics_map.md section 12).",
       "Aligned family members must share family_id, intended meaning at every patient turn and fixture content, differing only in language and patient wording."
     ]
   }
