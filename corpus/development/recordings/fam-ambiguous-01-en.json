@@ -5,67 +5,49 @@
   "runtime_commit": null,
   "records": [
     {
-      "request_id": "f034d7c2-1c35-4d14-99b5-2635417a5026",
+      "request_id": "af18f10a-41bd-40eb-a4f7-3700d996fdca",
       "repair": false,
-      "observation_sha256": "1752141aefa588fd0621974050be5c328124542a39d7d16ad92ad182f1abf05d",
-      "reply_text": "{\"request_id\":\"f034d7c2-1c35-4d14-99b5-2635417a5026\",\"expected_case_version\":3,\"reason_code\":\"FOLLOWUP_REVIEW_REQUIRED\",\"step_type\":\"DELEGATE\",\"target\":\"engagement\",\"goal\":\"Review overdue dental recall context and determine next steps given contact unavailable\"}",
-      "input_tokens": 2256,
-      "output_tokens": 88,
-      "latency_ms": 3791
+      "observation_sha256": "250b370116aaea3b450696d11fe27c1f8f5ef37dc68c697f4723a5b2a2a06172",
+      "reply_text": "{\"request_id\":\"af18f10a-41bd-40eb-a4f7-3700d996fdca\",\"expected_case_version\":3,\"reason_code\":\"FOLLOWUP_REVIEW_REQUIRED\",\"step_type\":\"DELEGATE\",\"target\":\"engagement\",\"goal\":\"Review overdue dental recall context; contact unavailable so assess read-only source status and determine next steps\"}",
+      "input_tokens": 2249,
+      "output_tokens": 93,
+      "latency_ms": 3523
     },
     {
-      "request_id": "8dc5386e-d792-436d-a464-82bc035c876a",
+      "request_id": "1a254253-14ee-439f-8b71-4fa4d356d30f",
       "repair": false,
-      "observation_sha256": "f41e0d5322869e48cff8f318ee49dbfc034f74546b30ff85b57cb4078c8b85f8",
-      "reply_text": "{\"request_id\":\"8dc5386e-d792-436d-a464-82bc035c876a\",\"expected_case_version\":6,\"reason_code\":\"PATIENT_NEEDS_REVIEWED\",\"preparation_plans\":[],\"patient_questions\":[],\"step_type\":\"REVIEW_NEEDS\",\"reply_event_id\":\"50bf46b5-1170-4dc4-a87c-f2700a698a08\",\"updates\":[],\"appointment_intent\":\"CONFIRM\",\"appointment_request_quote\":\"ok\",\"attendance_qualification\":null,\"question\":null,\"comprehension_quote\":null,\"concern_quote\":null}",
-      "input_tokens": 3608,
-      "output_tokens": 149,
-      "latency_ms": 10786
+      "observation_sha256": "f9401ba283d2f0de7831e5e1b7e907f33e222e5b50114ab68b5b2d8cd4a1f31c",
+      "reply_text": "{\"request_id\":\"1a254253-14ee-439f-8b71-4fa4d356d30f\",\"expected_case_version\":6,\"reason_code\":\"PATIENT_NEEDS_REVIEWED\",\"preparation_plans\":[],\"patient_questions\":[],\"step_type\":\"REVIEW_NEEDS\",\"reply_event_id\":\"6654c5a6-97f4-4802-8d66-740e7d648c93\",\"updates\":[],\"appointment_intent\":\"UNSPECIFIED\",\"appointment_request_quote\":null,\"attendance_qualification\":null,\"question\":null,\"comprehension_quote\":null,\"concern_quote\":null}",
+      "input_tokens": 3614,
+      "output_tokens": 154,
+      "latency_ms": 9541
     },
     {
-      "request_id": "d1a78ac0-dca9-4ed3-a88c-e1fdd8c06952",
+      "request_id": "6005c31d-7445-4d68-9709-5a4abb1afa59",
       "repair": false,
-      "observation_sha256": "9c414e89d4b91668004bbec3255963b2ac9777655a5c6543ccffb7f8d5857ab4",
-      "reply_text": "{\"request_id\":\"d1a78ac0-dca9-4ed3-a88c-e1fdd8c06952\",\"expected_case_version\":7,\"reason_code\":\"READ_SOURCE\",\"step_type\":\"TOOL\",\"tool_name\":\"read_followup_context\"}",
-      "input_tokens": 1978,
-      "output_tokens": 74,
-      "latency_ms": 5418
+      "observation_sha256": "bf83170768b302552e6bcd38ba31753885d9606cbd42a5b74369585076bc34ea",
+      "reply_text": "{\"request_id\":\"6005c31d-7445-4d68-9709-5a4abb1afa59\",\"expected_case_version\":7,\"reason_code\":\"READ_SOURCE\",\"step_type\":\"TOOL\",\"tool_name\":\"read_followup_context\"}",
+      "input_tokens": 3724,
+      "output_tokens": 72,
+      "latency_ms": 2350
     },
     {
-      "request_id": "ad27b3ab-8b53-44a1-97d6-4ea8729b36ea",
+      "request_id": "ed82d483-df23-4f9e-9da6-35ebddf40afa",
       "repair": false,
-      "observation_sha256": "b5f85c58277764d6fed4288c4ee83c47a8b569b840f2b6ea4fb298fc014a4bfb",
-      "reply_text": "{\"request_id\":\"ad27b3ab-8b53-44a1-97d6-4ea8729b36ea\",\"expected_case_version\":8,\"reason_code\":\"PREPARATION_REVIEW_REQUIRED\",\"step_type\":\"DELEGATE\",\"target\":\"preparation\",\"goal\":\"Review recall context and prepare simulated options for patient selection\"}",
-      "input_tokens": 1947,
-      "output_tokens": 84,
-      "latency_ms": 5842
+      "observation_sha256": "1c6662b8ff7a0cca41e66ec82374a1fdb613abf2eb824bebe6da1aa131e6bf38",
+      "reply_text": "{\"request_id\":\"ed82d483-df23-4f9e-9da6-35ebddf40afa\",\"expected_case_version\":8,\"reason_code\":\"FOLLOWUP_REVIEW_REQUIRED\",\"step_type\":\"DELEGATE\",\"target\":\"engagement\",\"goal\":\"Assess appointment intent and source available slots for routine dental follow-up\"}",
+      "input_tokens": 3692,
+      "output_tokens": 87,
+      "latency_ms": 2766
     },
     {
-      "request_id": "f67ac42b-53e0-45b0-90d7-1e8116baae80",
+      "request_id": "bf9170cd-9724-4619-920d-6ffc38b3bbc3",
       "repair": false,
-      "observation_sha256": "c1452d51ce93d4135954860335a33d84c3b7ba41ae41df90f54972b980b7c3d3",
-      "reply_text": "{\"request_id\":\"f67ac42b-53e0-45b0-90d7-1e8116baae80\",\"expected_case_version\":11,\"reason_code\":\"SPECIALIST_REVIEW_FINISHED\",\"scheduling_review\":[{\"instruction_id\":\"DEMO-DENTAL-NOTE\",\"quote\":\"Demo clinic note: bring your appointment confirmation.\",\"effect\":\"INFORMATION\",\"date_from\":null,\"date_to\":null,\"condition_quote\":null,\"patient_question\":null,\"if_not_met\":null,\"consequence_quote\":null}],\"step_type\":\"RETURN\",\"evidence_ids\":[\"224ff0e0-ff68-42b3-84cf-8b1ec883d792\",\"a5892cad-ed79-427e-961f-838c0ec80a73\"]}",
-      "input_tokens": 2967,
-      "output_tokens": 193,
-      "latency_ms": 9129
-    },
-    {
-      "request_id": "ce4f0a27-b88d-4c58-960c-bc0c6523bfb3",
-      "repair": false,
-      "observation_sha256": "ae04c8b74e5c6488d2de44c4ae105260e3c7b4ff047d17db129ec0530e6f90b1",
-      "reply_text": "{\"request_id\":\"ce4f0a27-b88d-4c58-960c-bc0c6523bfb3\",\"expected_case_version\":12,\"reason_code\":\"FOLLOWUP_REVIEW_REQUIRED\",\"step_type\":\"DELEGATE\",\"target\":\"engagement\",\"goal\":\"Source available appointment slots for dental recall scheduling\"}",
-      "input_tokens": 1634,
-      "output_tokens": 84,
-      "latency_ms": 4072
-    },
-    {
-      "request_id": "3259ffa9-f9bb-489f-9d71-2d55aac5ac35",
-      "repair": false,
-      "observation_sha256": "172bd9bdb15aac0a66c16ad0080ccd8018e90fc4b94ee0b8f82bf9fa781617b4",
-      "reply_text": "{\"request_id\":\"3259ffa9-f9bb-489f-9d71-2d55aac5ac35\",\"expected_case_version\":14,\"reason_code\":\"CAPABILITY_UNAVAILABLE\",\"step_type\":\"ESCALATE\"}",
-      "input_tokens": 2149,
-      "output_tokens": 65,
-      "latency_ms": 5267
+      "observation_sha256": "ed6f1a33777123cc2badb7f8e44fc8006450c09828e14140d6a4fd3e3e488ace",
+      "reply_text": "{\"request_id\":\"bf9170cd-9724-4619-920d-6ffc38b3bbc3\",\"expected_case_version\":10,\"reason_code\":\"CAPABILITY_UNAVAILABLE\",\"step_type\":\"ESCALATE\"}",
+      "input_tokens": 1866,
+      "output_tokens": 63,
+      "latency_ms": 2584
     }
   ],
   "run_status": "escalated",
@@ -96,32 +78,12 @@
       [
         "completed",
         null,
-        1
+        2
       ],
       [
         "completed",
         null,
-        1
-      ],
-      [
-        "completed",
-        null,
-        0
-      ],
-      [
-        "completed",
-        null,
-        0
-      ],
-      [
-        "completed",
-        null,
-        1
-      ],
-      [
-        "completed",
-        null,
-        1
+        2
       ],
       [
         "completed",

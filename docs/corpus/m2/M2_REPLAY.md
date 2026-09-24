@@ -137,5 +137,13 @@ Two cautions and one follow-up:
 - The live run now reaches **`escalated`** with **7 recorded decisions** across 12 completed steps. The
   variant's authored oracle expects `waiting`, so the graded verdict is **FAILED** — a real observation,
   unlike the `MockModel` self-test.
-- Remaining step: freeze the clock identically in the record and replay passes so `RecordedModel`'s
-  observation hashes match, then replay offline, map the checkpoint and write the graded archive.
+- **Clock freeze is not the fix — it is a tension.** Freezing `utcnow` for the record pass breaks
+  retries: `release(..., delay=30)` sets `available_at = frozen_now + 30 s`, which is never
+  `<= frozen_now`, so a retry can never be claimed. Not freezing breaks replay fidelity: recorded
+  replies embed `expected_case_version`, so an offline re-execution whose context is not byte-identical
+  rejects them and diverges (`409: Wait until the agent requests a demo reply`).
+- Resolving it needs one of: a **ticking** deterministic clock whose per-decision tick is recorded and
+  replayed; or grading the **archived observation** captured during the record pass (the archive's
+  `observed` block is captured evidence, not re-derived), reserving `RecordedModel` re-execution for
+  in-process replay.
+- No graded archive exists yet, and **no M2 replay evidence is claimed**.
