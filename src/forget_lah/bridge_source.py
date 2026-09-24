@@ -418,6 +418,20 @@ def install_source_routes(app, factory, authorise, mutation_auth):
                 )
             )
             episode.version += 1
+            from forget_lah.security import record_action
+
+            record_action(
+                db,
+                clinic_id=case.clinic_id,
+                actor_id=user.id,
+                resource_id=case.id,
+                action="bridge_option_add",
+                details={
+                    "old_version": episode.version - 1,
+                    "new_version": episode.version,
+                    "new": body.model_dump(mode="json"),
+                },
+            )
             episode.updated_at = utcnow()
             db.flush()
             return managed_view(db, case)
@@ -425,7 +439,7 @@ def install_source_routes(app, factory, authorise, mutation_auth):
     @app.post("/api/bridge/cases/{case_id}/options/{slot_id}/withdraw")
     def withdraw_option(case_id: str, slot_id: str, body: WithdrawOptionInput, request: Request):
         with factory.begin() as db:
-            _, clinics = mutation_auth(db, request)
+            user, clinics = mutation_auth(db, request)
             case, episode = owned_case(db, case_id, clinics)
             slot = db.scalar(
                 select(BridgeFollowupSlot)
@@ -441,6 +455,16 @@ def install_source_routes(app, factory, authorise, mutation_auth):
             if episode.version != body.expected_version or slot.status != "available":
                 raise HTTPException(409, "Option changed; refresh before withdrawing")
             slot.status = "withdrawn"
+            from forget_lah.security import record_action
+
+            record_action(
+                db,
+                clinic_id=case.clinic_id,
+                actor_id=user.id,
+                resource_id=case.id,
+                action="bridge_option_withdraw",
+                details={"slot_id": slot.id, "old_status": "available", "new_status": "withdrawn"},
+            )
             slot.version += 1
             episode.version += 1
             episode.updated_at = utcnow()

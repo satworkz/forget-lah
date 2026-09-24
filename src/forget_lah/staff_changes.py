@@ -389,6 +389,22 @@ def install_staff_change_routes(app, factory, settings, authorise):
             )
             return
 
+    @app.get("/api/cases/{case_id}/doctor-notes")
+    def doctor_notes(case_id: str, request: Request):
+        with factory() as db:
+            _, case = access(db, request, case_id)
+            result = app.state.staff_change_tools.execute(
+                "get_approved_instructions", binding_for(case)
+            )
+            if result.status != "succeeded":
+                raise HTTPException(503, "Doctor notes could not be loaded from the clinic source")
+            return {
+                "instructions": result.data.get("instructions", []),
+                "source": "Imported clinic record"
+                if case.source_episode_ref.startswith("bridge:")
+                else "Clinic source",
+            }
+
     @app.get("/api/cases/{case_id}/appointment-change")
     def view(case_id: str, request: Request):
         with factory() as db:
@@ -694,7 +710,7 @@ def install_staff_change_routes(app, factory, settings, authorise):
     @app.post("/api/cases/{case_id}/appointment-change/{change_id}/retry")
     def retry(case_id: str, change_id: str, request: Request):
         with factory.begin() as db:
-            _, case = access(db, request, case_id, True)
+            user, case = access(db, request, case_id, True)
             change = db.scalar(
                 select(StaffAppointmentChange)
                 .where(
@@ -705,6 +721,16 @@ def install_staff_change_routes(app, factory, settings, authorise):
             )
             if not change:
                 raise HTTPException(404, "Change not found")
+            from forget_lah.security import record_action
+
+            record_action(
+                db,
+                clinic_id=case.clinic_id,
+                actor_id=user.id,
+                resource_id=case.id,
+                action="notification_retry_requested",
+                details={"change_id": change.id, "status": change.status},
+            )
             if latest_run(db, case.id).id != change.run_id:
                 raise HTTPException(
                     409, "A newer review exists; do not resend this old appointment"

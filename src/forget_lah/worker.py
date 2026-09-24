@@ -16,6 +16,7 @@ from forget_lah.runtime.engine import claim_run, process_run
 from forget_lah.runtime.startup import queue_case_review, queue_ready_reviews
 from forget_lah.settings import Settings
 from forget_lah.source import DEMO_CLINIC_ID, read_candidates
+from forget_lah.staff_translations import translate_staff_one
 from forget_lah.translations import translate_one
 
 log = logging.getLogger("forget_lah.worker")
@@ -151,6 +152,7 @@ def worker_tasks(factory, settings):
     return [
         ("control", control),
         ("translation", lambda: translate_one(factory, settings)),
+        ("staff-translation", lambda: translate_staff_one(factory, settings)),
         ("whatsapp", lambda: channel_tick(factory, settings)),
         *[(f"agent-{i + 1}", agent) for i in range(settings.agent_parallelism)],
     ]

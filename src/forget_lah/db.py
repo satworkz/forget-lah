@@ -50,6 +50,19 @@ class Membership(Base):
     principal_id: Mapped[str] = mapped_column(ForeignKey("principal.id"))
     clinic_id: Mapped[str] = mapped_column(ForeignKey("clinic.id"))
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    role: Mapped[str] = mapped_column(String(20), default="staff", server_default="staff")
+
+
+class SecurityEvent(Base):
+    __tablename__ = "security_event"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    clinic_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    actor_id: Mapped[str | None] = mapped_column(String(36))
+    resource_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    action: Mapped[str] = mapped_column(String(120))
+    decision: Mapped[str] = mapped_column(String(30))
+    details: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class AuthSession(Base):
@@ -237,7 +250,7 @@ class AuditEvent(Base):
 
 def make_engine(url: str):
     kwargs = {"connect_args": {"check_same_thread": False}} if url.startswith("sqlite") else {}
-    engine = create_engine(url, pool_pre_ping=True, **kwargs)
+    engine = create_engine(url, pool_pre_ping=True, hide_parameters=True, **kwargs)
     if url.startswith("sqlite"):
 
         @event.listens_for(engine, "connect")

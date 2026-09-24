@@ -1,5 +1,7 @@
 # forget-lah documentation
 
+**Security:** [Security by Architecture](SECURITY_ARCHITECTURE.md) and [security ADR](ADR_SECURITY_HARDENING.md) distinguish implemented RBAC, intake, privacy and audit controls from future production hardening.
+
 **Current feature reference:** [Feature guide and patient memory](FEATURE_GUIDE.md) documents implemented behavior, all demo capabilities, preference tests and remaining limitations. Migration `0006` extends time preferences to attributed patient concerns; this supersedes earlier time-only descriptions.
 
 **Want to change the test records?** Use [CLINIC_SIMULATOR.md](CLINIC_SIMULATOR.md) to edit schedules and notes, add slots and create fresh scenarios.

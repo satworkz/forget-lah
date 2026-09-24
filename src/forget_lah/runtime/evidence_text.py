@@ -45,6 +45,7 @@ def restore_patient_quotes(value, source):
         "appointment_request_quote",
         "attendance_quote",
         "contact_stop_quote",
+        "answer_quote",
     ):
         restore(value, field, field)
     for field in ("patient_questions", "preparation_plans", "evidence_quotes", "symptom_quotes"):

@@ -1,5 +1,11 @@
 # forget-lah: architecture and contracts
 
+## Security by Architecture
+
+The focused security pass adds per-clinic server-side RBAC, masked summaries, role-scoped/minimum-necessary model observations, strict Bridge intake controls, security events and a staff case audit panel. Deterministic policy gates, human escalation and source ownership remain unchanged: API-backed clinics own their external records; Bridge lifecycle state stays in Forget-lah PostgreSQL and never writes mock-clinic tables. See [implemented controls and TLS assumptions](../SECURITY_ARCHITECTURE.md) and [security ADR](../ADR_SECURITY_HARDENING.md).
+
+**Future Production Hardening — NOT YET IMPLEMENTED:** managed secrets, verified encryption/KMS/backups, MFA, WAF/shared rate limiting, centralized monitoring/alerts, retention/deletion, upload scanning, secure restore, incident/breach procedures, dependency scanning, penetration testing, stronger sessions and organizational Singapore PDPA/healthcare controls. The security reference separates these from implemented demo controls.
+
 **Staff-initiated changes (22 September):** [Appointment change ADR](../ADR_STAFF_APPOINTMENT_CHANGE.md) specifies the dashboard action, separate staff authority and receipts, doctor constraints, source ownership, durable notification and retry behavior.
 
 **Bridge ownership clarification (21 September):** clinics without an appointment system import records into Forget-lah, which owns their follow-up lifecycle, confirmations and supported booking/rescheduling. Migrations `0013`–`0014` store operation receipts, managed episode state and staff-reserved follow-up options. The clinic API adapter, represented by the mock clinic, is the separate path for clinics with an existing appointment system. Both paths use the same agent, policy and preparation checks; source-specific adapters persist the resulting actions. See [Bridge intake](../BRIDGE_INTAKE.md).

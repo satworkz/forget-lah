@@ -1,3 +1,4 @@
+import { PatientMessage, type StaffTranslation } from "./PatientMessage";
 import { useEffect, useRef, useState } from "react";
 import { api, modelLabel, mutationHeaders } from "./client";
 import { BridgeFollowupOptions, type ManagedFollowup } from "./BridgeFollowupOptions";
@@ -56,7 +57,7 @@ type View = {
     status: string;
     evidence_ids: string[];
   }[];
-  events: { id: string; kind: string; content: string; created_at: string; channel?: string }[];
+  events: { id: string; kind: string; content: string; staff_translation?: StaffTranslation; created_at: string; channel?: string }[];
   patient_simulator: { available: boolean; enabled: boolean; messages: { id: string; kind: string; body: string; created_at: string; delivery_status?: string | null }[] };
   handoff: {
     reason_code: string;
@@ -66,7 +67,7 @@ type View = {
     staff_task_status: string;
     legacy_bridge_capabilities?: boolean;
     callback?: { status: string; question: string; topic?: string; resolution?: string } | null;
-    clinical_review?: { status: string; patient_message: string; symptom_quotes: string[]; attendance_intent: string; attendance_quote?: string | null; resolution?: string } | null;
+    clinical_review?: { status: string; patient_message: string; reply_event_id?: string; symptom_quotes: string[]; attendance_intent: string; attendance_quote?: string | null; resolution?: string } | null;
   } | null;
 };
 const readable = (value: unknown) =>
@@ -341,7 +342,7 @@ export function AgentPanel({
                   </div>}
                   {view.handoff.clinical_review && <div>
                     <p><strong>Clinical callback: {view.handoff.clinical_review.status}</strong></p>
-                    <p>Patient reported: {view.handoff.clinical_review.patient_message}</p>
+                    <PatientMessage original={view.handoff.clinical_review.patient_message} translation={view.events.find(e => e.id === view.handoff?.clinical_review?.reply_event_id)?.staff_translation} caseId={caseId} eventId={view.handoff.clinical_review.reply_event_id} />
                     <p>Symptoms: {view.handoff.clinical_review.symptom_quotes.join("; ")}</p>
                     <p>Attendance intention: {view.handoff.clinical_review.attendance_intent === "stated" ? "Patient says they plan to attend" : "Not confirmed in this message"}. This is separate from a clinic-system confirmation.</p>
                     <p>Clinical review is required. RED marks a clinical handoff; it is not an automated diagnosis or urgency assessment. Accepting ownership keeps the task open until contact and review are recorded.</p>

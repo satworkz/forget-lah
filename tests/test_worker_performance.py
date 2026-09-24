@@ -105,8 +105,15 @@ def test_required_reads_reduce_calls_without_changing_offer(simulated_runtime):
         ]
         if enabled:
             assert all(s["origin"] == "rule" and s["attempts"] == 0 for s in reads)
+            sends = [
+                s
+                for s in result["steps"]
+                if (s.get("decision") or {}).get("tool_name") == "send_simulated_options"
+            ]
+            assert len(sends) == 1 and sends[0]["origin"] == "rule"
+            assert sends[0]["attempts"] == 0
         results.append((model.calls, offer["original_body"]))
     assert results[0][1] == results[1][1]
-    assert results[0][0] - results[1][0] == 3
+    assert results[0][0] - results[1][0] == 4
     assert source_count(engine) == 0
     print("Equivalent slot-offer model calls:", results[0][0], "->", results[1][0])

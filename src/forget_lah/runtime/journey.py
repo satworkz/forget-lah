@@ -264,6 +264,7 @@ def case_journey(db, case, run_id=None):
                         {
                             "kind": event.kind,
                             "content": event.content,
+                            "staff_translation": event.staff_translation,
                             "expected_case_version": event.expected_case_version,
                         },
                         {"event_id": event.id, "actor_id": event.actor_id},

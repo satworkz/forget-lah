@@ -775,3 +775,7 @@ summary:focus-visible {
 .bridge-review-actions { display: flex; justify-content: flex-end; gap: .65rem; margin-top: .85rem; }
 @media (max-width: 980px) { .bridge-review-shell { grid-template-columns: 1fr; } .bridge-edit-grid { grid-template-columns: repeat(2, minmax(160px, 1fr)); } }
 @media (max-width: 640px) { .bridge-edit-grid { grid-template-columns: 1fr; } .bridge-review-actions { flex-direction: column-reverse; } }
+
+.staff-translation { margin: 0.75rem 0; padding: 0.8rem 1rem; border-left: 3px solid #387b73; background: #f3f8f6; color: #173c38; }
+.staff-translation p { white-space: pre-wrap; margin: 0.4rem 0; }
+.patient-message > p { white-space: pre-wrap; }

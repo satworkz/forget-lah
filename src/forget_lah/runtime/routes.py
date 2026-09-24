@@ -28,6 +28,7 @@ from forget_lah.runtime.models import (
 from forget_lah.runtime.simulation import message_dict, simulation_enabled, simulation_evidence
 from forget_lah.runtime.startup import REVIEW_GOAL, SIMULATOR_GOAL, automation_authorised
 from forget_lah.source import DEMO_CLINIC_ID
+from forget_lah.staff_translations import initial_translation
 
 
 class StartInput(StrictModel):
@@ -120,6 +121,7 @@ def install_routes(app, factory, settings, authorise):
             from forget_lah.bridge_source import managed_view
 
             result = {
+                "staff_translation_available": settings.translation_configured,
                 "bridge": managed_view(db, case)
                 if case.source_episode_ref.startswith("bridge:")
                 else None,
@@ -211,6 +213,7 @@ def install_routes(app, factory, settings, authorise):
                     "id": e.id,
                     "kind": e.kind,
                     "content": e.content,
+                    "staff_translation": e.staff_translation,
                     "created_at": as_utc(e.created_at).isoformat(),
                     "channel": "whatsapp_test"
                     if db.scalar(select(ChannelInbox.sid).where(ChannelInbox.event_id == e.id))
@@ -282,6 +285,37 @@ def install_routes(app, factory, settings, authorise):
             _, clinics = identity(db, request)
             case = scoped_case(db, case_id, clinics)
             return case_journey(db, case, run_id)
+
+    @app.post("/api/cases/{case_id}/events/{event_id}/staff-translation", status_code=202)
+    def request_staff_translation(case_id: str, event_id: str, request: Request):
+        with factory.begin() as db:
+            user, clinics = identity(db, request)
+            case = scoped_case(db, case_id, clinics)
+            if not settings.translation_configured:
+                raise HTTPException(403, "Staff translation is not configured")
+            event = db.scalar(
+                select(AgentEvent)
+                .where(
+                    AgentEvent.id == event_id,
+                    AgentEvent.case_id == case.id,
+                    AgentEvent.clinic_id == case.clinic_id,
+                    AgentEvent.kind == "demo_reply",
+                )
+                .with_for_update()
+            )
+            if not event:
+                raise HTTPException(404, "Patient message not found")
+            if not event.staff_translation or event.staff_translation.get("status") == "failed":
+                event.staff_translation = initial_translation(settings, event.kind)
+                db.add(
+                    AuditEvent(
+                        clinic_id=case.clinic_id,
+                        case_id=case.id,
+                        event_type="STAFF_TRANSLATION:" + uid(),
+                        details={"actor_id": user.id, "event_id": event.id, "language": "en"},
+                    )
+                )
+            return {"event_id": event.id, "translation": event.staff_translation}
 
     @app.post("/api/cases/{case_id}/agent/runs", status_code=202)
     def start_run(case_id: str, body: StartRunInput, request: Request):
@@ -430,6 +464,7 @@ def install_routes(app, factory, settings, authorise):
                     actor_id=user.id,
                     kind=body.kind,
                     content=body.content,
+                    staff_translation=initial_translation(settings, body.kind),
                     expected_case_version=body.expected_case_version,
                 )
             )
@@ -553,6 +588,8 @@ def install_routes(app, factory, settings, authorise):
             instruction_resolutions = run.checkpoint.get("instruction_check_resolutions")
             run.checkpoint = {
                 **previous_response,
+                "pending_plan_conflicts": run.checkpoint.get("pending_plan_conflicts", []),
+                "pending_plan_confirmation": run.checkpoint.get("pending_plan_confirmation"),
                 **(
                     {"instruction_check_resolutions": instruction_resolutions}
                     if instruction_resolutions

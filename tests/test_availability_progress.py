@@ -24,6 +24,19 @@ class AvailabilityReplay(NeedsModel):
         self.ambiguity, self.bound = ambiguity, bound
 
     def decide(self, obs, **kwargs):
+        if obs["role"] == "engagement" and obs.get("simulation", {}).get("selection_offer"):
+            # These replay replies explicitly ask for availability, not selection.
+            return ModelReply(
+                json.dumps(
+                    dict(
+                        request_id=obs["request_id"],
+                        expected_case_version=obs["expected_case_version"],
+                        step_type="RETURN",
+                        reason_code="PATIENT_REQUESTED_ALTERNATIVE_DATE",
+                        evidence_ids=obs["return_requirements"]["eligible_evidence_ids"],
+                    )
+                )
+            )
         response = super().decide(obs, **kwargs)
         value = json.loads(response.text)
         if (

@@ -140,3 +140,51 @@ def test_bridge_approved_batch_cannot_be_edited(store):
         assert response.status_code == 409
     finally:
         client.__exit__(None, None, None)
+
+
+def test_partial_import_remaining_row_can_be_reviewed_and_approved(store):
+    client = bridge_client(store, SpecialtyReviewAnalyzer())
+    try:
+        batch = upload_csv(client).json()
+        pending, ready = batch["records"]
+        path = f"/api/bridge/batches/{batch['id']}"
+        first = client.post(
+            path + "/approve",
+            headers=mutation_headers(client),
+            json={"include_review_rows": False},
+        )
+        assert first.status_code == 200
+        assert [r["status"] for r in first.json()["records"]] == ["REVIEW", "IMPORTED"]
+        imported = first.json()["records"][1]
+        locked = client.post(
+            path + f"/records/{ready['id']}/review",
+            headers=mutation_headers(client),
+            json=_review_payload(ready, specialty="dental"),
+        )
+        assert locked.status_code == 409
+        reviewed = client.post(
+            path + f"/records/{pending['id']}/review",
+            headers=mutation_headers(client),
+            json=_review_payload(pending, specialty="antenatal"),
+        )
+        assert reviewed.status_code == 200, reviewed.text
+        assert [r["status"] for r in reviewed.json()["records"]] == ["READY", "IMPORTED"]
+        second = client.post(
+            path + "/approve",
+            headers=mutation_headers(client),
+            json={"include_review_rows": False},
+        )
+        assert second.status_code == 200, second.text
+        assert second.json()["imported_records"] == 1
+        assert second.json()["records"][1] == imported
+        assert all(r["status"] == "IMPORTED" for r in second.json()["records"])
+        with store[1]() as db:
+            assert len(list(db.scalars(select(FollowupCase)))) == 2
+        again = client.post(
+            path + "/approve",
+            headers=mutation_headers(client),
+            json={"include_review_rows": False},
+        )
+        assert again.status_code == 409
+    finally:
+        client.__exit__(None, None, None)

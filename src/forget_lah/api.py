@@ -10,6 +10,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select, text
+from sqlalchemy.exc import SQLAlchemyError
 
 from forget_lah.agents import AGENT_CATALOG
 from forget_lah.auth import authenticate, digest, session_principal
@@ -27,6 +28,7 @@ from forget_lah.db import (
 from forget_lah.demo_reset import demo_reset_cases, install_demo_routes, reset_enabled
 from forget_lah.runtime.models import AgentRun
 from forget_lah.runtime.routes import install_routes, latest_run
+from forget_lah.security import allowed_roles, mask_identifier, mask_name, record_denial
 from forget_lah.settings import Settings
 from forget_lah.simulator import install_simulator_routes
 
@@ -89,6 +91,11 @@ def create_app(settings: Settings | None = None, engine=None, bridge_analyzer=No
     )
     limiter = LoginLimiter()
 
+    @app.exception_handler(SQLAlchemyError)
+    async def database_error(request: Request, exc: SQLAlchemyError):
+        # Driver errors may embed identifiers or bound values. Do not echo or log them.
+        return JSONResponse({"detail": "Database operation unavailable"}, status_code=503)
+
     @app.exception_handler(RequestValidationError)
     async def validation_error(request: Request, exc: RequestValidationError):
         if request.url.path.startswith("/api/simulator"):
@@ -99,18 +106,28 @@ def create_app(settings: Settings | None = None, engine=None, bridge_analyzer=No
             return JSONResponse(
                 {"detail": "Please check the form. " + "; ".join(issues)}, status_code=422
             )
-        from fastapi.exception_handlers import request_validation_exception_handler
-
-        return await request_validation_exception_handler(request, exc)
+        return JSONResponse({"detail": "Invalid request fields"}, status_code=422)
 
     @app.middleware("http")
     async def local_security(request: Request, call_next):
+        if request.url.path == "/api/bridge/analyse":
+            chunks, size = [], 0
+            async for chunk in request.stream():
+                size += len(chunk)
+                if size > 2_110_000:
+                    record_denial(factory, request, 413)
+                    return JSONResponse({"detail": "Upload request too large"}, status_code=413)
+                chunks.append(chunk)
+            request._body = b"".join(chunks)
         if request.method not in {"GET", "HEAD", "OPTIONS"} and request.url.path != WEBHOOK:
             if request.headers.get("origin") != settings.public_origin:
-                from fastapi.responses import JSONResponse
-
+                record_denial(factory, request, 403)
                 return JSONResponse({"detail": "Origin not allowed"}, status_code=403)
         response = await call_next(request)
+        if response.status_code in {401, 403, 404, 413, 422, 429} and request.url.path.startswith(
+            "/api/"
+        ):
+            record_denial(factory, request, response.status_code)
         response.headers["Cache-Control"] = "no-store"
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
@@ -122,16 +139,25 @@ def create_app(settings: Settings | None = None, engine=None, bridge_analyzer=No
         if not identity:
             raise HTTPException(401, "Please sign in")
         user, session = identity
+        request.state.security_actor = user.id
+        request.state.security_clinics = list(
+            db.scalars(
+                select(Membership.clinic_id).where(
+                    Membership.principal_id == user.id, Membership.active.is_(True)
+                )
+            )
+        )
         memberships = list(
             db.scalars(
                 select(Membership.clinic_id).where(
                     Membership.principal_id == user.id,
                     Membership.active.is_(True),
+                    Membership.role.in_(allowed_roles(request)),
                 )
             )
         )
         if not memberships:
-            raise HTTPException(403, "No active clinic membership")
+            raise HTTPException(403, "No permitted clinic role")
         return user, session, memberships
 
     @app.get("/health/live")
@@ -142,7 +168,7 @@ def create_app(settings: Settings | None = None, engine=None, bridge_analyzer=No
     def ready():
         try:
             with factory() as db:
-                if db.scalar(text("SELECT version_num FROM alembic_version")) != "0015":
+                if db.scalar(text("SELECT version_num FROM alembic_version")) != "0017":
                     raise ValueError("Agent migration is required")
                 db.execute(select(Clinic.id).limit(1))
                 db.execute(select(AgentRun.id).limit(1))
@@ -240,13 +266,19 @@ def create_app(settings: Settings | None = None, engine=None, bridge_analyzer=No
     @app.get("/api/cases")
     def list_cases(request: Request):
         with factory() as db:
-            _, _, clinics = authorise(db, request)
+            user, _, clinics = authorise(db, request)
             rows = db.execute(
-                select(FollowupCase, Patient.display_alias)
+                select(FollowupCase, Patient.display_alias, Membership.role)
                 .join(
                     Patient,
                     (Patient.id == FollowupCase.patient_id)
                     & (Patient.clinic_id == FollowupCase.clinic_id),
+                )
+                .join(
+                    Membership,
+                    (Membership.clinic_id == FollowupCase.clinic_id)
+                    & (Membership.principal_id == user.id)
+                    & Membership.active.is_(True),
                 )
                 .where(FollowupCase.clinic_id.in_(clinics))
                 .order_by(FollowupCase.created_at)
@@ -255,15 +287,15 @@ def create_app(settings: Settings | None = None, engine=None, bridge_analyzer=No
             return [
                 {
                     "id": case.id,
-                    "patient": alias,
+                    "patient": mask_name(alias) if role == "viewer" else alias,
                     "specialty": case.specialty,
                     "trigger": case.trigger,
                     "state": case.state,
-                    "source_episode_ref": case.source_episode_ref,
+                    "source_episode_ref": mask_identifier(case.source_episode_ref),
                     "case_version": case.case_version,
                     "agent_status": (run.status if (run := latest_run(db, case.id)) else None),
                 }
-                for case, alias in rows
+                for case, alias, role in rows
             ]
 
     @app.get("/api/cases/{case_id}/events")
@@ -302,6 +334,9 @@ def create_app(settings: Settings | None = None, engine=None, bridge_analyzer=No
             ]
 
     install_routes(app, factory, settings, authorise)
+    from forget_lah.security_audit import install_audit_routes
+
+    install_audit_routes(app, factory, authorise)
     from forget_lah.staff_changes import install_staff_change_routes
 
     install_staff_change_routes(app, factory, settings, authorise)

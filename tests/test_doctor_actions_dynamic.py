@@ -2,6 +2,7 @@ import json
 import re
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from sqlalchemy import select
 from test_patient_simulation import simulated_runtime as simulated_runtime
 from test_patient_simulation import source_count
@@ -25,6 +26,20 @@ class DoctorActionModel(MockModel):
     def decide(self, obs, **kwargs):
         sim = obs.get("simulation", {})
         event = obs["latest_event"]
+        if obs.get("instruction_constraints_pending"):
+            return ModelReply(
+                json.dumps(
+                    {
+                        "request_id": obs["request_id"],
+                        "expected_case_version": obs["expected_case_version"],
+                        "step_type": "ASSESS_BARRIERS",
+                        "reason_code": "PATIENT_BARRIERS_REVIEWED",
+                        "reply_event_id": event.get("reply_event_id", event["id"]),
+                        "evidence_quotes": [event["content"]],
+                        "next_action": "SEARCH_SLOTS",
+                    }
+                )
+            )
         if obs["role"] == "coordinator" and sim.get("instruction_check"):
             text = event.get("content", "")
             lower = text.lower()
@@ -111,6 +126,56 @@ def scan_model():
     )
 
 
+@pytest.mark.parametrize("reply", ["can", "boleh", "可以", "I can attend"])
+def test_understood_confirmation_proceeds_to_scan_check_without_reinterpretation(
+    simulated_runtime, reply
+):
+    class ConfirmedModel(DoctorActionModel):
+        def decide(self, obs, **kwargs):
+            if obs["role"] == "coordinator" and obs["latest_event"]["kind"] == "demo_reply":
+                if obs.get("needs_reviewed"):
+                    raise AssertionError(
+                        "Do not ask the model to reinterpret an understood confirmation"
+                    )
+                return ModelReply(
+                    json.dumps(
+                        {
+                            "request_id": obs["request_id"],
+                            "expected_case_version": obs["expected_case_version"],
+                            "step_type": "REVIEW_NEEDS",
+                            "reason_code": "PATIENT_NEEDS_REVIEWED",
+                            "reply_event_id": obs["latest_event"]["id"],
+                            "updates": [],
+                            "appointment_intent": "CONFIRM",
+                            "appointment_request_quote": reply,
+                        }
+                    )
+                )
+            return super().decide(obs, **kwargs)
+
+    runtime, tools, source, source_engine = simulated_runtime
+    set_note(source, "DEMO-ANTENATAL-VISIT-01", SCAN_NOTE)
+    case, _ = start(runtime, "antenatal")
+    drain(runtime, tools=tools)
+    event(runtime[1], case, "demo_reply", reply).raise_for_status()
+    model = ConfirmedModel(
+        condition_quote=SCAN_CONDITION,
+        question="Have you completed the mandatory scan?",
+        if_not_met="RESCHEDULE",
+        consequence_quote=SCAN_CONSEQUENCE,
+    )
+    drain(runtime, tools=tools, model=model)
+    result = view(runtime[1], case)
+    assert result["run"]["status"] == "waiting"
+    assert result["patient_simulator"]["messages"][-1]["kind"] == "doctor_instruction_check"
+    assert not any(m["kind"] == "clarification" for m in result["patient_simulator"]["messages"])
+    assert source_count(source_engine) == 0
+    assert any(
+        s["origin"] == "rule" and (s.get("decision") or {}).get("target") == "preparation"
+        for s in result["steps"]
+    )
+
+
 def test_mandatory_scan_yes_blocks_then_confirms(simulated_runtime):
     runtime, tools, source, source_engine = simulated_runtime
     set_note(source, "DEMO-ANTENATAL-VISIT-01", SCAN_NOTE)
@@ -149,6 +214,208 @@ def test_mandatory_scan_no_proposes_alternative_before_booking(simulated_runtime
     offer = result["patient_simulator"]["messages"][-1]
     assert offer["kind"] == "options"
     assert alt in [s["id"] for s in offer["evidence"]["slots"]]
+
+
+@pytest.mark.parametrize("mode", ["book", "no_slots", "bypass", "slot_changed"])
+@pytest.mark.parametrize("whatsapp", [False, True])
+def test_rich_scan_answer_filters_dates_through_booking(simulated_runtime, mode, whatsapp):
+    from test_channel import ingest_test_reply
+
+    from forget_lah.runtime.provider import decision_formats_for
+
+    scan_at = (datetime.now(UTC) + timedelta(days=10)).replace(
+        hour=2, minute=0, second=0, microsecond=0
+    )
+    boundary = (scan_at + timedelta(days=1)).date().isoformat()
+    reply = (
+        f"I haven’t completed the mandatory scan yet. My scan is on {scan_at.date().isoformat()}. "
+        "Can you move my appointment to after that?"
+    )
+
+    class DatedScanModel(DoctorActionModel):
+        def decide(self, obs, **kwargs):
+            if obs.get("instruction_constraints_pending"):
+                assert obs["latest_event"]["content"] == reply
+                assert set(decision_formats_for(obs)) == {"ASSESS_BARRIERS"}
+                if mode == "bypass":
+                    return ModelReply(
+                        json.dumps(
+                            {
+                                "request_id": obs["request_id"],
+                                "expected_case_version": obs["expected_case_version"],
+                                "step_type": "DELEGATE",
+                                "reason_code": "FOLLOWUP_REVIEW_REQUIRED",
+                                "target": "engagement",
+                                "goal": "Search all slots without reviewing the new date",
+                            }
+                        )
+                    )
+                return ModelReply(
+                    json.dumps(
+                        {
+                            "request_id": obs["request_id"],
+                            "expected_case_version": obs["expected_case_version"],
+                            "step_type": "ASSESS_BARRIERS",
+                            "reason_code": "PATIENT_BARRIERS_REVIEWED",
+                            "reply_event_id": obs["latest_event"]["reply_event_id"],
+                            "evidence_quotes": [reply],
+                            "date_from": boundary,
+                            "date_to": None,
+                            "next_action": "SEARCH_SLOTS",
+                            "preparation_issue": "NONE",
+                        }
+                    )
+                )
+            response = super().decide(obs, **kwargs)
+            value = json.loads(response.text)
+            if (
+                value["step_type"] == "INTERPRET_INSTRUCTION_CHECK"
+                and obs["latest_event"]["content"] == reply
+            ):
+                value["outcome"] = "NOT_MET"
+            return ModelReply(json.dumps(value))
+
+    runtime, tools, source, source_engine = simulated_runtime
+
+    def send(content):
+        if whatsapp:
+            ingest_test_reply(runtime, case, content)
+        else:
+            event(runtime[1], case, "demo_reply", content).raise_for_status()
+
+    set_note(source, "DEMO-ANTENATAL-VISIT-01", SCAN_NOTE)
+    eligible = []
+    for offset in [-1, 0] + ([1, 5] if mode in {"book", "slot_changed"} else []):
+        at = scan_at + timedelta(days=offset)
+        response = source.post(
+            "/internal/admin/slots",
+            headers=ADMIN,
+            json=new_slot(
+                specialty="antenatal",
+                starts_at=at.isoformat(),
+                ends_at=(at + timedelta(minutes=30)).isoformat(),
+            ),
+        )
+        response.raise_for_status()
+        if offset > 0:
+            eligible.append(response.json()["id"])
+    model = DatedScanModel(
+        condition_quote=SCAN_CONDITION,
+        question="Have you completed the mandatory scan?",
+        if_not_met="RESCHEDULE",
+        consequence_quote=SCAN_CONSEQUENCE,
+    )
+    case, _ = start(runtime, "antenatal")
+    drain(runtime, tools=tools)
+    send("I confirm my attendance")
+    drain(runtime, tools=tools, model=model)
+    assert (
+        view(runtime[1], case)["patient_simulator"]["messages"][-1]["kind"]
+        == "doctor_instruction_check"
+    )
+    send(reply)
+    drain(runtime, tools=tools, model=model)
+    result = view(runtime[1], case)
+    assert source_count(source_engine) == 0
+    if mode == "bypass":
+        assert result["run"]["status"] == "paused"
+        assert result["steps"][-1]["policy"]["reason_codes"] == [
+            "INSTRUCTION_ANSWER_CONSTRAINTS_REQUIRED"
+        ]
+        assert not any(m["kind"] == "options" for m in result["patient_simulator"]["messages"])
+        return
+    offer = result["patient_simulator"]["messages"][-1]
+    assert offer["kind"] == "options"
+    assert [s["id"] for s in offer["evidence"]["slots"]] == eligible
+    assert offer["evidence"]["applied_constraints"]["date_from"] == boundary
+    if mode == "no_slots":
+        assert result["run"]["status"] == "escalated"
+        return
+    if mode == "slot_changed":
+        chosen = offer["evidence"]["slots"][0]
+        at = scan_at - timedelta(days=1)
+        source.put(
+            f"/internal/admin/slots/{chosen['id']}",
+            headers=ADMIN,
+            json={
+                "specialty": "antenatal",
+                "doctor": chosen["doctor"],
+                "starts_at": at.isoformat(),
+                "ends_at": (at + timedelta(minutes=30)).isoformat(),
+                "available": True,
+                "expected_version": chosen["version"],
+            },
+        ).raise_for_status()
+    send("option 1 is fine")
+    drain(runtime, tools=tools)
+    result = view(runtime[1], case)
+    if mode == "slot_changed":
+        assert source_count(source_engine) == 0
+        assert result["run"]["status"] != "completed"
+        return
+    assert result["run"]["status"] == "completed", result
+    assert source_count(source_engine) == 1
+    receipt = next(
+        s["tool_result"]["data"]
+        for s in result["steps"]
+        if (s.get("tool_result") or {}).get("tool_name") == "record_simulated_confirmation"
+    )
+    assert receipt["booking_slot_id"] == eligible[0]
+    assert receipt["scheduled_at"][:10] >= boundary
+
+
+@pytest.mark.parametrize("fabricated", [False, True])
+def test_scan_answer_typography_preserves_source_and_rejects_changed_words(
+    simulated_runtime, fabricated
+):
+    class QuotedScanModel(DoctorActionModel):
+        def decide(self, obs, **kwargs):
+            response = super().decide(obs, **kwargs)
+            value = json.loads(response.text)
+            if value["step_type"] == "INTERPRET_INSTRUCTION_CHECK":
+                value["outcome"] = "NOT_MET"
+                value["answer_quote"] = (
+                    "I have completed the mandatory scan."
+                    if fabricated
+                    else "I haven't completed the mandatory scan yet. My scan is on 5 October."
+                )
+            return ModelReply(json.dumps(value))
+
+    runtime, tools, source, source_engine = simulated_runtime
+    set_note(source, "DEMO-ANTENATAL-VISIT-01", SCAN_NOTE)
+    add_antenatal_slot(source)
+    model = QuotedScanModel(
+        condition_quote=SCAN_CONDITION,
+        question="Have you completed the mandatory scan?",
+        if_not_met="RESCHEDULE",
+        consequence_quote=SCAN_CONSEQUENCE,
+    )
+    case, _ = start(runtime, "antenatal")
+    drain(runtime, tools=tools)
+    event(runtime[1], case, "demo_reply", "I confirm my attendance").raise_for_status()
+    drain(runtime, tools=tools, model=model)
+    reply = (
+        "I haven’t completed the mandatory scan yet. My scan is on 5 October. "
+        "Can you move my appointment to after that?"
+    )
+    event(runtime[1], case, "demo_reply", reply).raise_for_status()
+    drain(runtime, tools=tools, model=model)
+    result = view(runtime[1], case)
+    step = next(
+        s
+        for s in result["steps"]
+        if (s.get("decision") or {}).get("step_type") == "INTERPRET_INSTRUCTION_CHECK"
+    )
+    assert result["events"][-1]["content"] == reply
+    assert source_count(source_engine) == 0
+    if fabricated:
+        assert result["run"]["status"] == "paused"
+        assert step["policy"]["reason_codes"] == ["INSTRUCTION_CHECK_ANSWER_NOT_IN_REPLY"]
+    else:
+        assert step["decision"]["answer_quote"] == reply.split(" Can you")[0]
+        assert step["policy"]["decision"] == "ALLOW"
+        assert result["run"]["status"] == "waiting"
+        assert result["patient_simulator"]["messages"][-1]["kind"] == "options"
 
 
 def test_generic_referral_check_routes_to_clinic_review(simulated_runtime):
@@ -278,7 +545,7 @@ def test_instruction_check_keeps_red_symptom_path_available():
         "tools": [],
     }
     formats = decision_formats_for(obs)
-    assert set(formats) == {"INTERPRET_INSTRUCTION_CHECK", "REPORT_SYMPTOMS"}
+    assert set(formats) == {"INTERPRET_INSTRUCTION_CHECK", "REPORT_SYMPTOMS", "REVIEW_NEEDS"}
 
 
 def test_patient_check_condition_and_reschedule_consequence_must_be_exact_source_text():
