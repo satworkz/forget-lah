@@ -57,4 +57,4 @@ within them for unresolved-question escalation, retaining source-answerable ques
 | Permitted authorship and licences for each source; any stricter per-stratum release gate | rights | **open** — M1 may author `licence: pending`; pending rights are never treated as approved |
 | Benchmark ownership and the replacement-holdout procedure | process | **open** |
 | Whether the runtime's unaccepted-handoff `escalated` path produces the required evidence in practice | verification | **open** — the schema is authored from `engine.py:200-215`; live evidence is not yet captured |
-| Contract-test enforcement of the 37 `x-cross-field-rules` | engineering | **held** — `tests/test_corpus_contract.py` is deliberately withheld pending standup review |
+| Contract-test enforcement of the 37 `x-cross-field-rules` | engineering | **resolved 2026-09-24** — unblocked and implemented in `tests/test_corpus_contract.py` (R1–R37, positive and negative fixtures); R10/R27/R34 remain oracle/harness review obligations |

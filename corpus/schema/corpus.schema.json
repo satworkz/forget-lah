@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://forget-lah.invalid/corpus/schema/corpus.schema.json",
   "title": "forget-lah multilingual conversation corpus item",
-  "description": "Contract for one corpus variant, revision 2. Semantics are per docs/corpus/m1/runtime_semantics_map.md; every enum below is taken from the runtime, not invented. NOTE: the rules in x-cross-field-rules are NOT yet enforced by any test at this revision - tests/test_corpus_contract.py does not exist yet and is deliberately held back pending standup review. Do not treat a validating item as a correct item until that enforcement exists.",
+  "description": "Contract for one corpus variant, revision 3. Semantics are per docs/corpus/m1/runtime_semantics_map.md; every enum below is taken from the runtime, not invented. The x-cross-field-rules are enforced by tests/test_corpus_contract.py (rule ids R1-R37) against positive and negative fixtures under tests/fixtures/corpus_m1/. Three rules - R10 (clinical vs operational UNSUPPORTED), R27 (unexpected escalation) and R34 (translation failure classification) - are not machine-enforceable from a single item and remain oracle/harness review obligations.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -882,7 +882,7 @@
     }
   },
   "x-cross-field-rules": {
-    "description": "NOT YET ENFORCED at this revision: tests/test_corpus_contract.py does not exist and is deliberately held back pending standup review. Each rule below needs a positive and a negative fixture when that file is written. Until then, a validating item is not evidence of correct semantics.",
+    "description": "Enforced by tests/test_corpus_contract.py at this revision (rule ids R1-R37, with positive and negative fixtures under tests/fixtures/corpus_m1/). R10, R27 and R34 are not machine-enforceable from a single item and are documented instead; they remain review obligations (see docs/corpus/m1/oracle_rubric.md).",
     "rules": [
       "Every task index in checkpoint_oracle.tasks must form exactly 0..n-1 with no gaps or duplicates (questions.py:16-17).",
       "Task ordering must be all QUESTIONs then all PLANs, mirroring engine.py:986-988; a PLAN,QUESTION interleave is unrepresentable and must be rejected.",

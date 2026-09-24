@@ -1,0 +1,178 @@
+{
+  "corpus_version": "1",
+  "identity": {
+    "family_id": "fam-confirmation-01",
+    "variant_id": "fam-confirmation-01-en",
+    "scenario_id": "scn-confirmation-01",
+    "language": "en",
+    "primary_stratum": "confirmation",
+    "tags": ["named-acceptance"],
+    "register_markers": []
+  },
+  "split": "development",
+  "clock": {
+    "reference_datetime": "2026-09-24T09:00:00+08:00",
+    "frozen_date": "2026-09-24"
+  },
+  "environment": {
+    "clinic_id": "10000000-0000-4000-8000-000000000001",
+    "is_demo_clinic": true,
+    "patient_simulator_enabled": true,
+    "translation_configured": true,
+    "delivery_evidence_source": "displayed_in_simulator",
+    "fixtures": {
+      "source_api": [],
+      "approved_instructions": [
+        {
+          "instruction_id": "instr-1",
+          "approved_text": "Please arrive ten minutes early and bring your medication list."
+        }
+      ],
+      "staff_acceptance": [
+        {
+          "handoff_id": "hoff-confirmation-01",
+          "accepted_by": "staff-1",
+          "accepted_at": "2026-09-24T09:30:00+08:00"
+        }
+      ]
+    },
+    "translation_profile": {
+      "provider": "anthropic",
+      "model_id": "claude-sonnet-4-5-20250929",
+      "api_version": "2023-06-01",
+      "runtime_commit": "c227dfc",
+      "temperature": 0,
+      "max_tokens": 2048,
+      "generation_settings": { "top_p": null, "top_k": null, "stop": null },
+      "prompt_version": "1",
+      "prompt_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "output_schema_hash": null,
+      "validator_version": "1",
+      "multilingual_enabled": true,
+      "agent_model_mode": "anthropic",
+      "model_configured": true,
+      "translation_configured": true,
+      "provider_seed": null,
+      "seed_supported": false,
+      "harness_seed": 42,
+      "sampling_plan_id": "m1-plan-1",
+      "sample_count": 60,
+      "required_passes": 60,
+      "execution_origin": "live",
+      "retry_policy": {
+        "policy_id": "m1-retry-1",
+        "infrastructure_max_replacements": 2,
+        "replace_on": ["provider_unavailable", "harness_outage", "network_error"],
+        "never_replace_on": [
+          "TRANSLATION_VALIDATION_FAILED",
+          "TRANSLATION_INCOMPLETE",
+          "wrong_target_language",
+          "missing_required_delivery"
+        ]
+      },
+      "worker_timing_profile": "m1-workers-1",
+      "call_budget_profile": "m1-budget-1"
+    }
+  },
+  "runtime_bounds": {
+    "agent_max_steps": 40,
+    "role_limit_coordinator": 8,
+    "role_limit_specialist": 6
+  },
+  "initial_state": {
+    "contact_permission": "allowed",
+    "memory": []
+  },
+  "conversation": [
+    {
+      "turn_id": "t1",
+      "origin": "history",
+      "speaker": "clinic",
+      "clinic_turn_kind": "options",
+      "body": "We can offer 2026-09-25 at 10:00. Shall I confirm this?",
+      "language_tag": "en"
+    },
+    {
+      "turn_id": "t2",
+      "origin": "replay",
+      "speaker": "patient",
+      "expected_step_type": "REVIEW_NEEDS",
+      "body": "Yes please, confirm it. Also, when should I come for the preparation?",
+      "language_tag": "en"
+    }
+  ],
+  "meaning_contract": {
+    "intended_meaning_by_turn": [
+      {
+        "turn_id": "t2",
+        "intended_meaning": "Accepts the offered slot and asks about preparation timing."
+      }
+    ],
+    "unresolved_ambiguity": [],
+    "must_not_infer": ["must not invent an available slot"]
+  },
+  "checkpoint_oracle": [
+    {
+      "after_turn_id": "t2",
+      "appointment_intent": "CONFIRM",
+      "appointment_request_quote": "Yes please, confirm it.",
+      "attendance_qualification": { "status": "COMPATIBLE", "quote": "confirm it" },
+      "tasks": [
+        {
+          "index": 0,
+          "task_type": "QUESTION",
+          "outcome": "ANSWERED",
+          "instruction_id": "instr-1",
+          "quote": "arrive ten minutes early"
+        }
+      ],
+      "instruction_checks": [
+        { "question_message_id": "msg-instr-1", "outcome": "MET", "answer_quote": "I will arrive early" }
+      ],
+      "memory": [
+        {
+          "key": "preferred_language",
+          "operation": "set",
+          "scope": "future",
+          "value": "en",
+          "expected_status": "active"
+        }
+      ],
+      "callback_requested": false,
+      "delivery": {
+        "expected_block": null,
+        "effective_language": "en",
+        "expected_message_delivery": [
+          { "turn_id": "t2", "delivery_status": "displayed_in_simulator" }
+        ]
+      }
+    }
+  ],
+  "terminal_oracle": {
+    "kind": "completed_handoff",
+    "run_status": "completed",
+    "outcome": "OWNED_STAFF_HANDOFF",
+    "handoff_id": "hoff-confirmation-01"
+  },
+  "forbidden_actions": ["booking_write", "source_write"],
+  "scoring": { "scored": true, "unscored_reason": null },
+  "governance": {
+    "synthetic": true,
+    "pii_free": true,
+    "authorship": { "drafter": "drafter-a", "drafter_family": "family-a", "licence": "original_synthetic" },
+    "review": { "reviewer_of_record": "reviewer-en", "reviewed_at": "2026-09-24T08:00:00+08:00" },
+    "back_translation": {
+      "model": "translator-b",
+      "model_family": "family-b",
+      "differs_from_drafter": true,
+      "spot_check": { "by": "reviewer-en", "blind": true }
+    },
+    "adjudication": { "status": "unresolved", "adjudicator": null },
+    "ai_declarations": [{ "step": "drafting", "model": "drafter-a", "model_family": "family-a" }]
+  },
+  "integrity": {
+    "generation_seed": 201,
+    "replay_seed": 301,
+    "content_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+  }
+}

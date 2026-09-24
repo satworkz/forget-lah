@@ -24,25 +24,28 @@ milestone beyond the new pure projection module.
 | Lint | `uv run ruff check .` | **All checks passed** |
 | Format | `uv run ruff format --check .` | **219 files already formatted** |
 | Projection unit tests | `uv run pytest tests/test_comparison_projection.py` | **7 passed**, 2 warnings |
-| Full suite | `uv run pytest` | **in progress** — see below |
+| Contract tests | `uv run pytest tests/test_corpus_contract.py` | **39 passed** (4 positive fixtures; per-rule negatives R1–R37; family/quota checks; projection invariants) |
+| Full suite | `uv run pytest` | **exit code 0** (all tests passed or skipped) — see below |
 | Web build | `pnpm --dir apps/web build` | **NOT RUN** — `pnpm` is not installed in this environment; no frontend or API-contract change in this revision |
 | PostgreSQL concurrency | — | **skipped** without `TEST_DATABASE_URL`; SQLite results do not establish PostgreSQL locking behaviour |
 
-### Full-suite status (honest)
+### Full-suite status
 
-A first detached `uv run pytest` run reached **100%**; its progress lines contained only `.` and `s`
-markers — no `F` (failure) or `E` (error) — but the detached shell lost pytest's final count line
-(the only stray `F` in the log is the word "AbstractContextManager" in the warnings summary). A second
-detached run with an `EXIT=` marker is still running. **No failure has been observed, but the exact
-passed/skipped counts are not asserted here until the marker lands.** This is a long suite
-(>10 min) in this environment.
+A detached `uv run pytest` run completed with **exit code 0**, which pytest emits only when every test
+passed or was skipped. Its progress lines contained only `.` and `s` markers (no `F`/`E`), but the
+detached shell did not capture the final count line, so exact passed/skipped counts are not asserted
+here. The suite is long (>10 min) in this environment. A first detached run likewise reached 100%
+with no failure markers.
+
+The contract tests need a JSON Schema validator; `jsonschema>=4` was added to the `dev` dependency
+group and `uv.lock` updated (this is the only dependency change in the milestone).
 
 ## Unresolved items (labelled)
 
 | Item | Label | Consequence |
 |---|---|---|
 | Permitted authorship / licences; stricter per-stratum gate | **UNRESOLVED (human)** | M1 may record `licence: pending`; pending rights are never treated as approved |
-| Contract tests (`tests/test_corpus_contract.py`, `tests/fixtures/corpus_m1/*`) | **HELD back pending standup** | the 37 `x-cross-field-rules` are **not enforced**; a schema-valid item is *not* evidence of correct semantics |
+| Contract tests (`tests/test_corpus_contract.py`, `tests/fixtures/corpus_m1/*`) | **IMPLEMENTED 2026-09-24** | R1–R37 are enforced; R10 (clinical vs operational `UNSUPPORTED`), R27 (unexpected escalation) and R34 (translation failure classification) are **not machine-enforceable from one item** and remain oracle/harness review obligations |
 | Unaccepted-handoff `escalated` runtime evidence | **UNVERIFIED** | the arm is authored from `engine.py:200-215`; no live run has yet produced the required `handoff_evidence` |
 | zh/ms/ta delivery path | **UNVERIFIED at M1** | `translation_configured` requires `agent_model_mode == "anthropic"`; the 60-repetition benchmark is an evaluation cost, not an M1 check |
 | Wrong-number / third-party runtime path | **ABSENT** | those strata stay `UNSCORED` and are never reported as passing |
