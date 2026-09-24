@@ -114,12 +114,14 @@ Two real archives exist for the ambiguous family, both graded from captured obse
    the variant's own language** (D2 comprehension repair — permitted, not required), and an
    **unrecorded `callback_requested` treated as `false`** (the runtime stores no negative callback).
    zh fell from 3 differing paths to **1**; en from 8 to **7**.
-2. **en escalation — the model's own choice, not a rule artefact.** The recorded decisions are
-   `DELEGATE → REVIEW_NEEDS(UNSPECIFIED, updates: []) → TOOL READ_SOURCE → DELEGATE → ESCALATE` with
-   reason **`CAPABILITY_UNAVAILABLE`**, where the oracle expects `CLARIFY`/`waiting`. This needs
-   adjudication: is the prompt/fixture at fault (the simulated source offers nothing actionable), or
-   is the oracle's expectation wrong? Either way it would fail every `ambiguous`-stratum variant as
-   authored.
+2. **en escalation — inconclusive: the run did not use the authored scenario.** The recorded decisions
+   are `DELEGATE → REVIEW_NEEDS(UNSPECIFIED, updates: []) → TOOL READ_SOURCE → DELEGATE → ESCALATE`
+   with reason **`CAPABILITY_UNAVAILABLE`**. But the harness injects only the **patient reply text**:
+   the clinic history and source data come from the runtime's *default detected case* (`start()`
+   selects by specialty), the item's `conversation` is never injected, and its `source_api` is empty.
+   The model therefore never saw the authored ambiguous scenario, so the escalation cannot be
+   attributed to the runtime, the model or the oracle. **Ruling: inconclusive — implement the
+   item→case/conversation/source mapping, then repeat (A2: 60 runs) before any behavioural claim.**
 3. **Trajectory length differs by language for the same scenario** — 5 decisions (en) vs 2 (zh).
    Sampling variance of this kind is exactly why A2 requires 60 predeclared repetitions and 60/60
    passes rather than one run per variant.
