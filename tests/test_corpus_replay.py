@@ -116,3 +116,36 @@ def test_language_switch_family_still_agrees_on_semantics() -> None:
     en = _variant("ambiguous-01-en.json")
     ta = _variant("ambiguous-01-ta.json")
     assert cross_language_equivalence(en, ta)["equivalent"] is True
+
+
+def test_visit_only_language_update_is_permitted() -> None:
+    """A visit-scoped preferred_language matching the variant's language is permitted, not graded."""
+    oracle = _variant("ambiguous-01-zh.json")
+    observed = _observed_from(oracle)
+    observed["checkpoint_oracle"][0]["memory"] = [
+        {
+            "key": "preferred_language",
+            "operation": "set",
+            "scope": "visit",
+            "expected_status": "active",
+            "value": "zh",
+        }
+    ]
+    assert grade(oracle, observed)["grade"] == "PASS"
+
+
+def test_future_language_preference_is_still_graded() -> None:
+    oracle = _variant("ambiguous-01-zh.json")
+    observed = _observed_from(oracle)
+    observed["checkpoint_oracle"][0]["memory"] = [
+        {
+            "key": "preferred_language",
+            "operation": "set",
+            "scope": "future",
+            "expected_status": "active",
+            "value": "zh",
+        }
+    ]
+    result = grade(oracle, observed)
+    assert result["grade"] == "FAILED"
+    assert any(diff["path"].endswith("memory") for diff in result["differences"])

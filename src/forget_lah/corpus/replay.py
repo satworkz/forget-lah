@@ -43,6 +43,36 @@ HARD_FAILURE_STATUSES = frozenset(
 
 _ALIGNMENT_IGNORED = LANGUAGE_DEPENDENT_PATHS | {"identity.variant_id"}
 
+#: A visit-scoped `preferred_language` whose value equals the variant's own language is a D2
+#: comprehension repair: it is *permitted* rather than required, so its presence or absence must not
+#: decide a grade. A `future`-scoped preference, or a value for another language, is still graded.
+_PERMITTED_OPTIONAL_MEMORY_KEY = "preferred_language"
+
+
+def strip_permitted_optional_memory(projection: dict[str, Any], language: str | None) -> None:
+    """Normalise permitted, non-deciding differences in place.
+
+    1. Drop a visit-scoped `preferred_language` whose value equals the variant's own language
+       (D2 comprehension repair — permitted, not required).
+    2. Treat an unrecorded `callback_requested` as `false`: the runtime stores no negative callback, so
+       absence and `false` are the same state. A scenario that requires a callback authors `true`.
+    """
+    for checkpoint in projection.get("checkpoints") or []:
+        if checkpoint.get("callback_requested") is None:
+            checkpoint["callback_requested"] = False
+        entries = checkpoint.get("memory")
+        if not isinstance(entries, list):
+            continue
+        checkpoint["memory"] = [
+            entry
+            for entry in entries
+            if not (
+                entry.get("key") == _PERMITTED_OPTIONAL_MEMORY_KEY
+                and entry.get("scope") == "visit"
+                and entry.get("value") == language
+            )
+        ]
+
 
 def _drop_path(node: dict[str, Any], path: str) -> None:
     head, _, tail = path.partition(".")
@@ -101,12 +131,15 @@ def grade(
     expected.pop("projection_version", None)
     actual.pop("projection_version", None)
 
+    expected_language = (oracle_item.get("identity") or {}).get("language")
+    observed_language = (observed.get("identity") or {}).get("language")
+    strip_permitted_optional_memory(expected, expected_language)
+    strip_permitted_optional_memory(actual, observed_language or expected_language)
+
     hard_failures: list[str] = []
     if translation_status in HARD_FAILURE_STATUSES:
         hard_failures.append(f"translation_status={translation_status}")
 
-    expected_language = (oracle_item.get("identity") or {}).get("language")
-    observed_language = (observed.get("identity") or {}).get("language")
     if observed_language is not None and observed_language != expected_language:
         hard_failures.append(f"wrong_target_language={observed_language}")
 
@@ -137,6 +170,8 @@ def cross_language_equivalence(
     """Compare two aligned variants after dropping declared language-dependent paths."""
     left = project(item_a)
     right = project(item_b)
+    strip_permitted_optional_memory(left, (item_a.get("identity") or {}).get("language"))
+    strip_permitted_optional_memory(right, (item_b.get("identity") or {}).get("language"))
     for projection in (left, right):
         projection.pop("projection_version", None)
         for path in _ALIGNMENT_IGNORED:

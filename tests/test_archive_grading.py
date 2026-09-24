@@ -44,7 +44,8 @@ def test_archived_en_and_zh_diverge() -> None:
     assert result["equivalent"] is False
     paths = [difference["path"] for difference in result["differences"]]
     assert any(path.startswith("terminal") for path in paths)
-    assert any(path.endswith("memory") for path in paths)
+    # The visit-only language update D2 permits is no longer reported as a difference.
+    assert not any(path.endswith("memory") for path in paths)
 
 
 def test_archive_carries_truthful_provenance() -> None:

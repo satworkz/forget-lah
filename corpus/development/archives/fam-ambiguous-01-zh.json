@@ -7,7 +7,7 @@
     "model_id": "claude-sonnet-4-5-20250929",
     "prompt_version": "1",
     "started_at": "2026-09-24T09:00:00+08:00",
-    "request_id": "7f6963de-6989-4ce2-9773-3f833247d2da"
+    "request_id": "432ccd87-cb48-46f7-aee7-21d9c4bdb2f5"
   },
   "translation_status": "ok",
   "observed": {
@@ -77,19 +77,9 @@
     "hard_failures": [],
     "differences": [
       {
-        "path": "checkpoints[0].callback_requested",
-        "expected": false,
-        "observed": null
-      },
-      {
         "path": "checkpoints[0].delivery.expected_message_delivery",
         "expected": "len 1",
         "observed": "len 0"
-      },
-      {
-        "path": "checkpoints[0].memory",
-        "expected": "len 0",
-        "observed": "len 1"
       }
     ]
   }

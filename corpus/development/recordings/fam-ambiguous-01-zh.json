@@ -5,22 +5,22 @@
   "runtime_commit": null,
   "records": [
     {
-      "request_id": "244c00d9-56f6-4ae8-b515-683731c14c1e",
+      "request_id": "eed9dd6e-43b7-4fa5-bb20-2ca1216f5d08",
       "repair": false,
-      "observation_sha256": "3eb47752c0fa052c6a8e307f5750e078c64e9f87b9cd10ee6ed65233c245ab7b",
-      "reply_text": "{\"request_id\":\"244c00d9-56f6-4ae8-b515-683731c14c1e\",\"expected_case_version\":3,\"reason_code\":\"FOLLOWUP_REVIEW_REQUIRED\",\"step_type\":\"DELEGATE\",\"target\":\"engagement\",\"goal\":\"Review overdue dental recall context and determine patient contact approach.\"}",
-      "input_tokens": 2257,
-      "output_tokens": 84,
-      "latency_ms": 2475
+      "observation_sha256": "f5086318c15c8334291690e60d8007a5e9adc62c3a659868f5db212d5cefe0ed",
+      "reply_text": "{\"request_id\":\"eed9dd6e-43b7-4fa5-bb20-2ca1216f5d08\",\"expected_case_version\":3,\"reason_code\":\"FOLLOWUP_REVIEW_REQUIRED\",\"step_type\":\"DELEGATE\",\"target\":\"engagement\",\"goal\":\"Review overdue dental recall; source contact unavailable, read-only context review.\"}",
+      "input_tokens": 2258,
+      "output_tokens": 91,
+      "latency_ms": 4280
     },
     {
-      "request_id": "4c9e7b6e-0c1a-4de5-a4ca-2dda21da9c7c",
+      "request_id": "3f7ac666-5735-4558-ac25-5b06781591a8",
       "repair": false,
-      "observation_sha256": "ac9bd806cecb29e70fb1a31b0f8123abf43e6262d2d592d83b4a7f594bb70f22",
-      "reply_text": "{\"request_id\":\"4c9e7b6e-0c1a-4de5-a4ca-2dda21da9c7c\",\"expected_case_version\":6,\"reason_code\":\"PATIENT_NEEDS_REVIEWED\",\"preparation_plans\":[],\"patient_questions\":[],\"step_type\":\"REVIEW_NEEDS\",\"reply_event_id\":\"32da5895-8695-4c94-a1a9-d7de2edc7438\",\"updates\":[{\"key\":\"preferred_language\",\"value\":\"zh\",\"scope\":\"visit\",\"operation\":\"set\",\"quote\":\"\\u597d\"}],\"appointment_intent\":\"UNSPECIFIED\",\"appointment_request_quote\":null,\"attendance_qualification\":null,\"question\":null,\"comprehension_quote\":null,\"concern_quote\":null}",
-      "input_tokens": 3622,
-      "output_tokens": 186,
-      "latency_ms": 10825
+      "observation_sha256": "bd0b5cef64a5ecfa5c254dac006a07c65df664d58c023f411641f23ac6c9ca5a",
+      "reply_text": "{\"request_id\":\"3f7ac666-5735-4558-ac25-5b06781591a8\",\"expected_case_version\":6,\"reason_code\":\"PATIENT_NEEDS_REVIEWED\",\"preparation_plans\":[],\"patient_questions\":[],\"step_type\":\"REVIEW_NEEDS\",\"reply_event_id\":\"391b373e-e638-41a3-a609-70fe08678763\",\"updates\":[{\"key\":\"preferred_language\",\"value\":\"zh\",\"scope\":\"visit\",\"operation\":\"set\",\"quote\":\"\\u597d\"}],\"appointment_intent\":\"UNSPECIFIED\",\"appointment_request_quote\":null,\"attendance_qualification\":null,\"question\":null,\"comprehension_quote\":null,\"concern_quote\":null}",
+      "input_tokens": 3593,
+      "output_tokens": 172,
+      "latency_ms": 10350
     }
   ],
   "run_status": "waiting",

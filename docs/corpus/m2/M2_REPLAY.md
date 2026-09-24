@@ -109,12 +109,11 @@ Two real archives exist for the ambiguous family, both graded from captured obse
 **Cross-language divergence (investigated).** `cross_language_equivalence` reports the two variants as
 **not equivalent**. Reading the recorded decisions gives a different verdict for each difference:
 
-1. **zh memory — the oracle is wrong, the runtime is right.** The zh decision set `preferred_language`
-   with `scope: "visit"`, `value: "zh"`, quote `"好"` — exactly the comprehension-repair case D2
-   permits (*a clear comprehension repair may set a visit-only language*). The oracle authored
-   `memory: []`, and the contract currently has **no way to express a permitted optional update**, so
-   the exact-match projection counts it as a difference. Fix options: author the visit-only language
-   for non-English variants, or add a permitted-variation declaration to the contract.
+1. **zh memory — resolved: permitted and no longer graded.** `replay` now normalises two
+   non-deciding differences before comparing: a **visit-scoped `preferred_language` whose value equals
+   the variant's own language** (D2 comprehension repair — permitted, not required), and an
+   **unrecorded `callback_requested` treated as `false`** (the runtime stores no negative callback).
+   zh fell from 3 differing paths to **1**; en from 8 to **7**.
 2. **en escalation — the model's own choice, not a rule artefact.** The recorded decisions are
    `DELEGATE → REVIEW_NEEDS(UNSPECIFIED, updates: []) → TOOL READ_SOURCE → DELEGATE → ESCALATE` with
    reason **`CAPABILITY_UNAVAILABLE`**, where the oracle expects `CLARIFY`/`waiting`. This needs
@@ -124,6 +123,12 @@ Two real archives exist for the ambiguous family, both graded from captured obse
 3. **Trajectory length differs by language for the same scenario** — 5 decisions (en) vs 2 (zh).
    Sampling variance of this kind is exactly why A2 requires 60 predeclared repetitions and 60/60
    passes rather than one run per variant.
+
+**Remaining difference.** Both archives still flag `checkpoints[0].delivery.expected_message_delivery`:
+the oracle expects the reply to `t2` to be delivered (`displayed_in_simulator`) while the observed
+runs sent no simulated message. For the zh run — which *waited* — that is the open question: should a
+clarifying turn deliver a message, or is the oracle's expectation wrong for a waiting terminal? Needs
+adjudication.
 
 Asserted in `tests/test_archive_grading.py::test_archived_en_and_zh_diverge` so a fix flips it
 deliberately.
