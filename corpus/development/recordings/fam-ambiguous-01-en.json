@@ -1,0 +1,27 @@
+{
+  "recording_version": "1",
+  "variant_id": "fam-ambiguous-01-en",
+  "model_id": "claude-sonnet-4-5-20250929",
+  "runtime_commit": null,
+  "records": [
+    {
+      "request_id": "6e5b7805-5dba-4a67-abb4-1fc2c955e859",
+      "repair": false,
+      "observation_sha256": "eead52f0b1e228b277aa61bd415a6ce5c93e17ab446ec51fb6de3d2071fa3ac4",
+      "reply_text": "{\"request_id\":\"6e5b7805-5dba-4a67-abb4-1fc2c955e859\",\"expected_case_version\":3,\"reason_code\":\"FOLLOWUP_REVIEW_REQUIRED\",\"step_type\":\"DELEGATE\",\"target\":\"engagement\",\"goal\":\"Review overdue dental recall context; contact and booking unavailable, read-only assessment.\"}",
+      "input_tokens": 2253,
+      "output_tokens": 92,
+      "latency_ms": 4186
+    },
+    {
+      "request_id": "a88bbcde-83bd-440f-bb02-efb16a3240c3",
+      "repair": false,
+      "observation_sha256": "45a8dd85d2b860eaaee436d7418e998bc68a308d01446f46d7b0eeb39f6d4c9e",
+      "reply_text": "{\"request_id\":\"a88bbcde-83bd-440f-bb02-efb16a3240c3\",\"expected_case_version\":6,\"reason_code\":\"PATIENT_NEEDS_REVIEWED\",\"preparation_plans\":[],\"patient_questions\":[],\"step_type\":\"REVIEW_NEEDS\",\"reply_event_id\":\"5158bebf-e0ce-4d40-a7c7-dd1f48a51544\",\"updates\":[],\"appointment_intent\":\"UNSPECIFIED\",\"appointment_request_quote\":null,\"attendance_qualification\":null,\"question\":null,\"comprehension_quote\":null,\"concern_quote\":null}",
+      "input_tokens": 3614,
+      "output_tokens": 154,
+      "latency_ms": 8399
+    }
+  ],
+  "run_status": "queued"
+}

@@ -34,7 +34,7 @@ packages = ["src/forget_lah"]
 testpaths = ["tests"]
 pythonpath = ["."]
 addopts = "-q"
-markers = ["postgres: requires the dedicated TEST_DATABASE_URL database"]
+markers = ["postgres: requires the dedicated TEST_DATABASE_URL database", "live: calls a real model provider and is skipped without credentials"]
 
 [tool.ruff]
 target-version = "py312"

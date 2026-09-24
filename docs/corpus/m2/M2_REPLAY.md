@@ -117,10 +117,19 @@ suffix or as its final segment, so it can address the runtime's real episode pat
 `availability`. Note the runtime selects the case/episode from the detected candidates, so pinning
 source results alone does not pin the scenario; a true replay also needs the variant's case mapping.
 
-**Blocker for a genuine recording.** `translation_configured` requires
-`agent_model_mode == "anthropic"` (`settings.py:20-25`), and the runtime's providers are `mock`,
-`organiser` and `anthropic`. CommandCode's Anthropic wire (`/provider/v1/messages`) is **not in the
-account plan (403)** and no Anthropic credential is available here, so a real recorded model run
-cannot be produced in this environment; `MockModel` is a deterministic double and must stay labelled
-mock. A true replay therefore needs either an Anthropic-capable runtime credential or a new provider
-pointed at a tool-capable OpenAI-compatible endpoint that also satisfies the `anthropic` gate.
+**Recording — unblocked, partial.** An Anthropic credential is now present (untracked `.env`), and
+`recording.RecordingModel` / `RecordedModel` capture and replay real decisions. A first genuine
+recording exists at `corpus/development/recordings/fam-ambiguous-01-en.json`
+(`model_id: claude-sonnet-4-5-20250929`, 2 recorded decisions), produced by
+`tests/test_live_recording.py` (opt-in via `RUN_LIVE_RECORDING=1`; the test loads `.env` itself).
+
+Two cautions and one follow-up:
+
+- **Never shell-export `.env` while running the suite.** `SettingsConfigDict(env_file=None)` means
+  provider settings come from the *ambient* environment, so conftest's `Settings()` would flip every
+  test to `anthropic` and issue live calls. The live test loads `.env` into its own environment with
+  `monkeypatch` instead.
+- The recorded run did **not** reach a terminal (`run_status: queued` in the artifact), so a complete
+  archive is not produced yet.
+- Remaining step: drive the simulated turn to a terminal with the live model, then replay the
+  recording through `RecordedModel` and grade it.
