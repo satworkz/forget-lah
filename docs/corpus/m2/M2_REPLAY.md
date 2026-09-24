@@ -129,12 +129,13 @@ Two cautions and one follow-up:
   provider settings come from the *ambient* environment, so conftest's `Settings()` would flip every
   test to `anthropic` and issue live calls. The live test loads `.env` into its own environment with
   `monkeypatch` instead.
-- The recorded run did **not** reach a terminal. With `MockModel` the same flow reaches a terminal
-  (the producer test observes `escalated`), but in `anthropic` mode the run advances two decisions and
-  then parks in `queued` where `claim_run` no longer claims it — a bounded wait-and-retry
-  (`_drain_until_idle`, 60 s) does not wake it. The exact cause is **not yet isolated**; the next
-  probe is the run's `available_at`/lease state and the reopen path after a patient turn, either by
-  reusing the MockModel flow (free, but the stall is model-specific) or by driving the worker/job path
-  (`claim_job`/`finish_job`) instead of `claim_run`.
-- Remaining step: reach a terminal in `anthropic` mode, then replay the recording through
-  `RecordedModel` and grade it into an archive.
+- **The earlier "parks in `queued`" reading was a harness artefact, not a runtime defect.** The parked
+  run held a `pending` step with `MODEL_CONNECTION_FAILED` (`attempts=1`), and `record_failure` had
+  released it `queued` with `delay=exc.retry_after` (30 s): `available_at` was a concrete future
+  timestamp and `lease_until` was `null`. The 60 s drain simply sampled it mid-backoff. A backoff-aware
+  drain (sleeping to `available_at`, bounded to 180 s) drives it to a terminal.
+- The live run now reaches **`escalated`** with **7 recorded decisions** across 12 completed steps. The
+  variant's authored oracle expects `waiting`, so the graded verdict is **FAILED** — a real observation,
+  unlike the `MockModel` self-test.
+- Remaining step: freeze the clock identically in the record and replay passes so `RecordedModel`'s
+  observation hashes match, then replay offline, map the checkpoint and write the graded archive.

@@ -1,19 +1,20 @@
 import json
 import os
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 from conftest import TEST_PASSWORD
 from fastapi.testclient import TestClient
-from sqlalchemy import func, select
+from sqlalchemy import select
 from test_runtime import event, source_tools, start
 
 from forget_lah.api import create_app
 from forget_lah.corpus.recording import RecordingModel, recording_document
 from forget_lah.detector import detect
 from forget_lah.runtime.engine import claim_run, process_run
-from forget_lah.runtime.models import AgentRun
+from forget_lah.runtime.models import AgentRun, AgentStep
 from forget_lah.runtime.provider import AnthropicModel
 from forget_lah.settings import Settings
 from forget_lah.source import DEMO_CLINIC_ID, candidates_from_payload
@@ -72,26 +73,41 @@ def live(store, monkeypatch):
         yield factory, client, settings
 
 
-def _drain_until_idle(runtime, model, *, seconds: int = 60) -> int:
-    """Claim and process until nothing is queued/running, waiting out pacing timers."""
+def _drain_until_idle(runtime, model, *, seconds: int = 180) -> int:
+    """Claim and process until nothing is queued/running, waiting out retry backoffs."""
     factory, _, settings = runtime
     deadline = time.monotonic() + seconds
     processed = 0
     while time.monotonic() < deadline:
         claim = claim_run(factory)
-        if claim is None:
-            time.sleep(1)
-            with factory() as db:
-                pending = db.scalar(
-                    select(func.count())
-                    .select_from(AgentRun)
-                    .where(AgentRun.status.in_(["queued", "running"]))
-                )
-            if not pending:
-                break
+        if claim is not None:
+            process_run(factory, settings, *claim, model=model, tools=source_tools())
+            processed += 1
             continue
-        process_run(factory, settings, *claim, model=model, tools=source_tools())
-        processed += 1
+        with factory() as db:
+            rows = db.execute(
+                select(AgentRun.status, AgentRun.available_at).where(
+                    AgentRun.status.in_(["queued", "running"])
+                )
+            ).all()
+        if not rows:
+            break
+        now = datetime.now(UTC)
+        waits = []
+        for status, available_at in rows:
+            if status == "running":
+                waits.append(5.0)
+            elif available_at is None:
+                waits.append(0.0)
+            else:
+                due = (
+                    available_at.replace(tzinfo=UTC)
+                    if available_at.tzinfo is None
+                    else available_at
+                )
+                waits.append(max(0.0, (due - now).total_seconds()))
+        nap = min(5.0, min(waits)) if waits else 0.5
+        time.sleep(max(nap, 0.5))
     return processed
 
 
@@ -116,6 +132,10 @@ def test_record_a_live_decision_stream(live) -> None:
     with factory() as db:
         run = db.get(AgentRun, run_id)
         run_status = run.status
+        run_available_at = run.available_at.isoformat() if run.available_at else None
+        run_lease_until = run.lease_until.isoformat() if run.lease_until else None
+        steps = db.scalars(select(AgentStep).where(AgentStep.run_id == run_id)).all()
+        step_diagnostics = [(step.status, step.error_code, step.attempts) for step in steps]
 
     assert records, "the live model produced no decisions to record"
 
@@ -125,6 +145,11 @@ def test_record_a_live_decision_stream(live) -> None:
         records,
     )
     document["run_status"] = run_status
+    document["run_diagnostics"] = {
+        "available_at": run_available_at,
+        "lease_until": run_lease_until,
+        "steps": step_diagnostics,
+    }
     target = RECORDINGS / f"{variant['identity']['variant_id']}.json"
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(document, ensure_ascii=False, indent=2) + "\n")

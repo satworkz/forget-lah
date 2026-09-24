@@ -5,23 +5,134 @@
   "runtime_commit": null,
   "records": [
     {
-      "request_id": "45a4a388-24fb-40db-b81d-f5ec797430d4",
+      "request_id": "f034d7c2-1c35-4d14-99b5-2635417a5026",
       "repair": false,
-      "observation_sha256": "a2d04eb736be6772918ca54e70dd83307ac24f3fa39c2ba515dd22118a9dc701",
-      "reply_text": "{\"request_id\":\"45a4a388-24fb-40db-b81d-f5ec797430d4\",\"expected_case_version\":3,\"reason_code\":\"FOLLOWUP_REVIEW_REQUIRED\",\"step_type\":\"DELEGATE\",\"target\":\"engagement\",\"goal\":\"Review overdue dental recall context; contact unavailable so read-only assessment of source status and patient history.\"}",
-      "input_tokens": 2254,
-      "output_tokens": 93,
-      "latency_ms": 4439
+      "observation_sha256": "1752141aefa588fd0621974050be5c328124542a39d7d16ad92ad182f1abf05d",
+      "reply_text": "{\"request_id\":\"f034d7c2-1c35-4d14-99b5-2635417a5026\",\"expected_case_version\":3,\"reason_code\":\"FOLLOWUP_REVIEW_REQUIRED\",\"step_type\":\"DELEGATE\",\"target\":\"engagement\",\"goal\":\"Review overdue dental recall context and determine next steps given contact unavailable\"}",
+      "input_tokens": 2256,
+      "output_tokens": 88,
+      "latency_ms": 3791
     },
     {
-      "request_id": "7ee0fe15-fe7d-4c84-a55c-99459c8e83f0",
+      "request_id": "8dc5386e-d792-436d-a464-82bc035c876a",
       "repair": false,
-      "observation_sha256": "415758e8fb0380783bf1a65b48407722cc2c70f703474dcb6660b9e2f6903c6c",
-      "reply_text": "{\"request_id\":\"7ee0fe15-fe7d-4c84-a55c-99459c8e83f0\",\"expected_case_version\":6,\"reason_code\":\"PATIENT_NEEDS_REVIEWED\",\"preparation_plans\":[],\"patient_questions\":[],\"step_type\":\"REVIEW_NEEDS\",\"reply_event_id\":\"1fe92033-bf47-4888-adec-c4a2e58666be\",\"updates\":[],\"appointment_intent\":\"UNSPECIFIED\",\"appointment_request_quote\":null,\"attendance_qualification\":null,\"question\":null,\"comprehension_quote\":null,\"concern_quote\":null}",
-      "input_tokens": 3605,
-      "output_tokens": 154,
-      "latency_ms": 11972
+      "observation_sha256": "f41e0d5322869e48cff8f318ee49dbfc034f74546b30ff85b57cb4078c8b85f8",
+      "reply_text": "{\"request_id\":\"8dc5386e-d792-436d-a464-82bc035c876a\",\"expected_case_version\":6,\"reason_code\":\"PATIENT_NEEDS_REVIEWED\",\"preparation_plans\":[],\"patient_questions\":[],\"step_type\":\"REVIEW_NEEDS\",\"reply_event_id\":\"50bf46b5-1170-4dc4-a87c-f2700a698a08\",\"updates\":[],\"appointment_intent\":\"CONFIRM\",\"appointment_request_quote\":\"ok\",\"attendance_qualification\":null,\"question\":null,\"comprehension_quote\":null,\"concern_quote\":null}",
+      "input_tokens": 3608,
+      "output_tokens": 149,
+      "latency_ms": 10786
+    },
+    {
+      "request_id": "d1a78ac0-dca9-4ed3-a88c-e1fdd8c06952",
+      "repair": false,
+      "observation_sha256": "9c414e89d4b91668004bbec3255963b2ac9777655a5c6543ccffb7f8d5857ab4",
+      "reply_text": "{\"request_id\":\"d1a78ac0-dca9-4ed3-a88c-e1fdd8c06952\",\"expected_case_version\":7,\"reason_code\":\"READ_SOURCE\",\"step_type\":\"TOOL\",\"tool_name\":\"read_followup_context\"}",
+      "input_tokens": 1978,
+      "output_tokens": 74,
+      "latency_ms": 5418
+    },
+    {
+      "request_id": "ad27b3ab-8b53-44a1-97d6-4ea8729b36ea",
+      "repair": false,
+      "observation_sha256": "b5f85c58277764d6fed4288c4ee83c47a8b569b840f2b6ea4fb298fc014a4bfb",
+      "reply_text": "{\"request_id\":\"ad27b3ab-8b53-44a1-97d6-4ea8729b36ea\",\"expected_case_version\":8,\"reason_code\":\"PREPARATION_REVIEW_REQUIRED\",\"step_type\":\"DELEGATE\",\"target\":\"preparation\",\"goal\":\"Review recall context and prepare simulated options for patient selection\"}",
+      "input_tokens": 1947,
+      "output_tokens": 84,
+      "latency_ms": 5842
+    },
+    {
+      "request_id": "f67ac42b-53e0-45b0-90d7-1e8116baae80",
+      "repair": false,
+      "observation_sha256": "c1452d51ce93d4135954860335a33d84c3b7ba41ae41df90f54972b980b7c3d3",
+      "reply_text": "{\"request_id\":\"f67ac42b-53e0-45b0-90d7-1e8116baae80\",\"expected_case_version\":11,\"reason_code\":\"SPECIALIST_REVIEW_FINISHED\",\"scheduling_review\":[{\"instruction_id\":\"DEMO-DENTAL-NOTE\",\"quote\":\"Demo clinic note: bring your appointment confirmation.\",\"effect\":\"INFORMATION\",\"date_from\":null,\"date_to\":null,\"condition_quote\":null,\"patient_question\":null,\"if_not_met\":null,\"consequence_quote\":null}],\"step_type\":\"RETURN\",\"evidence_ids\":[\"224ff0e0-ff68-42b3-84cf-8b1ec883d792\",\"a5892cad-ed79-427e-961f-838c0ec80a73\"]}",
+      "input_tokens": 2967,
+      "output_tokens": 193,
+      "latency_ms": 9129
+    },
+    {
+      "request_id": "ce4f0a27-b88d-4c58-960c-bc0c6523bfb3",
+      "repair": false,
+      "observation_sha256": "ae04c8b74e5c6488d2de44c4ae105260e3c7b4ff047d17db129ec0530e6f90b1",
+      "reply_text": "{\"request_id\":\"ce4f0a27-b88d-4c58-960c-bc0c6523bfb3\",\"expected_case_version\":12,\"reason_code\":\"FOLLOWUP_REVIEW_REQUIRED\",\"step_type\":\"DELEGATE\",\"target\":\"engagement\",\"goal\":\"Source available appointment slots for dental recall scheduling\"}",
+      "input_tokens": 1634,
+      "output_tokens": 84,
+      "latency_ms": 4072
+    },
+    {
+      "request_id": "3259ffa9-f9bb-489f-9d71-2d55aac5ac35",
+      "repair": false,
+      "observation_sha256": "172bd9bdb15aac0a66c16ad0080ccd8018e90fc4b94ee0b8f82bf9fa781617b4",
+      "reply_text": "{\"request_id\":\"3259ffa9-f9bb-489f-9d71-2d55aac5ac35\",\"expected_case_version\":14,\"reason_code\":\"CAPABILITY_UNAVAILABLE\",\"step_type\":\"ESCALATE\"}",
+      "input_tokens": 2149,
+      "output_tokens": 65,
+      "latency_ms": 5267
     }
   ],
-  "run_status": "queued"
+  "run_status": "escalated",
+  "run_diagnostics": {
+    "available_at": null,
+    "lease_until": null,
+    "steps": [
+      [
+        "completed",
+        null,
+        0
+      ],
+      [
+        "completed",
+        null,
+        1
+      ],
+      [
+        "completed",
+        null,
+        0
+      ],
+      [
+        "completed",
+        null,
+        1
+      ],
+      [
+        "completed",
+        null,
+        1
+      ],
+      [
+        "completed",
+        null,
+        1
+      ],
+      [
+        "completed",
+        null,
+        0
+      ],
+      [
+        "completed",
+        null,
+        0
+      ],
+      [
+        "completed",
+        null,
+        1
+      ],
+      [
+        "completed",
+        null,
+        1
+      ],
+      [
+        "completed",
+        null,
+        0
+      ],
+      [
+        "completed",
+        null,
+        1
+      ]
+    ]
+  }
 }
