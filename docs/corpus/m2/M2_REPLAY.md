@@ -160,15 +160,26 @@ Both variants were re-recorded against the authored scenario:
 | `fam-ambiguous-01-en` | 4 | `escalated` | FAILED — the escalation (6 paths) |
 | `fam-ambiguous-01-zh` | 6 | `waiting` | FAILED — `appointment_intent` expected `UNSPECIFIED`, observed **`CONFIRM`** |
 
-**New finding — the ambiguous scenario contradicts its own stratum.** The authored clinic turn is
-*"We can offer 2026-09-25 at 10:00. Shall I confirm this?"*; a bare `"好"`/`"ok"` answer to that is a
-*plausible confirmation*, and the zh run returned `CONFIRM`. The `ambiguous_short_reply` stratum exists
-to require clarification instead of forcing an interpretation, so a clinic turn that invites
-confirmation is the wrong input for it. The oracle and the clinic turn are inconsistent: **the
-scenario needs redesign**, not the runtime.
+**Finding — a language-independent over-interpretation.** The family's clinic turn was changed from
+*"Shall I confirm this?"* to a neutral reminder (the old turn led the patient), then both variants were
+re-recorded. Both languages still return `appointment_intent: CONFIRM` for a bare `"ok"`:
 
-**en still escalates** even with the authored turn present — a more isolated extraction/behaviour
-question now, but still a single run (A2 requires 60 repetitions before any behavioural claim).
+| variant | decisions | observed | verdict |
+|---|---|---|---|
+| `fam-ambiguous-01-en` | 6 | `escalated` | FAILED — `CONFIRM` + the escalation (7 paths) |
+| `fam-ambiguous-01-zh` | 6 | `waiting` | FAILED — `CONFIRM` only (1 path) |
+
+So the mismatch is **not** language-dependent and **not** caused by the leading turn: with a neutral
+reminder, a bare acknowledgement is interpreted as an attendance confirmation. The oracle expects
+`UNSPECIFIED` + `CLARIFY`, per the `ambiguous_short_reply` rule *"do not force an unsupported
+interpretation"*. This is now a clean adjudication for the reviewer:
+
+- if `CONFIRM` is acceptable for reminder + `ok`, the **oracle** is wrong;
+- if not, the **runtime over-interprets** a bare acknowledgement — a shared, language-independent
+  behaviour, which the programme PRD treats as a general pipeline defect (not a language defect).
+
+The en/zh **terminals still differ** (`escalated` vs `waiting`), so the cross-language check remains
+inequivalent. A2's 60 repetitions are required before calling the `CONFIRM` behaviour systematic.
 
 ## Producer status
 

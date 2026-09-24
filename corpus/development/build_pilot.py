@@ -367,8 +367,8 @@ SCENARIOS = [
     _scenario(
         slug="ambiguous-01",
         stratum="ambiguous_short_reply",
-        clinic_kind="options",
-        clinic_turn="t1_options",
+        clinic_kind="reminder",
+        clinic_turn="t1_reminder",
         step_type="CLARIFY",
         patient={
             "en": "ok",
@@ -605,8 +605,8 @@ SCENARIOS = [
     _scenario(
         slug="ambiguous-02",
         stratum="ambiguous_short_reply",
-        clinic_kind="options",
-        clinic_turn="t1_options",
+        clinic_kind="reminder",
+        clinic_turn="t1_reminder",
         step_type="CLARIFY",
         patient={
             "en": "maybe later",

@@ -100,8 +100,8 @@
       "turn_id": "t1",
       "origin": "history",
       "speaker": "clinic",
-      "clinic_turn_kind": "options",
-      "body": "We can offer 2026-09-25 at 10:00. Shall I confirm this?",
+      "clinic_turn_kind": "reminder",
+      "body": "Reminder: your appointment is on 2026-09-25 at 10:00.",
       "language_tag": "en"
     },
     {
@@ -191,6 +191,6 @@
   "integrity": {
     "generation_seed": 1077,
     "replay_seed": 2077,
-    "content_hash": "4e9c27f4f0800c1853d83b55aaec751449b4df0f76d2a7c9be7dd5850f0115c2"
+    "content_hash": "7a7d450c7888076b3eb56a98aec9451f2e7b2e3dc627a7f1ff1e86f361e10a51"
   }
 }

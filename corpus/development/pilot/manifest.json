@@ -252,22 +252,22 @@
         "en": {
           "variant_id": "fam-ambiguous-01-en",
           "path": "ambiguous-01-en.json",
-          "sha256": "41299282e88b2f20675584aaf2fa0773bcaefd61a5d4ea277ea20ecc193c581a"
+          "sha256": "00677698f5e773276d913f75ac2dc928f4d7c8f158d0c21dc1507f5f5d46d1e9"
         },
         "zh": {
           "variant_id": "fam-ambiguous-01-zh",
           "path": "ambiguous-01-zh.json",
-          "sha256": "8fb4adb92fbde9b9cafe7c51447d10122d1f937db5fadf0a76b811adbe211892"
+          "sha256": "d8c61861f90b075b6ab10d28d3318035ff5e76c5f2810c6d6536145f700699d2"
         },
         "ms": {
           "variant_id": "fam-ambiguous-01-ms",
           "path": "ambiguous-01-ms.json",
-          "sha256": "1fde4f0766b2b33678911a3110c3f1986c22abb97e4ffa0cd79b7a6961bd975f"
+          "sha256": "3b1c74b75f1b815387de224133c6b7cd3aa65bd2042672a8855d5c45afe7c9c5"
         },
         "ta": {
           "variant_id": "fam-ambiguous-01-ta",
           "path": "ambiguous-01-ta.json",
-          "sha256": "ee08ca0ba1894f8184adc66e6531fbbadd394c400ef3b766c4425237e507dc3d"
+          "sha256": "b030ce034b24076cd695232e9f1e7bd88f7ce8f427a107e62602fb3d82c3498a"
         }
       }
     },
@@ -522,22 +522,22 @@
         "en": {
           "variant_id": "fam-ambiguous-02-en",
           "path": "ambiguous-02-en.json",
-          "sha256": "4b693e25666a0ebac9043d99ec1f452e46d4e85c2b754bef793a324e0bbf5218"
+          "sha256": "a02b232996314a6895f205e7273d07c6a7a26449328d6cb24a9508584097943e"
         },
         "zh": {
           "variant_id": "fam-ambiguous-02-zh",
           "path": "ambiguous-02-zh.json",
-          "sha256": "82640b6d7fee1f35ff40b42ae56818459b88fecef063b7dbb4e7858b3962c7d1"
+          "sha256": "2f3af52f9ccba8f6cca7491152a06625733ea8531276870e29adf9311ad5edc8"
         },
         "ms": {
           "variant_id": "fam-ambiguous-02-ms",
           "path": "ambiguous-02-ms.json",
-          "sha256": "ceafd7545b2c4070215d9f1419c5a43b686183669b93b684f37db20f0fad8384"
+          "sha256": "27c2d7cd21272ac48ac2d16af20918a98dda6839040046e876072ee250272a34"
         },
         "ta": {
           "variant_id": "fam-ambiguous-02-ta",
           "path": "ambiguous-02-ta.json",
-          "sha256": "a585c1c1504f5e2ab9b32dc0db07b0d21d603f819472fafbd54911cf2d31404b"
+          "sha256": "d982e08e1973763b7445d49c5b7bc147d598ec0ed7b99235d0168e1d125b7f9e"
         }
       }
     }

@@ -5,40 +5,58 @@
   "runtime_commit": null,
   "records": [
     {
-      "request_id": "1def41c3-5ad0-447a-92d5-e85c41847cc2",
+      "request_id": "5a44be94-695f-44ea-bf25-a192c85522d0",
       "repair": false,
-      "observation_sha256": "11e30c8668c52b46cc05959f7f07f939c3b0b267c1650e53d31de20a88133bf4",
-      "reply_text": "{\"request_id\":\"1def41c3-5ad0-447a-92d5-e85c41847cc2\",\"expected_case_version\":3,\"reason_code\":\"FOLLOWUP_REVIEW_REQUIRED\",\"step_type\":\"DELEGATE\",\"target\":\"engagement\",\"goal\":\"Review overdue dental recall; source contact unavailable, read-only context review\"}",
-      "input_tokens": 2254,
-      "output_tokens": 89,
-      "latency_ms": 2863
+      "observation_sha256": "9459c18263b6235dfd7fd81dbbf86cc6c48b2c0e46dd234c5fdb88cb49552570",
+      "reply_text": "{\"request_id\":\"5a44be94-695f-44ea-bf25-a192c85522d0\",\"expected_case_version\":3,\"reason_code\":\"FOLLOWUP_REVIEW_REQUIRED\",\"step_type\":\"DELEGATE\",\"target\":\"engagement\",\"goal\":\"Review recall overdue context; contact unavailable so read-only source review\"}",
+      "input_tokens": 2248,
+      "output_tokens": 86,
+      "latency_ms": 2920
     },
     {
-      "request_id": "c6fdf54b-29c0-4460-8ab0-2a281113d521",
+      "request_id": "dc994a65-05be-458d-8627-fcc12ccc5a0a",
       "repair": false,
-      "observation_sha256": "b4b6c0dedd2cf87e328fcefadd8aeddfaf308ad5420dd19974b7efd02072b3ce",
-      "reply_text": "{\"request_id\":\"c6fdf54b-29c0-4460-8ab0-2a281113d521\",\"expected_case_version\":6,\"reason_code\":\"PATIENT_NEEDS_REVIEWED\",\"preparation_plans\":[],\"patient_questions\":[],\"step_type\":\"REVIEW_NEEDS\",\"reply_event_id\":\"aa43fcfa-8235-4d31-b05e-2e5a85152ae8\",\"updates\":[],\"appointment_intent\":\"UNSPECIFIED\",\"appointment_request_quote\":null,\"attendance_qualification\":null,\"question\":null,\"comprehension_quote\":null,\"concern_quote\":null}",
-      "input_tokens": 3611,
-      "output_tokens": 154,
-      "latency_ms": 11473
+      "observation_sha256": "13f0d3f641be978daebbc4e930ae0cb46477bfac37d6bb3049aeb291a42428c7",
+      "reply_text": "{\"request_id\":\"dc994a65-05be-458d-8627-fcc12ccc5a0a\",\"expected_case_version\":7,\"reason_code\":\"PATIENT_NEEDS_REVIEWED\",\"preparation_plans\":[],\"patient_questions\":[],\"step_type\":\"REVIEW_NEEDS\",\"reply_event_id\":\"02fcd805-27f2-4cc3-87db-5a116633d62d\",\"updates\":[],\"appointment_intent\":\"CONFIRM\",\"appointment_request_quote\":\"ok\",\"attendance_qualification\":null,\"question\":null,\"comprehension_quote\":null,\"concern_quote\":null}",
+      "input_tokens": 3596,
+      "output_tokens": 150,
+      "latency_ms": 12192
     },
     {
-      "request_id": "bfa67e62-e188-4bb1-948d-9ed9eb07be6c",
+      "request_id": "3a5a633e-6dd0-45b1-9512-8432113db5a1",
       "repair": false,
-      "observation_sha256": "0f5b4cc1f80976c89c8782ce9540b3834e1595c4abafad8960d860f8bcd15cd9",
-      "reply_text": "{\"request_id\":\"bfa67e62-e188-4bb1-948d-9ed9eb07be6c\",\"expected_case_version\":7,\"reason_code\":\"FOLLOWUP_REVIEW_REQUIRED\",\"step_type\":\"DELEGATE\",\"target\":\"engagement\",\"goal\":\"Determine appointment intent and retrieve source slots for routine dental follow-up\"}",
-      "input_tokens": 3719,
-      "output_tokens": 87,
-      "latency_ms": 3585
+      "observation_sha256": "6bab00e45162ff8a5c86aed9823656e138f8d856c940966dcf22be5650783ac2",
+      "reply_text": "{\"request_id\":\"3a5a633e-6dd0-45b1-9512-8432113db5a1\",\"expected_case_version\":8,\"reason_code\":\"PREPARATION_REVIEW_REQUIRED\",\"step_type\":\"DELEGATE\",\"target\":\"preparation\",\"goal\":\"Review appointment details and confirm patient understanding of 2026-09-25 at 10:00 appointment\"}",
+      "input_tokens": 1963,
+      "output_tokens": 96,
+      "latency_ms": 6615
     },
     {
-      "request_id": "c7568d26-7797-4f84-9ace-f68ecd9949aa",
+      "request_id": "33136fde-79b9-45e0-bcc2-30ebc51346b2",
       "repair": false,
-      "observation_sha256": "ad5b0c0b4b41bb9304cd4cce7b18169908d7e69d84d175b300d51964dd8b4ba1",
-      "reply_text": "{\"request_id\":\"c7568d26-7797-4f84-9ace-f68ecd9949aa\",\"expected_case_version\":9,\"reason_code\":\"CAPABILITY_UNAVAILABLE\",\"step_type\":\"ESCALATE\"}",
-      "input_tokens": 1862,
+      "observation_sha256": "f9d71bea701a8a07a6c01607c0f845d4f844d974ce0494cd7cee2df67a5c555e",
+      "reply_text": "{\"request_id\":\"33136fde-79b9-45e0-bcc2-30ebc51346b2\",\"expected_case_version\":11,\"reason_code\":\"SPECIALIST_REVIEW_FINISHED\",\"scheduling_review\":[{\"instruction_id\":\"DEMO-DENTAL-NOTE\",\"quote\":\"Demo clinic note: bring your appointment confirmation.\",\"effect\":\"INFORMATION\",\"date_from\":null,\"date_to\":null,\"condition_quote\":null,\"patient_question\":null,\"if_not_met\":null,\"consequence_quote\":null}],\"step_type\":\"RETURN\",\"evidence_ids\":[\"99eae174-08ce-4fc9-acc2-60c544fa56c4\",\"9c34fc32-4daf-4b91-a249-05161044383c\"]}",
+      "input_tokens": 2783,
+      "output_tokens": 191,
+      "latency_ms": 3460
+    },
+    {
+      "request_id": "e77076d3-252c-48d0-98f1-a96051ab00ae",
+      "repair": false,
+      "observation_sha256": "681eea6f6fc7d6aba46dce84834d9f10ff0a373942b25ee53a989ba5394805a2",
+      "reply_text": "{\"request_id\":\"e77076d3-252c-48d0-98f1-a96051ab00ae\",\"expected_case_version\":12,\"reason_code\":\"FOLLOWUP_REVIEW_REQUIRED\",\"step_type\":\"DELEGATE\",\"target\":\"engagement\",\"goal\":\"Obtain appointment confirmation source and acknowledgement evidence for simulated attendance confirmation\"}",
+      "input_tokens": 1655,
+      "output_tokens": 86,
+      "latency_ms": 2691
+    },
+    {
+      "request_id": "8d4985aa-539d-4293-b06a-bd5677510ae6",
+      "repair": false,
+      "observation_sha256": "17ed6696a4cc2362f3b148e6644de832bfa7cec6fa9a751133d1dce3193496c7",
+      "reply_text": "{\"request_id\":\"8d4985aa-539d-4293-b06a-bd5677510ae6\",\"expected_case_version\":14,\"reason_code\":\"CAPABILITY_UNAVAILABLE\",\"step_type\":\"ESCALATE\"}",
+      "input_tokens": 2152,
       "output_tokens": 63,
-      "latency_ms": 2635
+      "latency_ms": 2452
     }
   ],
   "run_status": "escalated",
@@ -69,7 +87,27 @@
       [
         "completed",
         null,
-        2
+        1
+      ],
+      [
+        "completed",
+        null,
+        0
+      ],
+      [
+        "completed",
+        null,
+        0
+      ],
+      [
+        "completed",
+        null,
+        1
+      ],
+      [
+        "completed",
+        null,
+        1
       ],
       [
         "completed",
