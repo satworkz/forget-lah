@@ -1,0 +1,210 @@
+{
+  "corpus_version": "1",
+  "identity": {
+    "family_id": "fam-timing-02",
+    "variant_id": "fam-timing-02-ta",
+    "scenario_id": "scn-timing-02",
+    "language": "ta",
+    "primary_stratum": "timing_constraints",
+    "tags": [
+      "timing-constraints",
+      "excluded-weekday"
+    ],
+    "register_markers": []
+  },
+  "split": "development",
+  "clock": {
+    "reference_datetime": "2026-09-24T09:00:00+08:00",
+    "frozen_date": "2026-09-24"
+  },
+  "environment": {
+    "clinic_id": "10000000-0000-4000-8000-000000000001",
+    "is_demo_clinic": true,
+    "patient_simulator_enabled": true,
+    "translation_configured": true,
+    "delivery_evidence_source": "displayed_in_simulator",
+    "fixtures": {
+      "source_api": [],
+      "approved_instructions": [
+        {
+          "instruction_id": "instr-prep",
+          "approved_text": "Please arrive ten minutes early and bring your medication list."
+        },
+        {
+          "instruction_id": "instr-fast",
+          "approved_text": "Do not eat or drink after midnight before the procedure."
+        },
+        {
+          "instruction_id": "instr-loc",
+          "approved_text": "All appointments are at the main clinic, 12 Example Road."
+        }
+      ]
+    },
+    "translation_profile": {
+      "provider": "anthropic",
+      "model_id": "claude-sonnet-4-5-20250929",
+      "api_version": "2023-06-01",
+      "runtime_commit": "85e9b89",
+      "temperature": 0,
+      "max_tokens": 2048,
+      "generation_settings": {
+        "top_p": null,
+        "top_k": null,
+        "stop": null
+      },
+      "prompt_version": "1",
+      "prompt_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "output_schema_hash": null,
+      "validator_version": "1",
+      "multilingual_enabled": true,
+      "agent_model_mode": "anthropic",
+      "model_configured": true,
+      "translation_configured": true,
+      "provider_seed": null,
+      "seed_supported": false,
+      "harness_seed": 42,
+      "sampling_plan_id": "m2-pilot-plan-1",
+      "sample_count": 60,
+      "required_passes": 60,
+      "execution_origin": "live",
+      "retry_policy": {
+        "policy_id": "m2-pilot-retry-1",
+        "infrastructure_max_replacements": 2,
+        "replace_on": [
+          "provider_unavailable",
+          "harness_outage",
+          "network_error"
+        ],
+        "never_replace_on": [
+          "TRANSLATION_VALIDATION_FAILED",
+          "TRANSLATION_INCOMPLETE",
+          "wrong_target_language",
+          "missing_required_delivery"
+        ]
+      },
+      "worker_timing_profile": "m2-pilot-workers-1",
+      "call_budget_profile": "m2-pilot-budget-1"
+    }
+  },
+  "runtime_bounds": {
+    "agent_max_steps": 40,
+    "role_limit_coordinator": 8,
+    "role_limit_specialist": 6
+  },
+  "initial_state": {
+    "contact_permission": "allowed",
+    "memory": []
+  },
+  "conversation": [
+    {
+      "turn_id": "t1",
+      "origin": "history",
+      "speaker": "clinic",
+      "clinic_turn_kind": "reminder",
+      "body": "Reminder: your appointment is on 2026-09-25 at 10:00.",
+      "language_tag": "en"
+    },
+    {
+      "turn_id": "t2",
+      "origin": "replay",
+      "speaker": "patient",
+      "expected_step_type": "ASSESS_BARRIERS",
+      "body": "இந்த சனிக்கிழமை நான் வெளியில் இருப்பேன், அந்த நாள் வேண்டாம்.",
+      "language_tag": "ta"
+    }
+  ],
+  "meaning_contract": {
+    "intended_meaning_by_turn": [
+      {
+        "turn_id": "t2",
+        "intended_meaning": "Excludes a specific weekday; the restriction must be preserved."
+      }
+    ],
+    "unresolved_ambiguity": [],
+    "must_not_infer": [
+      "must not invent availability",
+      "must not make a source write"
+    ]
+  },
+  "checkpoint_oracle": [
+    {
+      "after_turn_id": "t2",
+      "appointment_intent": "UNSPECIFIED",
+      "tasks": [],
+      "instruction_checks": [],
+      "memory": [
+        {
+          "key": "excluded_weekdays",
+          "operation": "set",
+          "scope": "future",
+          "expected_status": "active",
+          "value": "SATURDAY"
+        }
+      ],
+      "callback_requested": false,
+      "delivery": {
+        "expected_block": null,
+        "effective_language": "ta",
+        "expected_message_delivery": [
+          {
+            "turn_id": "t2",
+            "delivery_status": "displayed_in_simulator"
+          }
+        ]
+      },
+      "wait_reason": "AWAITING_PATIENT_REPLY"
+    }
+  ],
+  "terminal_oracle": {
+    "kind": "waiting",
+    "run_status": "waiting",
+    "wait_reason": "AWAITING_PATIENT_REPLY",
+    "intended": true
+  },
+  "forbidden_actions": [
+    "booking_write",
+    "source_write"
+  ],
+  "scoring": {
+    "scored": true,
+    "unscored_reason": null
+  },
+  "governance": {
+    "synthetic": true,
+    "pii_free": true,
+    "authorship": {
+      "drafter": "deepseek-v4.1-flash",
+      "drafter_family": "deepseek",
+      "licence": "original_synthetic"
+    },
+    "review": {
+      "reviewer_of_record": "Satish",
+      "reviewed_at": "2026-09-24T08:00:00+08:00"
+    },
+    "back_translation": {
+      "model": "translator-b",
+      "model_family": "independent",
+      "differs_from_drafter": true,
+      "spot_check": {
+        "by": "Satish",
+        "blind": true
+      }
+    },
+    "adjudication": {
+      "status": "unresolved",
+      "adjudicator": null
+    },
+    "ai_declarations": [
+      {
+        "step": "drafting",
+        "model": "deepseek-v4.1-flash",
+        "model_family": "deepseek"
+      }
+    ]
+  },
+  "integrity": {
+    "generation_seed": 1055,
+    "replay_seed": 2055,
+    "content_hash": "624a0f564acb52748421c587fede4a65573814d5b21d06b9d8587bed6b425fc4"
+  }
+}

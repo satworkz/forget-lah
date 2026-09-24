@@ -57,11 +57,10 @@ semantically matching English control (register markers may include `code_switch
 | `corpus/development/build_pilot.py` | the authoring generator (single source for the pilot) |
 | `tests/test_corpus_contract.py` | validates every emitted item against schema + R1–R37 |
 
-## Delivery status (tranche 1)
+## Delivery status
 
-Tranche 1 emits the **family A** row of every stratum: **10 families / 40 variants**, produced by
-`corpus/development/build_pilot.py` and validated by the contract suite. Tranche 2 adds the
-**family B** row (10 more families / 40 variants) on the same generator.
+Both tranches are emitted: **20 families / 80 variants** — family A and family B of every stratum —
+produced by `corpus/development/build_pilot.py` and validated by the contract suite.
 
-Still not claimable by authoring alone: human review per language, and the replay demonstration
-(no execution harness exists yet).
+Still not claimable by authoring alone: **human review per language** and the **replay
+demonstration** (no execution harness exists). M2 is therefore *authored, not accepted*.

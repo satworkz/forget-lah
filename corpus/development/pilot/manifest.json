@@ -9,22 +9,22 @@
         "en": {
           "variant_id": "fam-confirmation-01-en",
           "path": "confirmation-01-en.json",
-          "sha256": "d3b820c761a35778bd5b38ecf5f798d239b76d30a874e47646c18dd457a0a0f0"
+          "sha256": "9cc3d9b7dd259ae8fa9e24b4d6593347274041b120affc167e0f3a9882e0aa4e"
         },
         "zh": {
           "variant_id": "fam-confirmation-01-zh",
           "path": "confirmation-01-zh.json",
-          "sha256": "9eb101c8a71d0bea292b2019112a8b9dfe31a8498e6147bee7b827f519362d7d"
+          "sha256": "8a338df2fd8607c87b506482ba5b99ac0df94cc9f57eed9130ac067e0c8094ce"
         },
         "ms": {
           "variant_id": "fam-confirmation-01-ms",
           "path": "confirmation-01-ms.json",
-          "sha256": "6b5a5962f6c434036279f46cf91d60764714d17b7dfa209d5ca17d8133c19d6e"
+          "sha256": "125f444884f8830f4e0015fca1e210bfac89874b5e3fca734e07d043a516b7e1"
         },
         "ta": {
           "variant_id": "fam-confirmation-01-ta",
           "path": "confirmation-01-ta.json",
-          "sha256": "88cd7c6af2e4ec476f59a3c567a6674212443921fd00f847aa2f08882d4d8929"
+          "sha256": "9d36c909f9c39ee106c1e18838fabf18cd1ffe4d2b61045914515f92d4e25636"
         }
       }
     },
@@ -36,22 +36,22 @@
         "en": {
           "variant_id": "fam-cancellation-01-en",
           "path": "cancellation-01-en.json",
-          "sha256": "15c3b8b5070cdec54714ee9717ad60508778bad36ef347e3cef9d07f44d02956"
+          "sha256": "844c604de07d2650e341f9c25c1580ccbd2c2ede1a778f46f63a9a244019c910"
         },
         "zh": {
           "variant_id": "fam-cancellation-01-zh",
           "path": "cancellation-01-zh.json",
-          "sha256": "cebbb3d22cc4e7515a96bf587825a0b7c4cd16fcf87d0cb48d9b3fdad5a6e11e"
+          "sha256": "588501ba23b1e29f1b562a55f35b23935504383486ba8e757f9ba7173d5a1b1b"
         },
         "ms": {
           "variant_id": "fam-cancellation-01-ms",
           "path": "cancellation-01-ms.json",
-          "sha256": "c18e46b99d192ddac767c57646a08f3d22f8abb046dbb7a9a2e38e226924417b"
+          "sha256": "5d25a6b8956b24e94889827eb8ec43ac1e261d4bed368937058144057d8e32f6"
         },
         "ta": {
           "variant_id": "fam-cancellation-01-ta",
           "path": "cancellation-01-ta.json",
-          "sha256": "83779c70022945332a00328d4cd3b5f2539d2bbe77e62c2a4c972e6ee90e1a74"
+          "sha256": "229fd06833d1133965f4d876c0cb5585f367256f17c22e7270304247615772df"
         }
       }
     },
@@ -63,22 +63,22 @@
         "en": {
           "variant_id": "fam-rescheduling-01-en",
           "path": "rescheduling-01-en.json",
-          "sha256": "ea1b1306b386225c03d24eefdc7b24dd29dae4c4888290239f9271251cb975d9"
+          "sha256": "ed221d7f50bc4072c7e3ea4cec0870aa01018f0791d16728b1ee0d9236285554"
         },
         "zh": {
           "variant_id": "fam-rescheduling-01-zh",
           "path": "rescheduling-01-zh.json",
-          "sha256": "abad90caa6c5c845fcbf35fdd7d41af17b03a1ccf66fdc506d196596c208180e"
+          "sha256": "45544ef62973e49f34210f58edddd48040ebef59968ec6fee7f79c49d4231f23"
         },
         "ms": {
           "variant_id": "fam-rescheduling-01-ms",
           "path": "rescheduling-01-ms.json",
-          "sha256": "c483de75ddcf0ba70675a3aff4d90536002110c8b8fd77a095f437f2247f6716"
+          "sha256": "333994cb87a0b93d3940328cdc62b14b7cf3b21610141b9f0ba4aa79a8b93ad9"
         },
         "ta": {
           "variant_id": "fam-rescheduling-01-ta",
           "path": "rescheduling-01-ta.json",
-          "sha256": "f9f0b8fa50f24489702b92e7b375d0680007f4375cefcaecec0ab047b645fbaf"
+          "sha256": "932a7692c4cb6927400adcbf2b905f5303f7f6e6865af3a5e5e43286e614d490"
         }
       }
     },
@@ -90,22 +90,22 @@
         "en": {
           "variant_id": "fam-timing-01-en",
           "path": "timing-01-en.json",
-          "sha256": "06be7ecb03ff5478d36824487f60f2b0a52cf90547f90bcbc1fffaf445abd782"
+          "sha256": "e07263b396c38810dabf049d76839c700863cbea40ffc4169c41d0720ee1d278"
         },
         "zh": {
           "variant_id": "fam-timing-01-zh",
           "path": "timing-01-zh.json",
-          "sha256": "9c918f5290dd5b5c4175a6a8da2b039aa3a1387a0d32bc1eb797e824d4e02407"
+          "sha256": "a364a52a573b3070c69f09d386310cf37483ae6bfbc69cecdb0e0fcb486f69b6"
         },
         "ms": {
           "variant_id": "fam-timing-01-ms",
           "path": "timing-01-ms.json",
-          "sha256": "7c929495d47845dcfe8a4b18a14a500fea4defd630ccc0d1ee21223de2a663d8"
+          "sha256": "a1003436d7550bf2194c56522a279a4fa0684190d2f9453f61a861fad4d3be02"
         },
         "ta": {
           "variant_id": "fam-timing-01-ta",
           "path": "timing-01-ta.json",
-          "sha256": "29ee2bd38562051afb752f5f58bd7ddacf2cf77ccb8c5cf84df29d574a96e6a9"
+          "sha256": "081b94d8c32f3fc145f341020125e91e388fadbc803916f109a8a3c0976e6ee7"
         }
       }
     },
@@ -117,22 +117,22 @@
         "en": {
           "variant_id": "fam-preparation-ack-01-en",
           "path": "preparation-ack-01-en.json",
-          "sha256": "d5e0aa5e0966eb53e1694f70f314e1af398ec71881b7cac9bec1c23904b639bc"
+          "sha256": "201cd2bfec0771eaaab993470bcfae8399ee2eb8654710cdcdea675a7288b325"
         },
         "zh": {
           "variant_id": "fam-preparation-ack-01-zh",
           "path": "preparation-ack-01-zh.json",
-          "sha256": "65965e3d870c8f9582290c60fa9ca0cf190c6ccb3c7b1a4a8b40c6ce199c9a18"
+          "sha256": "db48ac3526c7a98d106309ed717b4b9ebc309ec89c68ce103b6310bf2f34a745"
         },
         "ms": {
           "variant_id": "fam-preparation-ack-01-ms",
           "path": "preparation-ack-01-ms.json",
-          "sha256": "28981c8cefb4828e03e25b35524666050996919d51a2e021c1c025d087c10b0f"
+          "sha256": "9cca85a863a782434ddb6ef7e8fa421af1779c2292bc232a338d88c3295f72c6"
         },
         "ta": {
           "variant_id": "fam-preparation-ack-01-ta",
           "path": "preparation-ack-01-ta.json",
-          "sha256": "f7dda7f0637c8132d772447d1dc1410250aff5cac344a075edb5e759bcb91003"
+          "sha256": "a7cca413184ab65a24c6743beaa8594605980ab88b7421c04fa8d724ac31ab67"
         }
       }
     },
@@ -144,22 +144,22 @@
         "en": {
           "variant_id": "fam-questions-01-en",
           "path": "questions-01-en.json",
-          "sha256": "581b2db3a601297c8bd0f953c4458eaf90c5f2e20a902dd6a1c11083c36bc4a2"
+          "sha256": "32bc5c36c11c9751cfb4b99bf10ed2f48ceafb68c9f26f6a499565d1c16357ec"
         },
         "zh": {
           "variant_id": "fam-questions-01-zh",
           "path": "questions-01-zh.json",
-          "sha256": "78c84c5a11e1f148b8d48b6d2449454bc1209704ff30d911f7879ff9477523ae"
+          "sha256": "3d7a730d77c3d0cdc0f4e194166948af69aba754b3c0f9d27dbeda300b30e977"
         },
         "ms": {
           "variant_id": "fam-questions-01-ms",
           "path": "questions-01-ms.json",
-          "sha256": "10895bafd3e33dca88c7cac5a45b6516e28fb2fe59a2bc6db87067c3e2c008f8"
+          "sha256": "c1229d9469318b0f98987a66ffa5745288ab32cd0e868cb2e54a4319b1379515"
         },
         "ta": {
           "variant_id": "fam-questions-01-ta",
           "path": "questions-01-ta.json",
-          "sha256": "85d47db5c851a8f9b4f32a4a50ce81fddc8498554c36abe8c6eb6d34d2d367c4"
+          "sha256": "9dd7bb1491a38aedfb872a001512972775f43cabdad621b1b83d73b82280a542"
         }
       }
     },
@@ -171,22 +171,22 @@
         "en": {
           "variant_id": "fam-wrong-number-01-en",
           "path": "wrong-number-01-en.json",
-          "sha256": "df152b9893b8d3db3a7c5cd00bac365c41c7942620221a47e720bfed4965f58c"
+          "sha256": "754d21bc61eb951f1e8ef95db59a66444b3e222bac8dc81565fbddec1b46d873"
         },
         "zh": {
           "variant_id": "fam-wrong-number-01-zh",
           "path": "wrong-number-01-zh.json",
-          "sha256": "130092f85ae6e210714dc832622f35e5e35daa8de3a16b2abd0c75211e60dbc2"
+          "sha256": "e92a0f1c7378a4cf29c67533ee53be4f1e9e47e28e97205b85fa926377240a22"
         },
         "ms": {
           "variant_id": "fam-wrong-number-01-ms",
           "path": "wrong-number-01-ms.json",
-          "sha256": "a8340abdac0c75d7e9a4d18b8e3a6f7b0da389e864515f39ea070eab65d4aac7"
+          "sha256": "e6915becf59e3383152490ef4fc21410ac7b938b2678680e5917c4aeed549871"
         },
         "ta": {
           "variant_id": "fam-wrong-number-01-ta",
           "path": "wrong-number-01-ta.json",
-          "sha256": "eab86ac192873852e1c0153f66ca96ed2857990a32d1549eeecddbfd83664f5d"
+          "sha256": "2a828852929bd9876ee377f6f023349ddc5c7cbad0efb06b1ba9eda90f888f84"
         }
       }
     },
@@ -198,22 +198,22 @@
         "en": {
           "variant_id": "fam-third-party-01-en",
           "path": "third-party-01-en.json",
-          "sha256": "a9598dff6b72bbbdb30efdec298ee750f074ff00ddff26f51cdacaafbf50b622"
+          "sha256": "38aca9937b096dda9f80c1a44e93532186d22d5dc41414eba6775c39a24cf13f"
         },
         "zh": {
           "variant_id": "fam-third-party-01-zh",
           "path": "third-party-01-zh.json",
-          "sha256": "bfb696090a83ef54e4722e9dd88699f5339aad3db1d56981091d3fc1b9dbd625"
+          "sha256": "5cdab399125b0c8a7dcf9a56fc2f40cdf25640f9f5b01dee3e18d808b17cbd2d"
         },
         "ms": {
           "variant_id": "fam-third-party-01-ms",
           "path": "third-party-01-ms.json",
-          "sha256": "49b6b4372790ce547e1eca622c23548d9b528f3dc00d0f826c775a4baac895cc"
+          "sha256": "96cf17a6cd7954a2f24367dd3b4c2afebb389b250880625133fa2f8318831e8c"
         },
         "ta": {
           "variant_id": "fam-third-party-01-ta",
           "path": "third-party-01-ta.json",
-          "sha256": "46703b6083ff4609ad49cbf8decc8aa7cf600e0b5e888148e44eb121c6755175"
+          "sha256": "bb1b41d3474b6d41e67570a6e22244060fac6081883a602249171c2dcb54b062"
         }
       }
     },
@@ -225,22 +225,22 @@
         "en": {
           "variant_id": "fam-refusal-contact-stop-01-en",
           "path": "refusal-contact-stop-01-en.json",
-          "sha256": "8a2aff473adca66dd8e0b31c034168194fd763e3eab59bcab4846cca61f5f30d"
+          "sha256": "ae8c19d1e4c9783ef61ed5451389b685ad7a80d133c0ede60b9368bd1298a0ba"
         },
         "zh": {
           "variant_id": "fam-refusal-contact-stop-01-zh",
           "path": "refusal-contact-stop-01-zh.json",
-          "sha256": "77beed936f74eb89a62ec95c6b4ffe9cb7662acc9ee711fa280580c2f304a3dc"
+          "sha256": "38179f0d2357b171bf330d1c7cff93e1613f050017608f47b670b2124bb0f653"
         },
         "ms": {
           "variant_id": "fam-refusal-contact-stop-01-ms",
           "path": "refusal-contact-stop-01-ms.json",
-          "sha256": "1afe837788367ef884d81ec37cfb32a1a6fc5aeb1dbe83a1b007f96efa109b2e"
+          "sha256": "ff649c406945046482b4bf8c7f71003b0cd8af8ff2b607bddc212fbe6739c26a"
         },
         "ta": {
           "variant_id": "fam-refusal-contact-stop-01-ta",
           "path": "refusal-contact-stop-01-ta.json",
-          "sha256": "648bc24e44ac9e81a97cc3eb5f9bba7181aa7718e83cd89c7e13ab73184e6ac6"
+          "sha256": "36fca740421c542a095eb3614a70d0f1c19ef4f5763365ce4534b56e4538635d"
         }
       }
     },
@@ -252,28 +252,298 @@
         "en": {
           "variant_id": "fam-ambiguous-01-en",
           "path": "ambiguous-01-en.json",
-          "sha256": "fd2ac0e7a5f7fdc24b81270b4d68f88fd45a5e608620b5fe0b0199809e6d961a"
+          "sha256": "30cc1a34004c096be2e8e3f9789daaaebf1854db56f5fa69fa393063f5a811ea"
         },
         "zh": {
           "variant_id": "fam-ambiguous-01-zh",
           "path": "ambiguous-01-zh.json",
-          "sha256": "7e8ac34469c8bbd04afa9cfde27d306dc031feab65bbee96cb32bbb4de32564b"
+          "sha256": "39d657d77b25ee22b2f1cab3c3ae31bdec1b5b6b1ebe282a531c8836c53aeea5"
         },
         "ms": {
           "variant_id": "fam-ambiguous-01-ms",
           "path": "ambiguous-01-ms.json",
-          "sha256": "3aae68838643641904166dc70f5bfbc57a7c995a142b28fe3f10060953f8f1de"
+          "sha256": "0560d1715361d4c400295829435508e907dfa35045d71cf489195c401fd45eec"
         },
         "ta": {
           "variant_id": "fam-ambiguous-01-ta",
           "path": "ambiguous-01-ta.json",
-          "sha256": "285b8cf09833ce8827afa1ba15ead9f020da0bb077dc8f52a1016eb68d0426e3"
+          "sha256": "bc05bc4aee9807c1b819c9806619e3931aa0371329c5105c09f7c1bd960820f8"
+        }
+      }
+    },
+    "fam-confirmation-02": {
+      "scenario_id": "scn-confirmation-02",
+      "primary_stratum": "confirmation",
+      "split": "development",
+      "variants": {
+        "en": {
+          "variant_id": "fam-confirmation-02-en",
+          "path": "confirmation-02-en.json",
+          "sha256": "17e7b4969002f8022c1761f335a0d8625641594e96933a17b11f7f9bec2b3c9e"
+        },
+        "zh": {
+          "variant_id": "fam-confirmation-02-zh",
+          "path": "confirmation-02-zh.json",
+          "sha256": "bc53befd8425336dd2320a17fbd4f91ac82dc7a8557376b008420e13ab118dfa"
+        },
+        "ms": {
+          "variant_id": "fam-confirmation-02-ms",
+          "path": "confirmation-02-ms.json",
+          "sha256": "38d0224e3bfb593fa0581f7f0343d2dd37898b7cf2e0f0fa07ade661e6bbb078"
+        },
+        "ta": {
+          "variant_id": "fam-confirmation-02-ta",
+          "path": "confirmation-02-ta.json",
+          "sha256": "9d2bde4156b6e59932eba8e83daac07c34c21fdcb8ed064fb1d799bcee57b9f7"
+        }
+      }
+    },
+    "fam-cancellation-02": {
+      "scenario_id": "scn-cancellation-02",
+      "primary_stratum": "cancellation",
+      "split": "development",
+      "variants": {
+        "en": {
+          "variant_id": "fam-cancellation-02-en",
+          "path": "cancellation-02-en.json",
+          "sha256": "80eabb25371018395bcc03fc8b2b385493ade3883f5b142b5582b6667d76da84"
+        },
+        "zh": {
+          "variant_id": "fam-cancellation-02-zh",
+          "path": "cancellation-02-zh.json",
+          "sha256": "17cadc090b34194c2ca4c13461f072be0cd1515735dc6fddd0ecce34d4caa73f"
+        },
+        "ms": {
+          "variant_id": "fam-cancellation-02-ms",
+          "path": "cancellation-02-ms.json",
+          "sha256": "df8ea275a735453b5330d1e4d4e8634c7df5b82954aa86ab7f55dbfe2b0845d5"
+        },
+        "ta": {
+          "variant_id": "fam-cancellation-02-ta",
+          "path": "cancellation-02-ta.json",
+          "sha256": "94792ea89687f6a4930d595a7b5b918399aa6eae5d93f7107a2e90301124e245"
+        }
+      }
+    },
+    "fam-rescheduling-02": {
+      "scenario_id": "scn-rescheduling-02",
+      "primary_stratum": "rescheduling",
+      "split": "development",
+      "variants": {
+        "en": {
+          "variant_id": "fam-rescheduling-02-en",
+          "path": "rescheduling-02-en.json",
+          "sha256": "87cf712532c218e5f8b7d58e6935c86a24f78e603d14cb225567885b58f14789"
+        },
+        "zh": {
+          "variant_id": "fam-rescheduling-02-zh",
+          "path": "rescheduling-02-zh.json",
+          "sha256": "5a88857ef3fec2453be7f97f04fbde10c82cd2f3a04eb38ab3595730da5f1c84"
+        },
+        "ms": {
+          "variant_id": "fam-rescheduling-02-ms",
+          "path": "rescheduling-02-ms.json",
+          "sha256": "e2f06d8ca39476e1a43cf09711f15711df83df0d0fc5aa6c51951a6d632223e1"
+        },
+        "ta": {
+          "variant_id": "fam-rescheduling-02-ta",
+          "path": "rescheduling-02-ta.json",
+          "sha256": "5b075b51ac1b4b00b041557308bb950f8d122a390d9d99291dbc43b4b7a9df9e"
+        }
+      }
+    },
+    "fam-timing-02": {
+      "scenario_id": "scn-timing-02",
+      "primary_stratum": "timing_constraints",
+      "split": "development",
+      "variants": {
+        "en": {
+          "variant_id": "fam-timing-02-en",
+          "path": "timing-02-en.json",
+          "sha256": "9f519182bbc0ea5075741558fc5eadf92103f38d787fbbc67b7be13e4a3e8f0f"
+        },
+        "zh": {
+          "variant_id": "fam-timing-02-zh",
+          "path": "timing-02-zh.json",
+          "sha256": "35db6a8c01a554e110a70d3d26a14d05eb500feab954c660a57209844dd43ee7"
+        },
+        "ms": {
+          "variant_id": "fam-timing-02-ms",
+          "path": "timing-02-ms.json",
+          "sha256": "e0c02e287172ecdb8d8dc2907c5b66245ff66634f8ad6ca853dabfe4c2cfa69f"
+        },
+        "ta": {
+          "variant_id": "fam-timing-02-ta",
+          "path": "timing-02-ta.json",
+          "sha256": "65b285ce87d9d04b0bf64d4dd696b1065b45d0dae6250ba07af905ec1a8d48f3"
+        }
+      }
+    },
+    "fam-preparation-ack-02": {
+      "scenario_id": "scn-preparation-ack-02",
+      "primary_stratum": "preparation_acknowledgement",
+      "split": "development",
+      "variants": {
+        "en": {
+          "variant_id": "fam-preparation-ack-02-en",
+          "path": "preparation-ack-02-en.json",
+          "sha256": "7367e0d2896b70176b1373cc4dc80a9c1823714454a843035eb2ef7b041ead91"
+        },
+        "zh": {
+          "variant_id": "fam-preparation-ack-02-zh",
+          "path": "preparation-ack-02-zh.json",
+          "sha256": "98150dff805a73495883fac5c5d05c49f458cf52bf6a70f94f0945942d7ce0cb"
+        },
+        "ms": {
+          "variant_id": "fam-preparation-ack-02-ms",
+          "path": "preparation-ack-02-ms.json",
+          "sha256": "e93fc69a54ed9a1f552a1658fde5008ed75d3ecc339b656668bc1d0eb58c461c"
+        },
+        "ta": {
+          "variant_id": "fam-preparation-ack-02-ta",
+          "path": "preparation-ack-02-ta.json",
+          "sha256": "06804b45f4667b873f6244d7be55b1183e64d6540f8c6f561910170e582239b8"
+        }
+      }
+    },
+    "fam-questions-02": {
+      "scenario_id": "scn-questions-02",
+      "primary_stratum": "questions",
+      "split": "development",
+      "variants": {
+        "en": {
+          "variant_id": "fam-questions-02-en",
+          "path": "questions-02-en.json",
+          "sha256": "97751b7874c49c21ec7d8d0533b5f69806f5b03e5c024ca67f144b5eca2ee4a2"
+        },
+        "zh": {
+          "variant_id": "fam-questions-02-zh",
+          "path": "questions-02-zh.json",
+          "sha256": "0249e7cdb8683a36a60e403bba77b7d5d0a6066362886a3c791457258167d72b"
+        },
+        "ms": {
+          "variant_id": "fam-questions-02-ms",
+          "path": "questions-02-ms.json",
+          "sha256": "bee988cc3a018815b507605ec449e3219bdf44db02cae05e334c06ac6d7c4b78"
+        },
+        "ta": {
+          "variant_id": "fam-questions-02-ta",
+          "path": "questions-02-ta.json",
+          "sha256": "952947e41b77583b1a62d7f9ecb301e344c169bcecc011ab05f45f21bb70e697"
+        }
+      }
+    },
+    "fam-wrong-number-02": {
+      "scenario_id": "scn-wrong-number-02",
+      "primary_stratum": "wrong_number",
+      "split": "development",
+      "variants": {
+        "en": {
+          "variant_id": "fam-wrong-number-02-en",
+          "path": "wrong-number-02-en.json",
+          "sha256": "85be4cde124d333c88ad0b7da4c180e4de74035e0b80b9f8d7255449ad11306d"
+        },
+        "zh": {
+          "variant_id": "fam-wrong-number-02-zh",
+          "path": "wrong-number-02-zh.json",
+          "sha256": "1152e5e64f514ed5c60fef256c852c7a39d317a63be95d6aafbac4b703ab6799"
+        },
+        "ms": {
+          "variant_id": "fam-wrong-number-02-ms",
+          "path": "wrong-number-02-ms.json",
+          "sha256": "3616f3e8c0b2b0be5427550e46c1ff721bdd2fb97c72a5764176ebec0b7e4f43"
+        },
+        "ta": {
+          "variant_id": "fam-wrong-number-02-ta",
+          "path": "wrong-number-02-ta.json",
+          "sha256": "8cee208e70e4f08981047c5ae7a30ffe4046c1b42ec29a4016a434d939b36c1d"
+        }
+      }
+    },
+    "fam-third-party-02": {
+      "scenario_id": "scn-third-party-02",
+      "primary_stratum": "third_party_reply",
+      "split": "development",
+      "variants": {
+        "en": {
+          "variant_id": "fam-third-party-02-en",
+          "path": "third-party-02-en.json",
+          "sha256": "1f74d2f3e84e3fcf0560c2f77d694762a075049059f98280fe5f9bb16c4aa889"
+        },
+        "zh": {
+          "variant_id": "fam-third-party-02-zh",
+          "path": "third-party-02-zh.json",
+          "sha256": "ddf266ee36642cec741277e549b239826b3ab897578d6ec06c58a62a89962a31"
+        },
+        "ms": {
+          "variant_id": "fam-third-party-02-ms",
+          "path": "third-party-02-ms.json",
+          "sha256": "c43488d659a171e5bf8409846280c849d84259a1aefb9cde46cb54d2347451aa"
+        },
+        "ta": {
+          "variant_id": "fam-third-party-02-ta",
+          "path": "third-party-02-ta.json",
+          "sha256": "ab862ed86671683afebd3dd9035ba8615978ee64b78b39520668d1b8125adc6f"
+        }
+      }
+    },
+    "fam-refusal-contact-stop-02": {
+      "scenario_id": "scn-refusal-contact-stop-02",
+      "primary_stratum": "refusal_contact_stop",
+      "split": "development",
+      "variants": {
+        "en": {
+          "variant_id": "fam-refusal-contact-stop-02-en",
+          "path": "refusal-contact-stop-02-en.json",
+          "sha256": "185a84b12451aa7f5b461d99135532bf6a9573aff4fa148f94914db4a9a25e32"
+        },
+        "zh": {
+          "variant_id": "fam-refusal-contact-stop-02-zh",
+          "path": "refusal-contact-stop-02-zh.json",
+          "sha256": "16b089f13d10527da1612da577563211fb3af38a36af647f7ff91c1ca046e454"
+        },
+        "ms": {
+          "variant_id": "fam-refusal-contact-stop-02-ms",
+          "path": "refusal-contact-stop-02-ms.json",
+          "sha256": "39a066f54db01c505a6b215374af78080cab56dd90b56e115de3145f4f99e8e8"
+        },
+        "ta": {
+          "variant_id": "fam-refusal-contact-stop-02-ta",
+          "path": "refusal-contact-stop-02-ta.json",
+          "sha256": "30e3282ed7e26769613502e9f9008d900e0207729d591996d4717fba6e259d2f"
+        }
+      }
+    },
+    "fam-ambiguous-02": {
+      "scenario_id": "scn-ambiguous-02",
+      "primary_stratum": "ambiguous_short_reply",
+      "split": "development",
+      "variants": {
+        "en": {
+          "variant_id": "fam-ambiguous-02-en",
+          "path": "ambiguous-02-en.json",
+          "sha256": "178da30d9efdc65789222c7d882ce85675981f9bbbee4542e8dc789ce4e225ad"
+        },
+        "zh": {
+          "variant_id": "fam-ambiguous-02-zh",
+          "path": "ambiguous-02-zh.json",
+          "sha256": "892d6794328a1d27a8601aaeb747f83ef84d03eb6562a36f557e89c316b6781f"
+        },
+        "ms": {
+          "variant_id": "fam-ambiguous-02-ms",
+          "path": "ambiguous-02-ms.json",
+          "sha256": "a946744b4d2126dfcacd39d8ba6ffc6db82eecc7c5f83746500656aaaf611495"
+        },
+        "ta": {
+          "variant_id": "fam-ambiguous-02-ta",
+          "path": "ambiguous-02-ta.json",
+          "sha256": "b641e84b11571b0212762af7c03ea6994f0eca34c6203cc7b1c905dd9de3a28f"
         }
       }
     }
   },
   "counts": {
-    "families": 10,
-    "variants": 40
+    "families": 20,
+    "variants": 80
   }
 }

@@ -32,6 +32,10 @@
         {
           "instruction_id": "instr-fast",
           "approved_text": "Do not eat or drink after midnight before the procedure."
+        },
+        {
+          "instruction_id": "instr-loc",
+          "approved_text": "All appointments are at the main clinic, 12 Example Road."
         }
       ]
     },
@@ -198,6 +202,6 @@
   "integrity": {
     "generation_seed": 1018,
     "replay_seed": 2018,
-    "content_hash": "c91aa12358eb62fe95f9fdf562a60d430ee9c7cb157342762809c6e22ce270d9"
+    "content_hash": "972f2990adcca90343aa8d64905687bf2c94db09c630db5eec62133bb0df8129"
   }
 }
