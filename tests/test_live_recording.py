@@ -1,15 +1,18 @@
 import json
 import os
+import time
 from pathlib import Path
 
 import pytest
 from conftest import TEST_PASSWORD
 from fastapi.testclient import TestClient
-from test_runtime import drain, event, start
+from sqlalchemy import func, select
+from test_runtime import event, source_tools, start
 
 from forget_lah.api import create_app
 from forget_lah.corpus.recording import RecordingModel, recording_document
 from forget_lah.detector import detect
+from forget_lah.runtime.engine import claim_run, process_run
 from forget_lah.runtime.models import AgentRun
 from forget_lah.runtime.provider import AnthropicModel
 from forget_lah.settings import Settings
@@ -69,6 +72,29 @@ def live(store, monkeypatch):
         yield factory, client, settings
 
 
+def _drain_until_idle(runtime, model, *, seconds: int = 60) -> int:
+    """Claim and process until nothing is queued/running, waiting out pacing timers."""
+    factory, _, settings = runtime
+    deadline = time.monotonic() + seconds
+    processed = 0
+    while time.monotonic() < deadline:
+        claim = claim_run(factory)
+        if claim is None:
+            time.sleep(1)
+            with factory() as db:
+                pending = db.scalar(
+                    select(func.count())
+                    .select_from(AgentRun)
+                    .where(AgentRun.status.in_(["queued", "running"]))
+                )
+            if not pending:
+                break
+            continue
+        process_run(factory, settings, *claim, model=model, tools=source_tools())
+        processed += 1
+    return processed
+
+
 def test_record_a_live_decision_stream(live) -> None:
     """Drive one pilot variant with the real Anthropic model and record its decisions."""
     variant = json.loads((PILOT / "ambiguous-01-en.json").read_text())
@@ -77,7 +103,7 @@ def test_record_a_live_decision_stream(live) -> None:
     recorder = RecordingModel(AnthropicModel(settings), records)
 
     case_id, run_id = start(live)
-    drain(live, model=recorder)
+    _drain_until_idle(live, recorder)
     patient_text = variant["conversation"][-1]["body"]
     response = event(client, case_id, "demo_reply", patient_text)
     for _ in range(3):
@@ -85,7 +111,7 @@ def test_record_a_live_decision_stream(live) -> None:
             break
         response = event(client, case_id, "demo_reply", patient_text)
     assert response.status_code == 202, response.text
-    drain(live, model=recorder)
+    _drain_until_idle(live, recorder)
 
     with factory() as db:
         run = db.get(AgentRun, run_id)

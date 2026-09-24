@@ -5,22 +5,22 @@
   "runtime_commit": null,
   "records": [
     {
-      "request_id": "6e5b7805-5dba-4a67-abb4-1fc2c955e859",
+      "request_id": "45a4a388-24fb-40db-b81d-f5ec797430d4",
       "repair": false,
-      "observation_sha256": "eead52f0b1e228b277aa61bd415a6ce5c93e17ab446ec51fb6de3d2071fa3ac4",
-      "reply_text": "{\"request_id\":\"6e5b7805-5dba-4a67-abb4-1fc2c955e859\",\"expected_case_version\":3,\"reason_code\":\"FOLLOWUP_REVIEW_REQUIRED\",\"step_type\":\"DELEGATE\",\"target\":\"engagement\",\"goal\":\"Review overdue dental recall context; contact and booking unavailable, read-only assessment.\"}",
-      "input_tokens": 2253,
-      "output_tokens": 92,
-      "latency_ms": 4186
+      "observation_sha256": "a2d04eb736be6772918ca54e70dd83307ac24f3fa39c2ba515dd22118a9dc701",
+      "reply_text": "{\"request_id\":\"45a4a388-24fb-40db-b81d-f5ec797430d4\",\"expected_case_version\":3,\"reason_code\":\"FOLLOWUP_REVIEW_REQUIRED\",\"step_type\":\"DELEGATE\",\"target\":\"engagement\",\"goal\":\"Review overdue dental recall context; contact unavailable so read-only assessment of source status and patient history.\"}",
+      "input_tokens": 2254,
+      "output_tokens": 93,
+      "latency_ms": 4439
     },
     {
-      "request_id": "a88bbcde-83bd-440f-bb02-efb16a3240c3",
+      "request_id": "7ee0fe15-fe7d-4c84-a55c-99459c8e83f0",
       "repair": false,
-      "observation_sha256": "45a8dd85d2b860eaaee436d7418e998bc68a308d01446f46d7b0eeb39f6d4c9e",
-      "reply_text": "{\"request_id\":\"a88bbcde-83bd-440f-bb02-efb16a3240c3\",\"expected_case_version\":6,\"reason_code\":\"PATIENT_NEEDS_REVIEWED\",\"preparation_plans\":[],\"patient_questions\":[],\"step_type\":\"REVIEW_NEEDS\",\"reply_event_id\":\"5158bebf-e0ce-4d40-a7c7-dd1f48a51544\",\"updates\":[],\"appointment_intent\":\"UNSPECIFIED\",\"appointment_request_quote\":null,\"attendance_qualification\":null,\"question\":null,\"comprehension_quote\":null,\"concern_quote\":null}",
-      "input_tokens": 3614,
+      "observation_sha256": "415758e8fb0380783bf1a65b48407722cc2c70f703474dcb6660b9e2f6903c6c",
+      "reply_text": "{\"request_id\":\"7ee0fe15-fe7d-4c84-a55c-99459c8e83f0\",\"expected_case_version\":6,\"reason_code\":\"PATIENT_NEEDS_REVIEWED\",\"preparation_plans\":[],\"patient_questions\":[],\"step_type\":\"REVIEW_NEEDS\",\"reply_event_id\":\"1fe92033-bf47-4888-adec-c4a2e58666be\",\"updates\":[],\"appointment_intent\":\"UNSPECIFIED\",\"appointment_request_quote\":null,\"attendance_qualification\":null,\"question\":null,\"comprehension_quote\":null,\"concern_quote\":null}",
+      "input_tokens": 3605,
       "output_tokens": 154,
-      "latency_ms": 8399
+      "latency_ms": 11972
     }
   ],
   "run_status": "queued"

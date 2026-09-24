@@ -129,7 +129,12 @@ Two cautions and one follow-up:
   provider settings come from the *ambient* environment, so conftest's `Settings()` would flip every
   test to `anthropic` and issue live calls. The live test loads `.env` into its own environment with
   `monkeypatch` instead.
-- The recorded run did **not** reach a terminal (`run_status: queued` in the artifact), so a complete
-  archive is not produced yet.
-- Remaining step: drive the simulated turn to a terminal with the live model, then replay the
-  recording through `RecordedModel` and grade it.
+- The recorded run did **not** reach a terminal. With `MockModel` the same flow reaches a terminal
+  (the producer test observes `escalated`), but in `anthropic` mode the run advances two decisions and
+  then parks in `queued` where `claim_run` no longer claims it — a bounded wait-and-retry
+  (`_drain_until_idle`, 60 s) does not wake it. The exact cause is **not yet isolated**; the next
+  probe is the run's `available_at`/lease state and the reopen path after a patient turn, either by
+  reusing the MockModel flow (free, but the stall is model-specific) or by driving the worker/job path
+  (`claim_job`/`finish_job`) instead of `claim_run`.
+- Remaining step: reach a terminal in `anthropic` mode, then replay the recording through
+  `RecordedModel` and grade it into an archive.
