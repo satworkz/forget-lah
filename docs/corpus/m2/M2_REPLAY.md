@@ -106,12 +106,27 @@ Two real archives exist for the ambiguous family, both graded from captured obse
 | `fam-ambiguous-01-en` | `claude-sonnet-4-5-20250929` | 5 | `escalated` | FAILED (8 paths) |
 | `fam-ambiguous-01-zh` | `claude-sonnet-4-5-20250929` | 2 | `waiting` | FAILED (3 paths) |
 
-**Cross-language divergence (a real finding).** `cross_language_equivalence` reports the two variants
-as **not equivalent**: en escalated where the oracle expects `waiting`, while zh waited but recorded a
-**memory update the oracle did not author**. The second is directly relevant to decision D2 (*a
-language switch alone changes no lasting preference*) and is the first thing a reviewer should
-adjudicate; the first would fail every `ambiguous`-stratum variant as authored. Asserted in
-`tests/test_archive_grading.py::test_archived_en_and_zh_diverge` so a fix flips it deliberately.
+**Cross-language divergence (investigated).** `cross_language_equivalence` reports the two variants as
+**not equivalent**. Reading the recorded decisions gives a different verdict for each difference:
+
+1. **zh memory — the oracle is wrong, the runtime is right.** The zh decision set `preferred_language`
+   with `scope: "visit"`, `value: "zh"`, quote `"好"` — exactly the comprehension-repair case D2
+   permits (*a clear comprehension repair may set a visit-only language*). The oracle authored
+   `memory: []`, and the contract currently has **no way to express a permitted optional update**, so
+   the exact-match projection counts it as a difference. Fix options: author the visit-only language
+   for non-English variants, or add a permitted-variation declaration to the contract.
+2. **en escalation — the model's own choice, not a rule artefact.** The recorded decisions are
+   `DELEGATE → REVIEW_NEEDS(UNSPECIFIED, updates: []) → TOOL READ_SOURCE → DELEGATE → ESCALATE` with
+   reason **`CAPABILITY_UNAVAILABLE`**, where the oracle expects `CLARIFY`/`waiting`. This needs
+   adjudication: is the prompt/fixture at fault (the simulated source offers nothing actionable), or
+   is the oracle's expectation wrong? Either way it would fail every `ambiguous`-stratum variant as
+   authored.
+3. **Trajectory length differs by language for the same scenario** — 5 decisions (en) vs 2 (zh).
+   Sampling variance of this kind is exactly why A2 requires 60 predeclared repetitions and 60/60
+   passes rather than one run per variant.
+
+Asserted in `tests/test_archive_grading.py::test_archived_en_and_zh_diverge` so a fix flips it
+deliberately.
 
 **Language-switch coverage is still thin.** The pilot's non-English variants reply in the target
 language to an English clinic turn; there is **no dedicated mid-conversation switch family**. The M2
