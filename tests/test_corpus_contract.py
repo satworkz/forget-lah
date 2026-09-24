@@ -21,6 +21,7 @@ grading harness exist.
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -166,8 +167,12 @@ def rule_errors(item: dict[str, Any]) -> list[str]:
 
     stratum = identity.get("primary_stratum")
     scoring = item.get("scoring") or {}
-    if stratum in {"wrong_number", "third_party_reply"}:
-        expected_reason = f"{stratum}_path_absent"
+    quarantined = {
+        "wrong_number": "wrong_number_path_absent",
+        "third_party_reply": "third_party_path_absent",
+    }
+    if stratum in quarantined:
+        expected_reason = quarantined[stratum]
         if scoring.get("scored") is not False or scoring.get("unscored_reason") != expected_reason:
             errors.append(
                 f"R18: {stratum} requires scored false with unscored_reason {expected_reason!r}"
@@ -654,3 +659,49 @@ def test_projection_shape_is_versioned_and_serialisable() -> None:
     for name in POSITIVE_FIXTURES:
         rendered = json.dumps(project(load_fixture(name)))
         assert rendered
+
+
+# --- M2 development pilot ---------------------------------------------------------------------
+
+PILOT = ROOT / "corpus" / "development" / "pilot"
+PILOT_LANGUAGES = {"en", "zh", "ms", "ta"}
+
+
+def _pilot_items() -> list[dict[str, Any]]:
+    return [
+        json.loads(path.read_text())
+        for path in sorted(PILOT.glob("*.json"))
+        if path.name != "manifest.json"
+    ]
+
+
+def test_development_pilot_items_pass_schema_and_all_rules() -> None:
+    items = _pilot_items()
+    assert items, "no pilot items found"
+    for item in items:
+        assert violations(item) == [], item["identity"]["variant_id"]
+
+
+def test_development_pilot_families_are_aligned() -> None:
+    assert family_alignment_errors(_pilot_items()) == []
+
+
+def test_development_pilot_is_four_languages_per_family() -> None:
+    families: dict[str, set[str]] = {}
+    for item in _pilot_items():
+        families.setdefault(item["identity"]["family_id"], set()).add(item["identity"]["language"])
+    assert families, "no pilot families found"
+    for family_id, languages in families.items():
+        assert languages == PILOT_LANGUAGES, family_id
+
+
+def test_development_pilot_manifest_matches_emitted_files() -> None:
+    manifest = json.loads((PILOT / "manifest.json").read_text())
+    items = _pilot_items()
+    assert manifest["counts"]["variants"] == len(items)
+    assert manifest["counts"]["families"] == len(manifest["families"])
+    for family in manifest["families"].values():
+        assert family["split"] == "development"
+        for entry in family["variants"].values():
+            text = (PILOT / entry["path"]).read_text()
+            assert hashlib.sha256(text.encode()).hexdigest() == entry["sha256"]

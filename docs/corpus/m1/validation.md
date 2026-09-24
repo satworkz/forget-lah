@@ -24,7 +24,8 @@ milestone beyond the new pure projection module.
 | Lint | `uv run ruff check .` | **All checks passed** |
 | Format | `uv run ruff format --check .` | **219 files already formatted** |
 | Projection unit tests | `uv run pytest tests/test_comparison_projection.py` | **7 passed**, 2 warnings |
-| Contract tests | `uv run pytest tests/test_corpus_contract.py` | **39 passed** (4 positive fixtures; per-rule negatives R1–R37; family/quota checks; projection invariants) |
+| Contract tests | `uv run pytest tests/test_corpus_contract.py` | **43 passed** (4 positive fixtures; per-rule negatives R1–R37; family/quota checks; projection invariants; M2 pilot) |
+| M2 pilot contract check | within the contract suite | **40 emitted variants / 10 families** all pass schema + R1–R37; families aligned; manifest hashes match |
 | Full suite | `uv run pytest` | **exit code 0** (all tests passed or skipped) — see below |
 | Web build | `pnpm --dir apps/web build` | **NOT RUN** — `pnpm` is not installed in this environment; no frontend or API-contract change in this revision |
 | PostgreSQL concurrency | — | **skipped** without `TEST_DATABASE_URL`; SQLite results do not establish PostgreSQL locking behaviour |
