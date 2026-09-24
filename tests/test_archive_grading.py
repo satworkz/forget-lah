@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from forget_lah.corpus.replay import grade
+from forget_lah.corpus.replay import cross_language_equivalence, grade
 
 ROOT = Path(__file__).resolve().parents[1]
 PILOT = ROOT / "corpus" / "development" / "pilot"
@@ -24,6 +24,27 @@ def test_archived_observation_regrades_deterministically() -> None:
     verdict = grade(variant, archive["observed"])
     assert verdict == archive["verdict"], verdict["differences"]
     assert verdict["grade"] in {"PASS", "FAILED", "UNSCORED"}
+
+
+def test_archived_en_and_zh_diverge() -> None:
+    """Recorded finding: the en and zh variants of the ambiguous family do NOT match.
+
+    en escalated where the oracle expects waiting; zh waited but recorded a memory update the oracle
+    did not author. The divergence is asserted (not skipped) so a future fix flips this test
+    deliberately.
+    """
+    en_path = ARCHIVES / "fam-ambiguous-01-en.json"
+    zh_path = ARCHIVES / "fam-ambiguous-01-zh.json"
+    if not (en_path.exists() and zh_path.exists()):
+        pytest.skip("need both en and zh archives")
+    en = json.loads(en_path.read_text())
+    zh = json.loads(zh_path.read_text())
+
+    result = cross_language_equivalence(en["observed"], zh["observed"])
+    assert result["equivalent"] is False
+    paths = [difference["path"] for difference in result["differences"]]
+    assert any(path.startswith("terminal") for path in paths)
+    assert any(path.endswith("memory") for path in paths)
 
 
 def test_archive_carries_truthful_provenance() -> None:

@@ -1,0 +1,96 @@
+{
+  "replay_version": "1",
+  "variant_id": "fam-ambiguous-01-zh",
+  "execution_origin": "replay",
+  "source_run": {
+    "runtime_commit": "85e9b89",
+    "model_id": "claude-sonnet-4-5-20250929",
+    "prompt_version": "1",
+    "started_at": "2026-09-24T09:00:00+08:00",
+    "request_id": "7f6963de-6989-4ce2-9773-3f833247d2da"
+  },
+  "translation_status": "ok",
+  "observed": {
+    "observation_version": "1",
+    "identity": {
+      "family_id": "fam-ambiguous-01",
+      "variant_id": "fam-ambiguous-01-zh",
+      "scenario_id": "scn-ambiguous-01",
+      "language": "zh",
+      "primary_stratum": "ambiguous_short_reply",
+      "tags": [
+        "ambiguous-short-reply",
+        "clarify"
+      ]
+    },
+    "environment": {
+      "translation_configured": true,
+      "delivery_evidence_source": "displayed_in_simulator"
+    },
+    "checkpoint_oracle": [
+      {
+        "after_turn_id": "t2",
+        "appointment_intent": "UNSPECIFIED",
+        "attendance_qualification": null,
+        "tasks": [],
+        "instruction_checks": [],
+        "memory": [
+          {
+            "key": "preferred_language",
+            "operation": "set",
+            "scope": "visit",
+            "expected_status": "active",
+            "value": "zh"
+          }
+        ],
+        "callback_requested": null,
+        "wait_reason": "AWAITING_PATIENT_REPLY",
+        "delivery": {
+          "expected_block": null,
+          "effective_language": "zh",
+          "expected_message_delivery": []
+        }
+      }
+    ],
+    "terminal_oracle": {
+      "kind": "waiting",
+      "run_status": "waiting",
+      "wait_reason": "AWAITING_PATIENT_REPLY",
+      "intended": true
+    },
+    "scoring": {
+      "scored": true,
+      "unscored_reason": null
+    }
+  },
+  "evidence": {
+    "recording": "fam-ambiguous-01-zh.json",
+    "recorded_decisions": 2,
+    "observed_run_status": "waiting"
+  },
+  "verdict": {
+    "replay_version": "1",
+    "variant_id": "fam-ambiguous-01-zh",
+    "origin": "replay",
+    "grade": "FAILED",
+    "unscored_reason": null,
+    "hard_failures": [],
+    "differences": [
+      {
+        "path": "checkpoints[0].callback_requested",
+        "expected": false,
+        "observed": null
+      },
+      {
+        "path": "checkpoints[0].delivery.expected_message_delivery",
+        "expected": "len 1",
+        "observed": "len 0"
+      },
+      {
+        "path": "checkpoints[0].memory",
+        "expected": "len 0",
+        "observed": "len 1"
+      }
+    ]
+  }
+}

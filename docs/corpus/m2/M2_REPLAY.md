@@ -97,6 +97,26 @@ The archive producer reuses the runtime test apparatus rather than reimplementin
 3. ~~emit `source_run` provenance~~ — **done**: `archive_record` records the actual `model_id`,
    `runtime_commit`, `prompt_version`, clock start and request id.
 
+## Recorded findings (2026-09-25)
+
+Two real archives exist for the ambiguous family, both graded from captured observations:
+
+| variant | model | decisions | observed | verdict |
+|---|---|---|---|---|
+| `fam-ambiguous-01-en` | `claude-sonnet-4-5-20250929` | 5 | `escalated` | FAILED (8 paths) |
+| `fam-ambiguous-01-zh` | `claude-sonnet-4-5-20250929` | 2 | `waiting` | FAILED (3 paths) |
+
+**Cross-language divergence (a real finding).** `cross_language_equivalence` reports the two variants
+as **not equivalent**: en escalated where the oracle expects `waiting`, while zh waited but recorded a
+**memory update the oracle did not author**. The second is directly relevant to decision D2 (*a
+language switch alone changes no lasting preference*) and is the first thing a reviewer should
+adjudicate; the first would fail every `ambiguous`-stratum variant as authored. Asserted in
+`tests/test_archive_grading.py::test_archived_en_and_zh_diverge` so a fix flips it deliberately.
+
+**Language-switch coverage is still thin.** The pilot's non-English variants reply in the target
+language to an English clinic turn; there is **no dedicated mid-conversation switch family**. The M2
+plan claims one per language pair — that authoring gap is open.
+
 ## Producer status
 
 The producer is built and exercised end-to-end by `tests/test_archive_producer.py`: it freezes the

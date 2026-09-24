@@ -146,9 +146,12 @@ def _terminal(run_status: str, checkpoint: dict) -> dict:
     raise AssertionError(f"unmapped run status {run_status!r}")
 
 
+VARIANT = os.environ.get("RECORD_VARIANT", "fam-ambiguous-01-en")
+
+
 def test_record_a_live_decision_stream(live) -> None:
     """Drive one pilot variant with the real Anthropic model and record its decisions."""
-    variant = json.loads((PILOT / "ambiguous-01-en.json").read_text())
+    variant = json.loads((PILOT / f"{VARIANT.removeprefix('fam-')}.json").read_text())
     factory, client, settings = live
     records: list[dict] = []
     recorder = RecordingModel(AnthropicModel(settings), records)
