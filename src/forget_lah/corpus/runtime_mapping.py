@@ -20,6 +20,15 @@ from typing import Any
 OBSERVATION_VERSION = "1"
 
 
+def _callback_requested(checkpoint: Mapping[str, Any]) -> bool | None:
+    """The runtime records a callback under `callback` (`engine.py:2153`); accept both spellings."""
+    if "callback_requested" in checkpoint:
+        return checkpoint.get("callback_requested")
+    if "callback" in checkpoint:
+        return bool(checkpoint.get("callback"))
+    return None
+
+
 def build_tasks(checkpoint: Mapping[str, Any]) -> list[dict[str, Any]]:
     """Join `patient_questions`/`patient_task_types` with `question_answers` into task rows."""
     questions = list(checkpoint.get("patient_questions") or [])
@@ -94,7 +103,7 @@ def observation_from_runtime(
                 "tasks": build_tasks(checkpoint),
                 "instruction_checks": [dict(entry) for entry in (instruction_checks or [])],
                 "memory": [dict(entry) for entry in (memory_updates or [])],
-                "callback_requested": checkpoint.get("callback_requested"),
+                "callback_requested": _callback_requested(checkpoint),
                 "wait_reason": checkpoint.get("wait_reason"),
                 "delivery": resolved_delivery,
             }

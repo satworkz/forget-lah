@@ -90,12 +90,26 @@ The archive producer reuses the runtime test apparatus rather than reimplementin
    `question_answers` (`contracts.py:86`) and packages checkpoint/terminal/delivery evidence into the
    observation shape; unit-tested in `tests/test_runtime_mapping.py`, including a mapped run that
    grades **PASS** against its pilot variant;
-2. map the item's `environment.fixtures.source_api` results onto the mock source transport;
-3. emit `source_run` provenance naming the actual model id (never a mock presented as live).
+2. ~~map the item's `environment.fixtures.source_api` results onto the mock source transport~~ —
+   **done**: `runtime_fixtures.source_transport` serves the item's frozen results by call name and
+   delegates everything else to the harness default (an empty `source_api` means "use the default",
+   which is what the pilot items declare);
+3. ~~emit `source_run` provenance~~ — **done**: `archive_record` records the actual `model_id`,
+   `runtime_commit`, `prompt_version`, clock start and request id.
 
-## Outstanding
+## Producer status
 
-The grader is complete and exercised by `tests/test_corpus_replay.py`. The **archive producer** is
-the remaining build: the wiring above is identified, but gaps 1–3 are a real integration task that
-must be iterated against the runtime test apparatus. Until it lands, **no pilot variant carries an
-execution archive and no replay claim is made.**
+The producer is built and exercised end-to-end by `tests/test_archive_producer.py`: it freezes the
+clock, starts a simulated run, injects the variant's patient turn, drains the engine, maps the
+captured checkpoint, writes the archive and grades it.
+
+**First produced observation — harness self-test, not a benchmark result.** For
+`fam-ambiguous-01-en` with the harness-default clinic fixtures and the deterministic `MockModel`, the
+run ended `escalated` where the authored oracle expects `waiting`, and the captured checkpoint held
+only early keys (`delegation_start`, `latest_event`, `patient_simulator_enabled`,
+`returned_specialists`, `turn_start_step`). Grading reported the exact differing paths
+(`terminal.kind/run_status`, `checkpoints[0].appointment_intent`, `wait_reason`,
+`delivery.expected_message_delivery`). Two caveats keep this from being a corpus result: the pilot
+items declare an empty `source_api` (so harness defaults are used, not variant fixtures) and the
+model is a deterministic double. A true replay needs per-variant source fixtures and a recorded
+model — recorded here as the next step, not claimed as done.
