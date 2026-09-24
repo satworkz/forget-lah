@@ -111,5 +111,16 @@ only early keys (`delegation_start`, `latest_event`, `patient_simulator_enabled`
 (`terminal.kind/run_status`, `checkpoints[0].appointment_intent`, `wait_reason`,
 `delivery.expected_message_delivery`). Two caveats keep this from being a corpus result: the pilot
 items declare an empty `source_api` (so harness defaults are used, not variant fixtures) and the
-model is a deterministic double. A true replay needs per-variant source fixtures and a recorded
-model — recorded here as the next step, not claimed as done.
+model is a deterministic double. **Source-fixture convention.** A `source_api` entry's `call` is matched against the request path as a
+suffix or as its final segment, so it can address the runtime's real episode paths —
+`followup-context/DEMO-DENTAL-RECALL-01`, `followup/<episode>/confirm` — as well as bare names such as
+`availability`. Note the runtime selects the case/episode from the detected candidates, so pinning
+source results alone does not pin the scenario; a true replay also needs the variant's case mapping.
+
+**Blocker for a genuine recording.** `translation_configured` requires
+`agent_model_mode == "anthropic"` (`settings.py:20-25`), and the runtime's providers are `mock`,
+`organiser` and `anthropic`. CommandCode's Anthropic wire (`/provider/v1/messages`) is **not in the
+account plan (403)** and no Anthropic credential is available here, so a real recorded model run
+cannot be produced in this environment; `MockModel` is a deterministic double and must stay labelled
+mock. A true replay therefore needs either an Anthropic-capable runtime credential or a new provider
+pointed at a tool-capable OpenAI-compatible endpoint that also satisfies the `anthropic` gate.

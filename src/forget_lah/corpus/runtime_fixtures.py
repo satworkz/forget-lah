@@ -27,7 +27,12 @@ def source_transport(
     variant: Mapping[str, Any],
     fallback: Callable[[httpx.Request], httpx.Response] | None = None,
 ) -> httpx.MockTransport:
-    """Serve the item's frozen `source_api` results, delegating anything else to `fallback`."""
+    """Serve the item's frozen `source_api` results, delegating anything else to `fallback`.
+
+    A fixture `call` is matched against the request path either as a suffix or as its final segment,
+    so both the runtime's episode paths (`followup-context/<episode>`,
+    `followup/<episode>/confirm`) and bare names (`availability`) are addressable.
+    """
     fixtures = (variant.get("environment") or {}).get("fixtures") or {}
     results = {
         entry["call"]: entry["result"]
@@ -35,13 +40,18 @@ def source_transport(
         if isinstance(entry, Mapping) and "call" in entry
     }
 
+    def _matches(call: str, path: str) -> bool:
+        trimmed = path.rstrip("/")
+        return trimmed.endswith(call) or trimmed.rsplit("/", 1)[-1] == call
+
     def handler(request: httpx.Request) -> httpx.Response:
-        call = request.url.path.rstrip("/").rsplit("/", 1)[-1]
-        if call in results:
-            return httpx.Response(200, json=results[call])
+        path = request.url.path
+        for call, result in results.items():
+            if _matches(call, path):
+                return httpx.Response(200, json=result)
         if fallback is not None:
             return fallback(request)
-        return httpx.Response(404, json={"error": f"no frozen source fixture for {call!r}"})
+        return httpx.Response(404, json={"error": f"no frozen source fixture for {path!r}"})
 
     return httpx.MockTransport(handler)
 

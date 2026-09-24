@@ -57,14 +57,26 @@ def _terminal(run_status: str, checkpoint: dict) -> dict:
 def test_source_transport_serves_item_fixtures_and_delegates_the_rest() -> None:
     variant = {
         "environment": {
-            "fixtures": {"source_api": [{"call": "availability", "result": {"slots": []}}]}
+            "fixtures": {
+                "source_api": [
+                    {
+                        "call": "followup-context/DEMO-DENTAL-RECALL-01",
+                        "result": {"episode": "DEMO-DENTAL-RECALL-01", "slots": []},
+                    },
+                    {"call": "availability", "result": {"slots": []}},
+                ]
+            }
         }
     }
     transport = source_transport(variant)
-    served = transport.handle_request(httpx.Request("GET", "http://clinic/availability"))
-    assert served.status_code == 200
-    assert served.json() == {"slots": []}
-    missing = transport.handle_request(httpx.Request("GET", "http://clinic/unknown"))
+    episode = transport.handle_request(
+        httpx.Request("GET", "http://clinic/internal/followup-context/DEMO-DENTAL-RECALL-01")
+    )
+    assert episode.status_code == 200
+    assert episode.json()["episode"] == "DEMO-DENTAL-RECALL-01"
+    bare = transport.handle_request(httpx.Request("GET", "http://clinic/availability"))
+    assert bare.json() == {"slots": []}
+    missing = transport.handle_request(httpx.Request("GET", "http://clinic/internal/unknown"))
     assert missing.status_code == 404
 
 
