@@ -298,8 +298,9 @@ unverifiable. Withdrawn.)*
 
 | Item | Kind | Status |
 |---|---|---|
-| Is a run ending `escalated` after an unresolved `CLINIC_REVIEW` question the scenario's **single accepted** outcome, or a failure under policy #4? | **policy, not code** | **needs-human-decision** — decides whether `terminal_oracle` gains an `escalated` arm (required for the `questions` stratum) or those scenarios are authored as failures |
-| How is the `zh`/`ms`/`ta` delivery path exercised, given `translation_configured` requires `agent_model_mode == "anthropic"` (`settings.py:20-25`)? | **policy, not code** | **needs-human-decision** |
+| Is a run ending `escalated` after an unresolved `CLINIC_REVIEW` question the scenario's **single accepted** outcome, or a failure under policy #4? | **policy, not code** | **RESOLVED 2026-09-24** (governing Astra Fork A verdict, option 1): an explicitly authored `escalated` ending **may** be the single accepted outcome, but only as an **unaccepted handoff** — `run_status: escalated`, `outcome: null`, authored handoff reason, matching clinic/case/run `handoff_evidence` with `accepted_by`/`accepted_at` explicitly `null`, `callback_requested: true`, the same-item task `CLINIC_REVIEW`, and no `staff_acceptance` record for that handoff. An *unexpected* escalation remains a failure. `terminal_oracle.escalated` is now activated in the schema. |
+| How is the `zh`/`ms`/`ta` delivery path exercised, given `translation_configured` requires `agent_model_mode == "anthropic"` (`settings.py:20-25`)? | **policy, not code** | **RESOLVED 2026-09-24** (governing Astra Fork B verdict): the runtime's own translator is measured **as part of the system under test** at its implemented **temperature 0**; every scored variant — including English controls — requires **60 predeclared fresh repetitions with 60/60 semantic-oracle passes**, with no majority or best-run selection. `translation_configured` is *derived* (`multilingual_enabled AND agent_model_mode == "anthropic" AND model_configured`), and the exact provider/model/API/seed/plan/retry profile is pinned in `environment.translation_profile`. |
+| Is an authored step/role budget exhaustion ever an expected terminal? | **policy #4** | **RESOLVED 2026-09-24** (approved verdict A): never. `terminal_oracle.kind: failure` with `STEP_BUDGET_EXHAUSTED` or `ROLE_BUDGET_EXHAUSTED` must be rejected; budget exhaustion is always a **FAILED** corpus result, even when a separate fault-injection test detects the pause. |
 | Clock freezing: `utcnow` has no override seam (`db.py:20`) — monkeypatch or add a seam? | engineering | open, agent-resolvable |
 | `attendance_qualification.status` ∈ `{CONFLICT, COMPATIBLE, UNRESOLVED}` and its intent demotion | engineering | verified in code; schema must type it |
 | `callback` / `clinical_review` consequence of an unresolved question (`questions.py:111-120`; pairing `engine.py:1727-1728`) | engineering | verified in code; no checkpoint field today |
@@ -312,6 +313,15 @@ unverifiable. Withdrawn.)*
 ---
 
 ## 13. Revision history
+
+**Revision 3 (this file)** — §12 reconciled with the governing Astra Fork A/B verdict on the two
+policy questions that previously blocked M1 exit. Both are now **resolved**, and the schema
+(`corpus/schema/corpus.schema.json`, uncommitted at this revision) carries their enforceable form:
+the activated `escalated` terminal for unaccepted handoffs, the 60/60 predeclared-repetition rule and
+pinned `environment.translation_profile`, and the unconditional budget-exhaustion failure. The
+`questions` stratum quotas are preserved (4 development + 6 evaluation aligned families; 1 development
++ 2 evaluation independent threads per language), with at least 1 development and 2 evaluation aligned
+families reserved for unresolved-question escalation. No code fact changed; only the policy status.
 
 **Revision 2 (this file)** — corrected against the first independent review. Substance errors fixed:
 the `WAITING_FOR_CLARIFICATION` checkpoint claim (§1, §2), the "delivery sources disagree" premise

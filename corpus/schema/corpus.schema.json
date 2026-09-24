@@ -106,9 +106,10 @@
         "patient_simulator_enabled",
         "translation_configured",
         "delivery_evidence_source",
-        "fixtures"
+        "fixtures",
+        "translation_profile"
       ],
-      "description": "Runtime gates this pins. Simulation requires the demo clinic id AND the checkpoint flag (simulation.py:18); the role limits differ by that same gate (engine.py:784 vs :786). translation_configured requires multilingual_enabled AND agent_model_mode == 'anthropic' AND model_configured (settings.py:20-25), which is a human decision for this corpus - see runtime_semantics_map.md section 12.",
+      "description": "Runtime gates this pins. Simulation requires the demo clinic id AND the checkpoint flag (simulation.py:18); the role limits differ by that same gate (engine.py:784 vs :786). translation_configured requires multilingual_enabled AND agent_model_mode == 'anthropic' AND model_configured (settings.py:20-25); the pinned method for exercising that path is environment.translation_profile (approved verdict B).",
       "properties": {
         "clinic_id": { "type": "string", "minLength": 1 },
         "is_demo_clinic": {
@@ -169,6 +170,170 @@
                   "accepted_at": { "type": "string", "format": "date-time" }
                 }
               }
+            }
+          }
+        },
+        "translation_profile": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Pinned configuration for the runtime's own outbound translator, which is a hardcoded Anthropic Messages API call (translations.py:44-62) at temperature 0. This profile measures the translator as part of the system under test; it does not make translation deterministic and it does not license Anthropic for corpus drafting, back-translation, pre-screening, review or adjudication.",
+          "required": [
+            "provider",
+            "model_id",
+            "api_version",
+            "runtime_commit",
+            "temperature",
+            "max_tokens",
+            "generation_settings",
+            "prompt_version",
+            "prompt_hash",
+            "output_schema_hash",
+            "validator_version",
+            "multilingual_enabled",
+            "agent_model_mode",
+            "model_configured",
+            "translation_configured",
+            "provider_seed",
+            "seed_supported",
+            "harness_seed",
+            "sampling_plan_id",
+            "sample_count",
+            "required_passes",
+            "execution_origin",
+            "retry_policy",
+            "worker_timing_profile",
+            "call_budget_profile"
+          ],
+          "properties": {
+            "provider": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Provider actually called by the runtime translator."
+            },
+            "model_id": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Resolved model identifier, not an alias; record the model id the provider returns."
+            },
+            "api_version": { "type": "string", "minLength": 1 },
+            "runtime_commit": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{7,40}$",
+              "description": "Commit of the runtime under test."
+            },
+            "temperature": {
+              "const": 0,
+              "description": "The runtime translator's implemented sampling temperature (translations.py:44-62). Temperature 0 reduces but does not eliminate sampling variability."
+            },
+            "max_tokens": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Output token ceiling actually sent by the translator; must match the runtime request, not a desired value."
+            },
+            "generation_settings": {
+              "type": "object",
+              "description": "Other generation parameters actually sent (for example top_p, top_k, stop). Unsupported or unset settings must be recorded explicitly as null rather than omitted.",
+              "additionalProperties": true
+            },
+            "prompt_version": { "type": "string", "minLength": 1 },
+            "prompt_hash": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$",
+              "description": "sha256 of the complete translation instructions as sent."
+            },
+            "output_schema_hash": {
+              "type": ["string", "null"],
+              "description": "sha256 of the structured-output contract, or null when the translator sends no schema and its JSON output is validated deterministically after the call (translations.py:63-80)."
+            },
+            "validator_version": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Version of the deterministic output validator (stop_reason end_turn, exactly one text block, JSON with only 'text', length 1..2600, identical digit multiset, identical ISO dates; translations.py:63-80)."
+            },
+            "multilingual_enabled": { "type": "boolean" },
+            "agent_model_mode": {
+              "type": "string",
+              "minLength": 1,
+              "description": "settings.agent_model_mode. The multilingual delivery gate opens only when this is 'anthropic' (settings.py:20-25)."
+            },
+            "model_configured": { "type": "boolean" },
+            "translation_configured": {
+              "type": "boolean",
+              "description": "Must be derived: multilingual_enabled AND agent_model_mode == 'anthropic' AND model_configured (settings.py:20-25), and must agree with environment.translation_configured."
+            },
+            "provider_seed": {
+              "const": null,
+              "description": "The current Anthropic Messages translator exposes no seed parameter; record null. Never invent a seed to claim determinism."
+            },
+            "seed_supported": {
+              "const": false,
+              "description": "False for the current translator: provider-side determinism is not available."
+            },
+            "harness_seed": {
+              "type": "integer",
+              "description": "Harness-side seed controlling schedule and fixture ordering only. It is never sent to the provider and does not make translation deterministic."
+            },
+            "sampling_plan_id": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Versioned predeclared sampling plan identifier."
+            },
+            "sample_count": { "const": 60 },
+            "required_passes": {
+              "const": 60,
+              "description": "All 60 fresh repetitions must pass the semantic oracle. No majority or best-run selection."
+            },
+            "execution_origin": {
+              "type": "string",
+              "enum": ["live", "replay"],
+              "description": "live performs fresh translator calls and estimates variability; replay reproduces one observed execution from archived request/response evidence and does not."
+            },
+            "retry_policy": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["policy_id", "infrastructure_max_replacements", "replace_on", "never_replace_on"],
+              "properties": {
+                "policy_id": { "type": "string", "minLength": 1 },
+                "infrastructure_max_replacements": { "const": 2 },
+                "replace_on": {
+                  "type": "array",
+                  "minItems": 1,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "enum": ["provider_unavailable", "harness_outage", "network_error"]
+                  },
+                  "description": "Only independently evidenced infrastructure faults qualify for replacement."
+                },
+                "never_replace_on": {
+                  "type": "array",
+                  "minItems": 1,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "TRANSLATION_VALIDATION_FAILED",
+                      "TRANSLATION_INCOMPLETE",
+                      "translation_nondeterminism",
+                      "semantic_mismatch",
+                      "wrong_target_language",
+                      "missing_required_delivery",
+                      "worker_interruption"
+                    ]
+                  },
+                  "description": "System failures of the translator under test: not retried into success and never unscored."
+                }
+              }
+            },
+            "worker_timing_profile": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Named fixed worker timing profile. Translation runs as a background worker job (worker.py:153) under a bounded interrupt detector."
+            },
+            "call_budget_profile": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Named fixed shared-call-budget profile with capacity for every fresh repetition; per-turn and role bounds are unchanged."
             }
           }
         }
@@ -541,19 +706,53 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["kind", "run_status", "handoff_reason"],
-          "description": "Escalated by request_handoff (engine.py:200-215), reachable from an unresolved question (engine.py:1728), no slots (:2159), cancellation (:1054) and escalation (:1828). POLICY DEPENDENCY: whether an escalated end after an unresolved CLINIC_REVIEW question is this scenario's single ACCEPTED outcome, or a failure under policy #4, is an open human decision (runtime_semantics_map.md section 12). The arm exists so the runtime fact is expressible; do not author it until that ruling exists.",
+          "required": ["kind", "run_status", "outcome", "handoff_reason", "handoff_accepted", "callback_requested", "handoff_evidence"],
+          "description": "An accepted terminal ONLY as an explicitly authored unaccepted handoff (approved verdict A). Escalated by request_handoff (engine.py:200-215), reachable from an unresolved question (engine.py:1728), no slots (:2159), cancellation (:1054) and escalation (:1828). It records correct refusal to overclaim an unproved booking as a PASS; it never establishes booking success or staff ownership, which require named acceptance (policy.py:400). Unexpected escalation remains a failure.",
           "properties": {
             "kind": { "const": "escalated" },
             "run_status": { "const": "escalated" },
-            "handoff_reason": { "type": "string", "minLength": 1 }
+            "outcome": {
+              "const": null,
+              "description": "The escalation path writes no checkpoint outcome (routes.py:163); only engine.py:1853 and :1856 write one."
+            },
+            "handoff_reason": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Authored expected handoff reason. Handoff risk/classification comes from the gateway, not the model's reason code."
+            },
+            "handoff_reason_code": {
+              "type": ["string", "null"],
+              "description": "Optional authored reason code for the expected handoff; null when not asserted."
+            },
+            "handoff_accepted": {
+              "const": false,
+              "description": "An escalated run can never reach completed: named acceptance is required for completion (policy.py:400, engine.py:200-215)."
+            },
+            "callback_requested": {
+              "const": true,
+              "description": "An unresolved question raises a callback (questions.py:111-120; pairing engine.py:1727-1728)."
+            },
+            "handoff_evidence": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["handoff_id", "clinic_id", "case_id", "run_id", "accepted_by", "accepted_at"],
+              "description": "Fixture-supplied matching handoff evidence. accepted_by/accepted_at are explicitly null because no staff_acceptance record may exist for this handoff.",
+              "properties": {
+                "handoff_id": { "type": "string", "minLength": 1 },
+                "clinic_id": { "type": "string", "minLength": 1 },
+                "case_id": { "type": "string", "minLength": 1 },
+                "run_id": { "type": "string", "minLength": 1 },
+                "accepted_by": { "const": null },
+                "accepted_at": { "const": null }
+              }
+            }
           }
         },
         {
           "type": "object",
           "additionalProperties": false,
           "required": ["kind", "run_status", "failure_code"],
-          "description": "Only usable when the scenario is authored as a budget/consistency failure case. Step-budget exhaustion is otherwise always a failure. failure_code is a PROJECTION name: the runtime stores this as checkpoint['pause_reason'] (engine.py:116), surfaced at routes.py:162.",
+          "description": "Records an expected FAILURE, never an accepted outcome. Budget exhaustion is ALWAYS a failure: terminal_oracle.kind failure with failure_code STEP_BUDGET_EXHAUSTED or ROLE_BUDGET_EXHAUSTED is invalid and must not be authored (approved verdict A). failure_code is a PROJECTION name: the runtime stores this as checkpoint['pause_reason'] (engine.py:116), surfaced at routes.py:162.",
           "properties": {
             "kind": { "const": "failure" },
             "run_status": { "const": "paused" },
@@ -576,7 +775,15 @@
         },
         "unscored_reason": {
           "type": ["string", "null"],
-          "enum": ["wrong_number_path_absent", "third_party_path_absent", null]
+          "enum": [
+            "wrong_number_path_absent",
+            "third_party_path_absent",
+            "infrastructure_incomplete_sampling",
+            "missing_prerequisites",
+            "unresolved_human_grading",
+            null
+          ],
+          "description": "UNSCORED earns no passing credit and satisfies no scored coverage quota. Infrastructure-incomplete sampling (only independently evidenced infra faults exhausted after at most two replacements), missing prerequisites and unresolved human grading are unscored. Translation nondeterminism and TRANSLATION_VALIDATION_FAILED are NOT unscored: they are failures of the system under test (approved verdict B)."
         }
       }
     },
@@ -701,7 +908,18 @@
       "No ai_declarations entry may name an Anthropic family. Review and adjudication must be performed by humans, so neither appears as an ai_declarations step.",
       "Scenarios that expect terminal_oracle.kind completed_handoff must supply a matching staff_acceptance fixture with accepted_by and accepted_at (policy.py:400).",
       "terminal_oracle.kind waiting is valid only when intended is true; an unintended wait is a failure and must be authored as such.",
-      "terminal_oracle.kind escalated must not be authored until the open policy question resolves whether an escalated end is an accepted single outcome (runtime_semantics_map.md section 12).",
+      "terminal_oracle.kind escalated is the scenario's single accepted outcome only as an explicitly authored unaccepted handoff: it requires run_status escalated, outcome null, handoff_accepted false, callback_requested true, and handoff_evidence carrying clinic_id, case_id, run_id and explicitly null accepted_by/accepted_at (engine.py:200-215, routes.py:163, policy.py:400; approved verdict A).",
+      "An item with terminal_oracle.kind escalated must have at least one checkpoint_oracle task with outcome CLINIC_REVIEW at the checkpoint that raised the handoff, and its referenced handoff_id must not appear in environment.fixtures.staff_acceptance (questions.py:85, :111-120, engine.py:1727-1728; approved verdict A).",
+      "Unexpected escalation is a failure: a run that reaches escalated under any terminal_oracle other than kind escalated does not satisfy the expected terminal (approved verdict A).",
+      "Within each language, at least two of the six evaluation aligned families in the questions stratum must be authored with terminal_oracle.kind escalated; each scenario still has exactly one expected terminal outcome (approved verdict A).",
+      "terminal_oracle.kind failure with failure_code STEP_BUDGET_EXHAUSTED or ROLE_BUDGET_EXHAUSTED must be rejected: budget exhaustion is always a failure and is never an authored expected terminal (policy #4; approved verdict A).",
+      "Every scored variant, including English controls, requires exactly 60 predeclared fresh repetitions and 60/60 semantic-oracle passes; no majority or best-run selection and no replacement of a failed sample by a diagnostic rerun (approved verdict B).",
+      "environment.translation_profile.translation_configured must equal multilingual_enabled AND (agent_model_mode == 'anthropic') AND model_configured, and must agree with environment.translation_configured; it must not be asserted independently (settings.py:20-25; approved verdict B).",
+      "environment.translation_profile.temperature must be 0 and provider_seed must be null with seed_supported false for the current translator; harness_seed controls scheduling and fixtures only and must never be represented as provider determinism (translations.py:44-62; approved verdict B).",
+      "Only independently evidenced infrastructure faults may receive at most two replacement attempts per affected sample, with every attempt retained; exhausted infrastructure attempts leave the sample unscored and can never erase an observed system failure (approved verdict B).",
+      "TRANSLATION_VALIDATION_FAILED, TRANSLATION_INCOMPLETE, semantic corruption, wrong target language, missing required delivery and system-caused worker interruption are failures of the system under test: they must never be unscored and must never be replaced (translations.py:63-80, :124; approved verdict B).",
+      "scoring.scored false items earn no passing credit and satisfy no scored coverage quota; quarantined wrong-number/third-party families cannot be counted toward a claimed 0/60 gate (approved policy #3; approved verdict B).",
+      "environment.translation_profile.execution_origin must distinguish live from replay; replay reproduces an observed execution and does not estimate translation variability (approved verdict B).",
       "Aligned family members must share family_id, intended meaning at every patient turn and fixture content, differing only in language and patient wording."
     ]
   }
