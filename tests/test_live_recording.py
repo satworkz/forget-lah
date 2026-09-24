@@ -12,6 +12,9 @@ from test_runtime import event, source_tools, start
 
 from forget_lah.api import create_app
 from forget_lah.corpus.recording import RecordingModel, recording_document
+from forget_lah.corpus.replay import grade
+from forget_lah.corpus.runtime_fixtures import archive_record, write_archive
+from forget_lah.corpus.runtime_mapping import observation_from_runtime
 from forget_lah.detector import detect
 from forget_lah.runtime.engine import claim_run, process_run
 from forget_lah.runtime.models import AgentRun, AgentStep
@@ -23,6 +26,7 @@ from services.mock_clinic.fixtures import candidates
 ROOT = Path(__file__).resolve().parents[1]
 PILOT = ROOT / "corpus" / "development" / "pilot"
 RECORDINGS = ROOT / "corpus" / "development" / "recordings"
+ARCHIVES = ROOT / "corpus" / "development" / "archives"
 ENV_FILE = ROOT / ".env"
 
 pytestmark = pytest.mark.live
@@ -111,6 +115,33 @@ def _drain_until_idle(runtime, model, *, seconds: int = 180) -> int:
     return processed
 
 
+def _terminal(run_status: str, checkpoint: dict) -> dict:
+    if run_status == "waiting":
+        return {
+            "kind": "waiting",
+            "run_status": "waiting",
+            "wait_reason": checkpoint.get("wait_reason"),
+            "intended": True,
+        }
+    if run_status == "completed":
+        outcome = checkpoint.get("outcome")
+        kind = (
+            "completed_handoff"
+            if outcome == "OWNED_STAFF_HANDOFF"
+            else "completed_simulated_confirmation"
+        )
+        return {"kind": kind, "run_status": "completed", "outcome": outcome}
+    if run_status == "paused":
+        return {
+            "kind": "failure",
+            "run_status": "paused",
+            "failure_code": checkpoint.get("pause_reason"),
+        }
+    if run_status == "escalated":
+        return {"kind": "escalated", "run_status": "escalated", "outcome": None}
+    raise AssertionError(f"unmapped run status {run_status!r}")
+
+
 def test_record_a_live_decision_stream(live) -> None:
     """Drive one pilot variant with the real Anthropic model and record its decisions."""
     variant = json.loads((PILOT / "ambiguous-01-en.json").read_text())
@@ -132,6 +163,7 @@ def test_record_a_live_decision_stream(live) -> None:
     with factory() as db:
         run = db.get(AgentRun, run_id)
         run_status = run.status
+        checkpoint = dict(run.checkpoint)
         run_available_at = run.available_at.isoformat() if run.available_at else None
         run_lease_until = run.lease_until.isoformat() if run.lease_until else None
         steps = db.scalars(select(AgentStep).where(AgentStep.run_id == run_id)).all()
@@ -157,3 +189,34 @@ def test_record_a_live_decision_stream(live) -> None:
     reloaded = json.loads(target.read_text())
     assert reloaded["model_id"] == settings.anthropic_model
     assert reloaded["records"]
+
+    # Resolution B: grade the observation captured during the recorded run. The archive's `observed`
+    # block is captured evidence, not a re-derivation, so no engine re-execution is needed.
+    observation = observation_from_runtime(
+        variant,
+        checkpoint=checkpoint,
+        terminal=_terminal(run_status, checkpoint),
+        memory_updates=[],
+        delivery={
+            "expected_block": None,
+            "effective_language": variant["identity"]["language"],
+            "expected_message_delivery": [],
+        },
+    )
+    archive = archive_record(
+        variant,
+        observation,
+        model_id=settings.anthropic_model,
+        request_id=run_id,
+        translation_status="ok",
+        evidence={
+            "recording": target.name,
+            "recorded_decisions": len(records),
+            "observed_run_status": run_status,
+        },
+    )
+    archive["verdict"] = grade(variant, observation)
+    archive_path = write_archive(archive, ARCHIVES / f"{variant['identity']['variant_id']}.json")
+    persisted = json.loads(archive_path.read_text())
+    assert persisted["verdict"]["grade"] in {"PASS", "FAILED", "UNSCORED"}
+    assert persisted["source_run"]["model_id"] == settings.anthropic_model

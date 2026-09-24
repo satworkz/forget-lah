@@ -1,0 +1,112 @@
+{
+  "replay_version": "1",
+  "variant_id": "fam-ambiguous-01-en",
+  "execution_origin": "replay",
+  "source_run": {
+    "runtime_commit": "85e9b89",
+    "model_id": "claude-sonnet-4-5-20250929",
+    "prompt_version": "1",
+    "started_at": "2026-09-24T09:00:00+08:00",
+    "request_id": "19984af8-06d0-473a-b757-d7f6f6111451"
+  },
+  "translation_status": "ok",
+  "observed": {
+    "observation_version": "1",
+    "identity": {
+      "family_id": "fam-ambiguous-01",
+      "variant_id": "fam-ambiguous-01-en",
+      "scenario_id": "scn-ambiguous-01",
+      "language": "en",
+      "primary_stratum": "ambiguous_short_reply",
+      "tags": [
+        "ambiguous-short-reply",
+        "clarify"
+      ]
+    },
+    "environment": {
+      "translation_configured": true,
+      "delivery_evidence_source": "displayed_in_simulator"
+    },
+    "checkpoint_oracle": [
+      {
+        "after_turn_id": "t2",
+        "appointment_intent": "UNSPECIFIED",
+        "attendance_qualification": null,
+        "tasks": [],
+        "instruction_checks": [],
+        "memory": [],
+        "callback_requested": null,
+        "wait_reason": null,
+        "delivery": {
+          "expected_block": null,
+          "effective_language": "en",
+          "expected_message_delivery": []
+        }
+      }
+    ],
+    "terminal_oracle": {
+      "kind": "escalated",
+      "run_status": "escalated",
+      "outcome": null
+    },
+    "scoring": {
+      "scored": true,
+      "unscored_reason": null
+    }
+  },
+  "evidence": {
+    "recording": "fam-ambiguous-01-en.json",
+    "recorded_decisions": 5,
+    "observed_run_status": "escalated"
+  },
+  "verdict": {
+    "replay_version": "1",
+    "variant_id": "fam-ambiguous-01-en",
+    "origin": "replay",
+    "grade": "FAILED",
+    "unscored_reason": null,
+    "hard_failures": [],
+    "differences": [
+      {
+        "path": "checkpoints[0].callback_requested",
+        "expected": false,
+        "observed": null
+      },
+      {
+        "path": "checkpoints[0].delivery.expected_message_delivery",
+        "expected": "len 1",
+        "observed": "len 0"
+      },
+      {
+        "path": "checkpoints[0].wait_reason",
+        "expected": "AWAITING_PATIENT_REPLY",
+        "observed": null
+      },
+      {
+        "path": "terminal.intended",
+        "expected": true,
+        "observed": "<absent>"
+      },
+      {
+        "path": "terminal.kind",
+        "expected": "waiting",
+        "observed": "escalated"
+      },
+      {
+        "path": "terminal.outcome",
+        "expected": "<absent>",
+        "observed": null
+      },
+      {
+        "path": "terminal.run_status",
+        "expected": "waiting",
+        "observed": "escalated"
+      },
+      {
+        "path": "terminal.wait_reason",
+        "expected": "AWAITING_PATIENT_REPLY",
+        "observed": "<absent>"
+      }
+    ]
+  }
+}
