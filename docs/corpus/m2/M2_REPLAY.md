@@ -64,11 +64,35 @@ the declared language-dependent paths (`LANGUAGE_DEPENDENT_PATHS`) plus `identit
 the property the programme PRD calls "the same state trajectory and eventual outcome after the
 approved normalization", and it deliberately does **not** normalize business outcomes away.
 
+## Producer wiring (recon 2026-09-24)
+
+The archive producer reuses the runtime test apparatus rather than reimplementing it:
+
+| Need | Seam |
+|---|---|
+| store + signed client | the `runtime` fixture in `tests/test_runtime.py` (alembic sqlite + seeded mock clinic) |
+| case + run | `start(runtime)` |
+| patient turn | `event(client, case_id, "demo_reply", <variant patient text>)` |
+| engine drive | `drain(runtime, model=…, tools=…)` → `claim_run`/`process_run` |
+| capture | `view(client, case_id)` (run status, steps, checkpoint) |
+| frozen clock | monkeypatch `forget_lah.db.utcnow` to `clock.reference_datetime` |
+| simulator path | `Settings(patient_simulator_enabled=True, agent_min_interval_seconds=0)` and a `DEMO_CLINIC_ID` run so `simulation_enabled(run)` holds |
+| sources | `ClinicTools(..., transport_for(source), FOLLOWUP_KEY)` — item `source_api` results must be supplied through that transport, not a standalone dict |
+| model | `MockModel` is deterministic and must be labelled **mock**, never Claude; a recorded model is required for a true observation |
+
+**Observed checkpoint keys** the capture step reads: `appointment_intent`, `patient_questions`,
+`patient_task_types`, `callback`, `wait_reason`, `outcome`.
+
+**Gaps to close before an archive is real:**
+
+1. map the runtime checkpoint into the item's projection shape — `tasks` must be built from
+   `patient_questions` + `patient_task_types`, not read as a `tasks` array;
+2. map the item's `environment.fixtures.source_api` results onto the mock source transport;
+3. emit `source_run` provenance naming the actual model id (never a mock presented as live).
+
 ## Outstanding
 
-The grader is complete and exercised by `tests/test_corpus_replay.py`. The **archive producer** —
-executing a pilot variant through the runtime's `patient_simulator` path from frozen fixtures and
-writing the record above — is the remaining build. It needs the runtime apparatus (alembic store,
-mock clinic source, a recorded/Mock model, frozen SGT clock via `forget_lah.db.utcnow`, and no real
-writes) and is the last item between the authored pilot and a replay demonstration. Until it exists,
-no pilot variant carries an execution archive and **no replay claim is made**.
+The grader is complete and exercised by `tests/test_corpus_replay.py`. The **archive producer** is
+the remaining build: the wiring above is identified, but gaps 1–3 are a real integration task that
+must be iterated against the runtime test apparatus. Until it lands, **no pilot variant carries an
+execution archive and no replay claim is made.**
