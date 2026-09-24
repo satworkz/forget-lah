@@ -14,7 +14,11 @@ from forget_lah.api import create_app
 from forget_lah.corpus.recording import RecordingModel, recording_document
 from forget_lah.corpus.replay import grade
 from forget_lah.corpus.runtime_fixtures import archive_record, write_archive
-from forget_lah.corpus.runtime_mapping import observation_from_runtime
+from forget_lah.corpus.runtime_mapping import (
+    build_delivery,
+    build_memory,
+    observation_from_runtime,
+)
 from forget_lah.detector import detect
 from forget_lah.runtime.engine import claim_run, process_run
 from forget_lah.runtime.models import AgentRun, AgentStep
@@ -168,6 +172,13 @@ def test_record_a_live_decision_stream(live) -> None:
         run_lease_until = run.lease_until.isoformat() if run.lease_until else None
         steps = db.scalars(select(AgentStep).where(AgentStep.run_id == run_id)).all()
         step_diagnostics = [(step.status, step.error_code, step.attempts) for step in steps]
+        updates = [
+            update
+            for step in steps
+            if step.decision
+            for update in (step.decision.get("updates") or [])
+        ]
+        step_payloads = [{"tool_result": step.tool_result} for step in steps if step.tool_result]
 
     assert records, "the live model produced no decisions to record"
 
@@ -196,11 +207,18 @@ def test_record_a_live_decision_stream(live) -> None:
         variant,
         checkpoint=checkpoint,
         terminal=_terminal(run_status, checkpoint),
-        memory_updates=[],
+        memory_updates=build_memory(updates),
         delivery={
             "expected_block": None,
             "effective_language": variant["identity"]["language"],
-            "expected_message_delivery": [],
+            "expected_message_delivery": build_delivery(
+                step_payloads,
+                [
+                    turn["turn_id"]
+                    for turn in variant["conversation"]
+                    if turn.get("origin") == "replay"
+                ],
+            ),
         },
     )
     archive = archive_record(

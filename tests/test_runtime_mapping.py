@@ -4,6 +4,8 @@ from pathlib import Path
 from forget_lah.corpus.replay import grade
 from forget_lah.corpus.runtime_mapping import (
     OBSERVATION_VERSION,
+    build_delivery,
+    build_memory,
     build_tasks,
     observation_from_runtime,
 )
@@ -49,6 +51,41 @@ def test_build_tasks_leaves_absent_answers_none() -> None:
     tasks = build_tasks(checkpoint)
     assert tasks[0]["outcome"] is None
     assert tasks[0]["actions"] == []
+
+
+def test_build_memory_derives_expected_status() -> None:
+    entries = build_memory(
+        [
+            {"key": "preferred_language", "operation": "set", "scope": "future", "value": "en"},
+            {
+                "key": "excluded_weekdays",
+                "operation": "remove",
+                "scope": "visit",
+                "value": "SATURDAY",
+            },
+            {"key": "other_concern", "operation": "set", "scope": "visit", "value": "noise"},
+            {"key": "arrival_support", "operation": "set", "scope": "future", "value": "und"},
+        ]
+    )
+    assert [entry["expected_status"] for entry in entries] == [
+        "active",
+        "retracted",
+        "pending",
+        "pending",
+    ]
+    assert entries[0]["value"] == "en"
+
+
+def test_build_delivery_maps_observed_statuses_in_order() -> None:
+    steps = [
+        {"tool_result": {"data": {"delivery_status": "displayed_in_simulator"}}},
+        {"tool_result": {"data": {}}},
+        {"tool_result": {"data": {"delivery_status": "displayed_in_simulator"}}},
+    ]
+    assert build_delivery(steps, ["t2"]) == [
+        {"turn_id": "t2", "delivery_status": "displayed_in_simulator"}
+    ]
+    assert build_delivery([], ["t2"]) == []
 
 
 def test_observation_from_runtime_grades_a_matching_run_as_pass() -> None:

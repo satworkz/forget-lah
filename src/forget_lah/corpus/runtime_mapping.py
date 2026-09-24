@@ -29,6 +29,53 @@ def _callback_requested(checkpoint: Mapping[str, Any]) -> bool | None:
     return None
 
 
+def build_memory(updates: Sequence[Mapping[str, Any]] | None) -> list[dict[str, Any]]:
+    """Map `MemoryChange` records to schema memory entries, deriving `expected_status`.
+
+    The status rule mirrors the runtime's own persistence (`memory.py:87-91`): `remove` retracts;
+    `arrival_support`/`other_concern` or value `"und"` is pending; otherwise active.
+    """
+    entries: list[dict[str, Any]] = []
+    for update in updates or []:
+        key = update.get("key")
+        operation = update.get("operation", "set")
+        value = update.get("value")
+        if operation == "remove":
+            status = "retracted"
+        elif key in {"arrival_support", "other_concern"} or value == "und":
+            status = "pending"
+        else:
+            status = "active"
+        entries.append(
+            {
+                "key": key,
+                "operation": operation,
+                "scope": update.get("scope"),
+                "expected_status": status,
+                "value": value,
+            }
+        )
+    return entries
+
+
+def build_delivery(
+    step_payloads: Sequence[Mapping[str, Any]] | None,
+    turn_ids: Sequence[str],
+) -> list[dict[str, Any]]:
+    """Map observed `displayed_in_simulator` deliveries onto the corpus replay turns, in order."""
+    observed = []
+    for step in step_payloads or []:
+        result = step.get("tool_result") or {}
+        data = result.get("data") or {}
+        status = data.get("delivery_status")
+        if status:
+            observed.append(status)
+    return [
+        {"turn_id": turn_id, "delivery_status": status}
+        for turn_id, status in zip(turn_ids, observed, strict=False)
+    ]
+
+
 def build_tasks(checkpoint: Mapping[str, Any]) -> list[dict[str, Any]]:
     """Join `patient_questions`/`patient_task_types` with `question_answers` into task rows."""
     questions = list(checkpoint.get("patient_questions") or [])
