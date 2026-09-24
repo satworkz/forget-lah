@@ -103,8 +103,8 @@ Two real archives exist for the ambiguous family, both graded from captured obse
 
 | variant | model | decisions | observed | verdict |
 |---|---|---|---|---|
-| `fam-ambiguous-01-en` | `claude-sonnet-4-5-20250929` | 5 | `escalated` | FAILED (8 paths) |
-| `fam-ambiguous-01-zh` | `claude-sonnet-4-5-20250929` | 2 | `waiting` | FAILED (3 paths) |
+| `fam-ambiguous-01-en` | `claude-sonnet-4-5-20250929` | 5 | `escalated` | FAILED (6 paths — the escalation) |
+| `fam-ambiguous-01-zh` | `claude-sonnet-4-5-20250929` | 2 | `waiting` | **PASS (0 paths)** |
 
 **Cross-language divergence (investigated).** `cross_language_equivalence` reports the two variants as
 **not equivalent**. Reading the recorded decisions gives a different verdict for each difference:
@@ -124,11 +124,17 @@ Two real archives exist for the ambiguous family, both graded from captured obse
    Sampling variance of this kind is exactly why A2 requires 60 predeclared repetitions and 60/60
    passes rather than one run per variant.
 
-**Remaining difference.** Both archives still flag `checkpoints[0].delivery.expected_message_delivery`:
-the oracle expects the reply to `t2` to be delivered (`displayed_in_simulator`) while the observed
-runs sent no simulated message. For the zh run — which *waited* — that is the open question: should a
-clarifying turn deliver a message, or is the oracle's expectation wrong for a waiting terminal? Needs
-adjudication.
+**Delivery expectation — adjudicated as an oracle error (fixed).** Both archives had flagged
+`checkpoints[0].delivery.expected_message_delivery`. The schema documents that field as delivery
+evidence *per message the run emits*, but the generator asserted it against `t2` — the **patient**
+turn. A patient turn is never delivered; a runtime-*generated* clinic message is, and it has no
+authored turn id. The expectation was a category error, so the pilot no longer asserts it. With the
+visit-only language, absent-callback and delivery normalisations in place, **`fam-ambiguous-01-zh`
+grades PASS with zero differences**; `fam-ambiguous-01-en` still fails on its genuine escalation.
+
+**Open contract gap.** The pilot consequently asserts **no** per-message delivery coverage. Expressing
+"the reply generated after turn X is delivered" needs the contract to address runtime-generated
+messages, which it does not today.
 
 Asserted in `tests/test_archive_grading.py::test_archived_en_and_zh_diverge` so a fix flips it
 deliberately.

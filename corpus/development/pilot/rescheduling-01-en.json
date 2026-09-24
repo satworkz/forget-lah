@@ -143,13 +143,7 @@
       "callback_requested": false,
       "delivery": {
         "expected_block": null,
-        "effective_language": "en",
-        "expected_message_delivery": [
-          {
-            "turn_id": "t2",
-            "delivery_status": "displayed_in_simulator"
-          }
-        ]
+        "effective_language": "en"
       },
       "appointment_request_quote": "move it to Friday"
     }
@@ -204,6 +198,6 @@
   "integrity": {
     "generation_seed": 1008,
     "replay_seed": 2008,
-    "content_hash": "c2a0b101e1c0c2e996b655975a8d5e947b9c63b79e1a690afccf9489b7b3e75d"
+    "content_hash": "b5fa0a27b3c59ce742471f4e6bad046dd0daeecc906871a4aa842a94d79301e9"
   }
 }

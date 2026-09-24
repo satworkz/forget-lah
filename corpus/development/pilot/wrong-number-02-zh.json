@@ -137,13 +137,7 @@
       "callback_requested": false,
       "delivery": {
         "expected_block": null,
-        "effective_language": "zh",
-        "expected_message_delivery": [
-          {
-            "turn_id": "t2",
-            "delivery_status": "displayed_in_simulator"
-          }
-        ]
+        "effective_language": "zh"
       },
       "wait_reason": "CONTACT_STOPPED"
     }
@@ -198,6 +192,6 @@
   "integrity": {
     "generation_seed": 1065,
     "replay_seed": 2065,
-    "content_hash": "14546dcf3e3992fed194a1bfd2b7cef8f1603fc73fd7762aeaa1d9d0b5e4085f"
+    "content_hash": "5925841484389d95d1e2c361a50b58f7f1d288c97a8be1de60406c326a7022ac"
   }
 }

@@ -143,13 +143,7 @@
       "callback_requested": false,
       "delivery": {
         "expected_block": null,
-        "effective_language": "ta",
-        "expected_message_delivery": [
-          {
-            "turn_id": "t2",
-            "delivery_status": "displayed_in_simulator"
-          }
-        ]
+        "effective_language": "ta"
       },
       "appointment_request_quote": "something earlier"
     }
@@ -204,6 +198,6 @@
   "integrity": {
     "generation_seed": 1051,
     "replay_seed": 2051,
-    "content_hash": "2efece90ec3dda43169b62ad96dae877d3a47fcd50eb6b2c203b51729b04790c"
+    "content_hash": "7f10f4fd573512522c296c2092dac616083cb216d262a6eda6ed3fdf3ec3ad72"
   }
 }

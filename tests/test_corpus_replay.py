@@ -60,6 +60,9 @@ def test_wrong_target_language_fails() -> None:
 
 def test_missing_required_delivery_fails() -> None:
     oracle = _variant("confirmation-01-en.json")
+    oracle["checkpoint_oracle"][0]["delivery"]["expected_message_delivery"] = [
+        {"turn_id": "t2", "delivery_status": "displayed_in_simulator"}
+    ]
     observed = _observed_from(oracle)
     observed["checkpoint_oracle"][0]["delivery"].pop("expected_message_delivery")
     result = grade(oracle, observed)

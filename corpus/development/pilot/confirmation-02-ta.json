@@ -159,13 +159,7 @@
       "callback_requested": false,
       "delivery": {
         "expected_block": null,
-        "effective_language": "ta",
-        "expected_message_delivery": [
-          {
-            "turn_id": "t2",
-            "delivery_status": "displayed_in_simulator"
-          }
-        ]
+        "effective_language": "ta"
       },
       "appointment_request_quote": "Yes, that works.",
       "attendance_qualification": {
@@ -224,6 +218,6 @@
   "integrity": {
     "generation_seed": 1043,
     "replay_seed": 2043,
-    "content_hash": "d15b9d53318a93134b0a6e16939bbbb137888f2cbac3613d9fc66e330b98a7ff"
+    "content_hash": "4271028282c5a89aeabb374232ca30b4781fc9125236a34a4008c38f4060b8a4"
   }
 }

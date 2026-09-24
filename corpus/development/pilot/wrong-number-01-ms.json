@@ -137,13 +137,7 @@
       "callback_requested": false,
       "delivery": {
         "expected_block": null,
-        "effective_language": "ms",
-        "expected_message_delivery": [
-          {
-            "turn_id": "t2",
-            "delivery_status": "displayed_in_simulator"
-          }
-        ]
+        "effective_language": "ms"
       }
     }
   ],
@@ -197,6 +191,6 @@
   "integrity": {
     "generation_seed": 1026,
     "replay_seed": 2026,
-    "content_hash": "19797a34833732aa265be093a68d13bf9138a7a7f63ea8e541a3ac7bad5ea3a1"
+    "content_hash": "4ce5806e86fcab04b47b3831e94957921e2caf0a0b8d72eb9c02a9f7a6ecc8fe"
   }
 }

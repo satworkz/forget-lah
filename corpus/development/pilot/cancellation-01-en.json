@@ -143,13 +143,7 @@
       "callback_requested": false,
       "delivery": {
         "expected_block": null,
-        "effective_language": "en",
-        "expected_message_delivery": [
-          {
-            "turn_id": "t2",
-            "delivery_status": "displayed_in_simulator"
-          }
-        ]
+        "effective_language": "en"
       },
       "appointment_request_quote": "Please cancel my appointment"
     }
@@ -204,6 +198,6 @@
   "integrity": {
     "generation_seed": 1004,
     "replay_seed": 2004,
-    "content_hash": "c0f292ef5eb426f7fc203af1a125d160b240cb3921c6abb468839e53261d5ab5"
+    "content_hash": "b20ba1e4b9590db05bcb0ee7042e7e1a0b5cc4cadb73d268bef05c2ce3c70698"
   }
 }

@@ -158,13 +158,7 @@
       "callback_requested": false,
       "delivery": {
         "expected_block": null,
-        "effective_language": "zh",
-        "expected_message_delivery": [
-          {
-            "turn_id": "t2",
-            "delivery_status": "displayed_in_simulator"
-          }
-        ]
+        "effective_language": "zh"
       },
       "appointment_request_quote": "Yes please, confirm it.",
       "attendance_qualification": {
@@ -223,6 +217,6 @@
   "integrity": {
     "generation_seed": 1001,
     "replay_seed": 2001,
-    "content_hash": "03152c33f05bab2613358fd89601eeeea4e9e1e1073908a02259805597512229"
+    "content_hash": "8c6215100e64303d0c347902fc26fe873934426e9f7f09163768a49cab0b8281"
   }
 }

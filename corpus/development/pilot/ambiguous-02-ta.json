@@ -136,13 +136,7 @@
       "callback_requested": false,
       "delivery": {
         "expected_block": null,
-        "effective_language": "ta",
-        "expected_message_delivery": [
-          {
-            "turn_id": "t2",
-            "delivery_status": "displayed_in_simulator"
-          }
-        ]
+        "effective_language": "ta"
       },
       "wait_reason": "AWAITING_PATIENT_REPLY"
     }
@@ -197,6 +191,6 @@
   "integrity": {
     "generation_seed": 1079,
     "replay_seed": 2079,
-    "content_hash": "193daa84a1cad140ad98ab2ee79a7a48f8a681eb4dfe95701716131b2e5012ce"
+    "content_hash": "46a46826dd190c22ad084a6c18d5a730de43690b80430d993d353c2b4b7db659"
   }
 }

@@ -143,13 +143,7 @@
       "callback_requested": false,
       "delivery": {
         "expected_block": null,
-        "effective_language": "zh",
-        "expected_message_delivery": [
-          {
-            "turn_id": "t2",
-            "delivery_status": "displayed_in_simulator"
-          }
-        ]
+        "effective_language": "zh"
       },
       "appointment_request_quote": "move it to next week"
     }
@@ -204,6 +198,6 @@
   "integrity": {
     "generation_seed": 1045,
     "replay_seed": 2045,
-    "content_hash": "4b2b1a6eb93b0ae497fd75fcbca91d1c0f4cf81f671607688c0f40e0ce6dfff7"
+    "content_hash": "ff49fe6b71c30c5d05efc00d6ca9c3f598b092566945d3c70098c0308377990b"
   }
 }

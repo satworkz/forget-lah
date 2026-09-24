@@ -127,9 +127,6 @@ def test_observation_from_runtime_grades_a_matching_run_as_pass() -> None:
         delivery={
             "expected_block": None,
             "effective_language": "en",
-            "expected_message_delivery": [
-                {"turn_id": "t2", "delivery_status": "displayed_in_simulator"}
-            ],
         },
     )
     assert observation["observation_version"] == OBSERVATION_VERSION

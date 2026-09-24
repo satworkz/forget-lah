@@ -5,49 +5,40 @@
   "runtime_commit": null,
   "records": [
     {
-      "request_id": "9a95d529-3f51-4b15-8f6f-a1c26da970db",
+      "request_id": "1def41c3-5ad0-447a-92d5-e85c41847cc2",
       "repair": false,
-      "observation_sha256": "11e0bb84ce241810878e558606cbddac8bfd809fa4f41b7d7be843f8520de97b",
-      "reply_text": "{\"request_id\":\"9a95d529-3f51-4b15-8f6f-a1c26da970db\",\"expected_case_version\":3,\"reason_code\":\"FOLLOWUP_REVIEW_REQUIRED\",\"step_type\":\"DELEGATE\",\"target\":\"engagement\",\"goal\":\"Review overdue dental recall context and determine next steps given contact unavailable\"}",
-      "input_tokens": 2261,
+      "observation_sha256": "11e30c8668c52b46cc05959f7f07f939c3b0b267c1650e53d31de20a88133bf4",
+      "reply_text": "{\"request_id\":\"1def41c3-5ad0-447a-92d5-e85c41847cc2\",\"expected_case_version\":3,\"reason_code\":\"FOLLOWUP_REVIEW_REQUIRED\",\"step_type\":\"DELEGATE\",\"target\":\"engagement\",\"goal\":\"Review overdue dental recall; source contact unavailable, read-only context review\"}",
+      "input_tokens": 2254,
       "output_tokens": 89,
-      "latency_ms": 2502
+      "latency_ms": 2863
     },
     {
-      "request_id": "1215c2ee-fb0e-4583-a5b3-87e482bf1d5c",
+      "request_id": "c6fdf54b-29c0-4460-8ab0-2a281113d521",
       "repair": false,
-      "observation_sha256": "da17cd6ae08f63abfeae9068dd121487380ae4b1ba37f086ff1fb8c6b010d630",
-      "reply_text": "{\"request_id\":\"1215c2ee-fb0e-4583-a5b3-87e482bf1d5c\",\"expected_case_version\":6,\"reason_code\":\"PATIENT_NEEDS_REVIEWED\",\"preparation_plans\":[],\"patient_questions\":[],\"step_type\":\"REVIEW_NEEDS\",\"reply_event_id\":\"bf87c383-e4b5-4f05-b9ca-eaa69736b275\",\"updates\":[],\"appointment_intent\":\"UNSPECIFIED\",\"appointment_request_quote\":null,\"attendance_qualification\":null,\"question\":null,\"comprehension_quote\":null,\"concern_quote\":null}",
-      "input_tokens": 3613,
-      "output_tokens": 156,
-      "latency_ms": 10595
+      "observation_sha256": "b4b6c0dedd2cf87e328fcefadd8aeddfaf308ad5420dd19974b7efd02072b3ce",
+      "reply_text": "{\"request_id\":\"c6fdf54b-29c0-4460-8ab0-2a281113d521\",\"expected_case_version\":6,\"reason_code\":\"PATIENT_NEEDS_REVIEWED\",\"preparation_plans\":[],\"patient_questions\":[],\"step_type\":\"REVIEW_NEEDS\",\"reply_event_id\":\"aa43fcfa-8235-4d31-b05e-2e5a85152ae8\",\"updates\":[],\"appointment_intent\":\"UNSPECIFIED\",\"appointment_request_quote\":null,\"attendance_qualification\":null,\"question\":null,\"comprehension_quote\":null,\"concern_quote\":null}",
+      "input_tokens": 3611,
+      "output_tokens": 154,
+      "latency_ms": 11473
     },
     {
-      "request_id": "4d826755-88e6-4575-a43f-c7abc0875c0a",
+      "request_id": "bfa67e62-e188-4bb1-948d-9ed9eb07be6c",
       "repair": false,
-      "observation_sha256": "2ffb39633c3424a560fcd89043b89c85fc15e54eb85b224355396d56fe5e1762",
-      "reply_text": "{\"request_id\":\"4d826755-88e6-4575-a43f-c7abc0875c0a\",\"expected_case_version\":7,\"reason_code\":\"READ_SOURCE\",\"step_type\":\"TOOL\",\"tool_name\":\"read_followup_context\"}",
+      "observation_sha256": "0f5b4cc1f80976c89c8782ce9540b3834e1595c4abafad8960d860f8bcd15cd9",
+      "reply_text": "{\"request_id\":\"bfa67e62-e188-4bb1-948d-9ed9eb07be6c\",\"expected_case_version\":7,\"reason_code\":\"FOLLOWUP_REVIEW_REQUIRED\",\"step_type\":\"DELEGATE\",\"target\":\"engagement\",\"goal\":\"Determine appointment intent and retrieve source slots for routine dental follow-up\"}",
       "input_tokens": 3719,
-      "output_tokens": 71,
-      "latency_ms": 2693
+      "output_tokens": 87,
+      "latency_ms": 3585
     },
     {
-      "request_id": "ec59d6f1-07f0-4acf-91e3-e78a99a3789f",
+      "request_id": "c7568d26-7797-4f84-9ace-f68ecd9949aa",
       "repair": false,
-      "observation_sha256": "c192b802e9b2f45471b048bab883a5778a63615ccdacb319ea956b97365b7dc2",
-      "reply_text": "{\"request_id\":\"ec59d6f1-07f0-4acf-91e3-e78a99a3789f\",\"expected_case_version\":8,\"reason_code\":\"FOLLOWUP_REVIEW_REQUIRED\",\"step_type\":\"DELEGATE\",\"target\":\"engagement\",\"goal\":\"Assess appointment intent and source available slots for routine dental follow-up\"}",
-      "input_tokens": 3690,
-      "output_tokens": 90,
-      "latency_ms": 3440
-    },
-    {
-      "request_id": "0ee9af4c-3559-4478-8665-937bdd9e5a61",
-      "repair": false,
-      "observation_sha256": "60ae5fba6ddac9ba595b666c9c072a329322d6a1850bf69ac9ca4849e918e826",
-      "reply_text": "{\"request_id\":\"0ee9af4c-3559-4478-8665-937bdd9e5a61\",\"expected_case_version\":10,\"reason_code\":\"CAPABILITY_UNAVAILABLE\",\"step_type\":\"ESCALATE\"}",
-      "input_tokens": 1869,
-      "output_tokens": 64,
-      "latency_ms": 2709
+      "observation_sha256": "ad5b0c0b4b41bb9304cd4cce7b18169908d7e69d84d175b300d51964dd8b4ba1",
+      "reply_text": "{\"request_id\":\"c7568d26-7797-4f84-9ace-f68ecd9949aa\",\"expected_case_version\":9,\"reason_code\":\"CAPABILITY_UNAVAILABLE\",\"step_type\":\"ESCALATE\"}",
+      "input_tokens": 1862,
+      "output_tokens": 63,
+      "latency_ms": 2635
     }
   ],
   "run_status": "escalated",
@@ -74,11 +65,6 @@
         "completed",
         null,
         1
-      ],
-      [
-        "completed",
-        null,
-        2
       ],
       [
         "completed",

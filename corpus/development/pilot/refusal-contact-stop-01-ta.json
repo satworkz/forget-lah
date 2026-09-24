@@ -144,13 +144,7 @@
       "callback_requested": false,
       "delivery": {
         "expected_block": "CONTACT_STOPPED",
-        "effective_language": "ta",
-        "expected_message_delivery": [
-          {
-            "turn_id": "t2",
-            "delivery_status": "displayed_in_simulator"
-          }
-        ]
+        "effective_language": "ta"
       },
       "wait_reason": "CONTACT_STOPPED"
     }
@@ -205,6 +199,6 @@
   "integrity": {
     "generation_seed": 1035,
     "replay_seed": 2035,
-    "content_hash": "80c010027ce3dec12cc0d004560747752d8e70c1c6a24c9e25080679b0c3268b"
+    "content_hash": "8940df3bddd848ac93e7966492eb857bc593888e8a6d6aa20c647990cee0ebb4"
   }
 }

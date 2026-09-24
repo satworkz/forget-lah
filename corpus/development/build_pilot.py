@@ -651,9 +651,6 @@ def _build_item(scenario: dict[str, Any], language: str, index: int) -> dict[str
         "delivery": {
             "expected_block": scenario["block"],
             "effective_language": language,
-            "expected_message_delivery": [
-                {"turn_id": "t2", "delivery_status": "displayed_in_simulator"}
-            ],
         },
     }
     if scenario["quote"] is not None:
