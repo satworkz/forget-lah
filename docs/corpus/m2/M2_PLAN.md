@@ -45,7 +45,7 @@ semantically matching English control (register markers may include `code_switch
 | Gate | Why it blocks |
 |---|---|
 | Human review per language | Reviewer of record: operator `ms`, Satish `ta`, Bryan `zh` (D4). The pilot is **not accepted** until each variant is reviewed. |
-| Replay demonstration | Requires an execution harness that replays a variant from a frozen fixture state and emits checkpoint evidence. It does not exist yet. |
+| Replay demonstration | The grading core exists (`src/forget_lah/corpus/replay.py`; archive contract in `M2_REPLAY.md`) and is exercised by tests. The **archive producer** — executing a variant through the runtime's `patient_simulator` from frozen fixtures — is still outstanding, so no variant carries an execution archive and **no replay claim is made**. |
 | Contract enforcement | Every item is machine-checked here; R10/R27/R34 remain oracle/harness obligations. |
 
 ## Artifacts
@@ -56,6 +56,9 @@ semantically matching English control (register markers may include `code_switch
 | `corpus/development/pilot/manifest.json` | family → variants, per-item sha256, counts |
 | `corpus/development/build_pilot.py` | the authoring generator (single source for the pilot) |
 | `tests/test_corpus_contract.py` | validates every emitted item against schema + R1–R37 |
+| `src/forget_lah/corpus/replay.py` | replay grading core (verdict + per-field differences + cross-language equivalence) |
+| `docs/corpus/m2/M2_REPLAY.md` | archive record contract and verdict rules |
+| `tests/test_corpus_replay.py` | grader tests over the pilot families |
 
 ## Delivery status
 
