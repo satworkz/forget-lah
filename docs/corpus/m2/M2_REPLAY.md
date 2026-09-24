@@ -83,10 +83,13 @@ The archive producer reuses the runtime test apparatus rather than reimplementin
 **Observed checkpoint keys** the capture step reads: `appointment_intent`, `patient_questions`,
 `patient_task_types`, `callback`, `wait_reason`, `outcome`.
 
-**Gaps to close before an archive is real:**
+**Gaps before an archive is real:**
 
-1. map the runtime checkpoint into the item's projection shape — `tasks` must be built from
-   `patient_questions` + `patient_task_types`, not read as a `tasks` array;
+1. ~~map the runtime checkpoint into the item's projection shape~~ — **done**:
+   `src/forget_lah/corpus/runtime_mapping.py` joins `patient_questions`/`patient_task_types` with
+   `question_answers` (`contracts.py:86`) and packages checkpoint/terminal/delivery evidence into the
+   observation shape; unit-tested in `tests/test_runtime_mapping.py`, including a mapped run that
+   grades **PASS** against its pilot variant;
 2. map the item's `environment.fixtures.source_api` results onto the mock source transport;
 3. emit `source_run` provenance naming the actual model id (never a mock presented as live).
 

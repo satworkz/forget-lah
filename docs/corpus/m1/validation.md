@@ -27,6 +27,7 @@ milestone beyond the new pure projection module.
 | Contract tests | `uv run pytest tests/test_corpus_contract.py` | **43 passed** (4 positive fixtures; per-rule negatives R1–R37; family/quota checks; projection invariants; M2 pilot) |
 | M2 pilot contract check | within the contract suite | **80 emitted variants / 20 families** all pass schema + R1–R37; families aligned; manifest hashes match |
 | Replay grading core | `uv run pytest tests/test_corpus_replay.py` | **9 passed** (PASS/FAILED/UNSCORED verdicts, hard translation failures, cross-language equivalence) |
+| Runtime→observation mapping | `uv run pytest tests/test_runtime_mapping.py` | **5 passed** (task join, absent-answer handling, mapped run grades PASS, missing-answer FAILED, determinism) |
 | Full suite | `uv run pytest` | **exit code 0** (all tests passed or skipped) — see below |
 | Web build | `pnpm --dir apps/web build` | **NOT RUN** — `pnpm` is not installed in this environment; no frontend or API-contract change in this revision |
 | PostgreSQL concurrency | — | **skipped** without `TEST_DATABASE_URL`; SQLite results do not establish PostgreSQL locking behaviour |
