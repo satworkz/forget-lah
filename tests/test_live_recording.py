@@ -158,6 +158,14 @@ def test_record_a_live_decision_stream(live) -> None:
 
     case_id, run_id = start(live)
     _drain_until_idle(live, recorder)
+    # Controlled input: replay the item's authored clinic turns into the case history before the
+    # patient reply, so the model sees the scenario it is meant to interpret.
+    for turn in variant["conversation"]:
+        if turn.get("origin") == "history" and turn.get("speaker") == "clinic":
+            assert event(client, case_id, "scripted_clinic_turn", turn["body"]).status_code in {
+                200,
+                202,
+            }
     patient_text = variant["conversation"][-1]["body"]
     response = event(client, case_id, "demo_reply", patient_text)
     for _ in range(3):

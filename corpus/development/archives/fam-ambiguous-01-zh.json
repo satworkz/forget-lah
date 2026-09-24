@@ -7,7 +7,7 @@
     "model_id": "claude-sonnet-4-5-20250929",
     "prompt_version": "1",
     "started_at": "2026-09-24T09:00:00+08:00",
-    "request_id": "5807a117-d0e1-487a-8aa3-56e54e6fff25"
+    "request_id": "2fe5d005-c5f7-42d6-9506-12fa3fa7cad3"
   },
   "translation_status": "ok",
   "observed": {
@@ -30,7 +30,7 @@
     "checkpoint_oracle": [
       {
         "after_turn_id": "t2",
-        "appointment_intent": "UNSPECIFIED",
+        "appointment_intent": "CONFIRM",
         "attendance_qualification": null,
         "tasks": [],
         "instruction_checks": [],
@@ -65,16 +65,22 @@
   },
   "evidence": {
     "recording": "fam-ambiguous-01-zh.json",
-    "recorded_decisions": 2,
+    "recorded_decisions": 6,
     "observed_run_status": "waiting"
   },
   "verdict": {
     "replay_version": "1",
     "variant_id": "fam-ambiguous-01-zh",
     "origin": "replay",
-    "grade": "PASS",
+    "grade": "FAILED",
     "unscored_reason": null,
     "hard_failures": [],
-    "differences": []
+    "differences": [
+      {
+        "path": "checkpoints[0].appointment_intent",
+        "expected": "UNSPECIFIED",
+        "observed": "CONFIRM"
+      }
+    ]
   }
 }

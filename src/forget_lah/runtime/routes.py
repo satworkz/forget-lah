@@ -44,6 +44,7 @@ class EventInput(StartInput):
         "accept_handoff",
         "resolve_callback",
         "resolve_clinical",
+        "scripted_clinic_turn",
     ]
     content: str = Field(default="", max_length=600)
 
@@ -384,6 +385,41 @@ def install_routes(app, factory, settings, authorise):
             newest = latest_run(db, case.id)
             if newest.id != run.id:
                 raise HTTPException(409, "This is not the current agent run")
+            if body.kind == "scripted_clinic_turn":
+                # Controlled input: place an authored clinic turn in the case history without
+                # advancing the run. `observation_for` surfaces it to the model as `recent_messages`,
+                # so a corpus item's authored clinic turn becomes an input rather than an expectation.
+                if not body.content.strip():
+                    raise HTTPException(422, "A scripted clinic turn needs authored content")
+                event_id = uid()
+                db.add(
+                    AgentEvent(
+                        id=event_id,
+                        clinic_id=run.clinic_id,
+                        case_id=run.case_id,
+                        run_id=run.id,
+                        client_key=key,
+                        actor_id=user.id,
+                        kind=body.kind,
+                        content=body.content,
+                        expected_case_version=body.expected_case_version,
+                    )
+                )
+                db.add(
+                    SimulatedMessage(
+                        clinic_id=run.clinic_id,
+                        case_id=run.case_id,
+                        run_id=run.id,
+                        event_id=event_id,
+                        kind="scripted_clinic_turn",
+                        body=body.content,
+                        translation=None,
+                        source_version="scripted",
+                        evidence={"scripted": True},
+                    )
+                )
+                case.case_version += 1
+                return {"event_id": event_id, "status": run.status}
             if body.kind in {"resolve_callback", "resolve_clinical"}:
                 handoff = db.scalar(
                     select(StaffHandoff).where(StaffHandoff.run_id == run.id).with_for_update()
