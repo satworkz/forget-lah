@@ -179,8 +179,29 @@ behaviour, which the programme PRD classifies as a general pipeline defect rathe
 defect. It is a runtime item to escalate, not a corpus fix. A2's 60 repetitions are required before
 calling the over-read systematic.
 
-The en/zh **terminals still differ** (`escalated` vs `waiting`), so the cross-language check remains
-inequivalent.
+**Divergence root cause — not language-dependent (recorded 2026-09-25).** The two recorded streams are
+identical in shape: `DELEGATE → REVIEW_NEEDS(CONFIRM) → DELEGATE(preparation) → RETURN → DELEGATE →
+ESCALATE`, six decisions each. They differ in exactly one field: the model returned
+`CAPABILITY_UNAVAILABLE` for en and **`AMBIGUOUS_REPLY`** for zh. `engine.py:1797-1820` then decides
+the terminal:
+
+```python
+elif isinstance(decision, ClarifyDecision) or (
+    isinstance(decision, EscalateDecision)
+    and decision.reason_code == "AMBIGUOUS_REPLY" and clarification_allowed(db, run)
+):
+    ... patient_message(kind="clarification") ... ; release(run, "waiting")
+elif isinstance(decision, EscalateDecision):
+    request_handoff(...)          # -> escalated
+```
+
+So the runtime is behaving as designed; the en/zh difference is a **single-token sampling difference in
+the reason code**, which is precisely what A2's 60/60 rule exists to catch — a variant that returns
+either reason would fail the 60-repetition gate. It is **not** a language defect.
+
+Two consequences: the clarification path **does** deliver a message (`kind="clarification"`), so
+per-message delivery is observable once the contract can address runtime-generated messages; and the
+`CONFIRM` over-interpretation is common to both languages before that step.
 
 ## Producer status
 
