@@ -130,8 +130,10 @@ unrecorded `callback_requested` treated as `false`.
 **Historical note.** An earlier recording of this pair diverged on one token — en returned
 `CAPABILITY_UNAVAILABLE` and zh `AMBIGUOUS_REPLY`, and `engine.py:1797-1820` maps the latter to a
 clarification wait while any other reason becomes a handoff. That single-token sampling difference is
-exactly what A2's 60/60 rule exists to catch, and it no longer appears once the authored source is
-used.
+why a **rate** claim needs repetition rather than one run; it no longer appears once the authored source
+is used. Note the gate that applies here: A2's 60/60 rule is scoped to the **translation** path, while
+this conversation stratum follows the programme PRD's *one declared run per variant, reruns for
+diagnosis only*.
 
 **Delivery expectation — adjudicated as an oracle error (fixed).** Both archives had flagged
 `checkpoints[0].delivery.expected_message_delivery`. The schema documents that field as delivery
@@ -187,8 +189,10 @@ interpretation"*. This is now a **ruling**, recorded in `oracle_rubric.md` §4 W
 acknowledges receipt, and confirming attendance requires a clinic turn that asked for it. The corpus
 is right and the **runtime over-interprets an acknowledgement** — a shared, language-independent
 behaviour, which the programme PRD classifies as a general pipeline defect rather than a language
-defect. It is a runtime item to escalate, not a corpus fix. A2's 60 repetitions are required before
-calling the over-read systematic.
+defect. It is a runtime item to escalate, not a corpus fix. One run cannot establish that the over-read
+was systematic; a rate claim would need an evaluation-style repetition experiment, which is out of M2
+scope (A2's 60/60 gate is translation-scoped; this stratum uses one declared run plus diagnostic
+reruns).
 
 **Divergence root cause — not language-dependent (recorded 2026-09-25).** The two recorded streams are
 identical in shape: `DELEGATE → REVIEW_NEEDS(CONFIRM) → DELEGATE(preparation) → RETURN → DELEGATE →
@@ -207,8 +211,9 @@ elif isinstance(decision, EscalateDecision):
 ```
 
 So the runtime is behaving as designed; the en/zh difference is a **single-token sampling difference in
-the reason code**, which is precisely what A2's 60/60 rule exists to catch — a variant that returns
-either reason would fail the 60-repetition gate. It is **not** a language defect.
+the reason code**, which is why repetition — not a single run — is needed for any rate claim. It is
+**not** a language defect. (A2's 60/60 gate is translation-scoped; this stratum follows one declared run
+with diagnostic reruns.)
 
 Two consequences: the clarification path **does** deliver a message (`kind="clarification"`), so
 per-message delivery is observable once the contract can address runtime-generated messages; and the

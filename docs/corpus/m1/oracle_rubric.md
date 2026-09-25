@@ -72,8 +72,10 @@ interpretation and fails the `ambiguous_short_reply` stratum.
 **Fixed 2026-09-25.** `provider.py` now offers `CLARIFY` in the simulation review phase (the allowlist
 previously forced an intent and then an escalation), and the prompt defines `CONFIRM` as requiring a
 preceding clinic turn that asked for confirmation — a one-way reminder asks nothing. Both variants now
-grade **PASS (0 differences)** and remain cross-language equivalent. The A2 repetition requirement still
-applies to any future behavioural claim.
+grade **PASS (0 differences)** and remain cross-language equivalent. Scope note: A2's 60-repetition
+requirement governs the **translation** path; this conversation stratum follows the programme PRD's *one
+declared run per variant, reruns for diagnosis only*, so a rate claim would need an evaluation-style
+repetition experiment rather than these diagnostic reruns.
 
 **W3 — mid-thread language switch (English → Tamil) with no explicit request.**
 Wrong reading: record a lasting `preferred_language` change.
