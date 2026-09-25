@@ -4,28 +4,30 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
+import httpx
 import pytest
 from conftest import TEST_PASSWORD
 from fastapi.testclient import TestClient
 from sqlalchemy import select
-from test_runtime import event, source_tools, start
+from test_runtime import event, start
 
 from forget_lah.api import create_app
 from forget_lah.corpus.recording import RecordingModel, recording_document
 from forget_lah.corpus.replay import grade
-from forget_lah.corpus.runtime_fixtures import archive_record, write_archive
+from forget_lah.corpus.runtime_fixtures import archive_record, variant_tools, write_archive
 from forget_lah.corpus.runtime_mapping import (
     build_delivery,
     build_memory,
     observation_from_runtime,
 )
 from forget_lah.detector import detect
+from forget_lah.runtime.clinic_tools import ClinicTools
 from forget_lah.runtime.engine import claim_run, process_run
 from forget_lah.runtime.models import AgentRun, AgentStep
 from forget_lah.runtime.provider import AnthropicModel
 from forget_lah.settings import Settings
 from forget_lah.source import DEMO_CLINIC_ID, candidates_from_payload
-from services.mock_clinic.fixtures import candidates
+from services.mock_clinic.fixtures import candidates, followup_context
 
 ROOT = Path(__file__).resolve().parents[1]
 PILOT = ROOT / "corpus" / "development" / "pilot"
@@ -81,7 +83,7 @@ def live(store, monkeypatch):
         yield factory, client, settings
 
 
-def _drain_until_idle(runtime, model, *, seconds: int = 180) -> int:
+def _drain_until_idle(runtime, model, tools, *, seconds: int = 180) -> int:
     """Claim and process until nothing is queued/running, waiting out retry backoffs."""
     factory, _, settings = runtime
     deadline = time.monotonic() + seconds
@@ -89,7 +91,7 @@ def _drain_until_idle(runtime, model, *, seconds: int = 180) -> int:
     while time.monotonic() < deadline:
         claim = claim_run(factory)
         if claim is not None:
-            process_run(factory, settings, *claim, model=model, tools=source_tools())
+            process_run(factory, settings, *claim, model=model, tools=tools)
             processed += 1
             continue
         with factory() as db:
@@ -155,9 +157,15 @@ def test_record_a_live_decision_stream(live) -> None:
     factory, client, settings = live
     records: list[dict] = []
     recorder = RecordingModel(AnthropicModel(settings), records)
+    base_transport = httpx.MockTransport(
+        lambda request: httpx.Response(
+            200, json=followup_context(request.url.path.rstrip("/").rsplit("/", 1)[-1])
+        )
+    )
+    tools = ClinicTools("http://clinic", variant_tools(variant, base_transport))
 
     case_id, run_id = start(live)
-    _drain_until_idle(live, recorder)
+    _drain_until_idle(live, recorder, tools)
     # Walk the authored conversation in order: clinic turns are controlled inputs, patient turns are
     # executed and drained. Multi-turn families (language switching) therefore replay faithfully.
     for turn in variant["conversation"]:
@@ -175,7 +183,7 @@ def test_record_a_live_decision_stream(live) -> None:
                 break
             response = event(client, case_id, "demo_reply", turn["body"])
         assert response.status_code == 202, response.text
-        _drain_until_idle(live, recorder)
+        _drain_until_idle(live, recorder, tools)
 
     with factory() as db:
         run = db.get(AgentRun, run_id)

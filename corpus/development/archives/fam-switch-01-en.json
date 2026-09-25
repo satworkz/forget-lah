@@ -7,7 +7,7 @@
     "model_id": "claude-sonnet-4-5-20250929",
     "prompt_version": "1",
     "started_at": "2026-09-24T09:00:00+08:00",
-    "request_id": "074e39e2-a4c2-4209-8c36-e434587c8a39"
+    "request_id": "b608a898-b16f-415b-9088-e96476dd09dc"
   },
   "translation_status": "ok",
   "observed": {
@@ -36,9 +36,9 @@
           {
             "index": 0,
             "task_type": "QUESTION",
-            "outcome": "UNSUPPORTED",
-            "instruction_id": null,
-            "quote": null,
+            "outcome": "ANSWERED",
+            "instruction_id": "instr-fast",
+            "quote": "Do not eat or drink after midnight before the procedure.",
             "relation": null,
             "practical_issue": null,
             "dependency": null,
@@ -76,15 +76,9 @@
     "replay_version": "1",
     "variant_id": "fam-switch-01-en",
     "origin": "replay",
-    "grade": "FAILED",
+    "grade": "PASS",
     "unscored_reason": null,
     "hard_failures": [],
-    "differences": [
-      {
-        "path": "checkpoints[0].tasks",
-        "expected": "len 0",
-        "observed": "len 1"
-      }
-    ]
+    "differences": []
   }
 }

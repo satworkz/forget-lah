@@ -48,12 +48,11 @@ def test_archived_en_and_zh_diverge() -> None:
     assert not any(path.endswith("memory") for path in paths)
 
 
-def test_archived_switch_family_diverges_in_task_outcome() -> None:
-    """Recorded finding: the language-switch family agrees on the terminal but not the task outcome.
+def test_archived_switch_family_is_cross_language_equivalent() -> None:
+    """After the source-fixture fix, en and zh agree on terminal, task outcome and cited source.
 
-    Both en and zh reached `waiting` in 7 decisions, but en answered the preparation question with
-    UNSUPPORTED while zh answered from a clinic source note. Asserted so a fix flips this test
-    deliberately.
+    Both cited the authored `instr-fast`, so the earlier UNSUPPORTED vs ANSWERED divergence is gone.
+    Asserted so a regression flips this test deliberately.
     """
     en_path = ARCHIVES / "fam-switch-01-en.json"
     zh_path = ARCHIVES / "fam-switch-01-zh.json"
@@ -65,10 +64,9 @@ def test_archived_switch_family_diverges_in_task_outcome() -> None:
     assert (
         en["evidence"]["observed_run_status"] == zh["evidence"]["observed_run_status"] == "waiting"
     )
-    result = cross_language_equivalence(en["observed"], zh["observed"])
-    assert result["equivalent"] is False
-    paths = [difference["path"] for difference in result["differences"]]
-    assert any(".tasks[" in path for path in paths)
+    assert en["verdict"]["grade"] == zh["verdict"]["grade"] == "PASS"
+    assert cross_language_equivalence(en["observed"], zh["observed"])["equivalent"] is True
+    assert en["observed"]["checkpoint_oracle"][0]["tasks"][0]["instruction_id"] == "instr-fast"
 
 
 def test_archive_carries_truthful_provenance() -> None:

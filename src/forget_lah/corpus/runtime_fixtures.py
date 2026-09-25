@@ -56,6 +56,39 @@ def source_transport(
     return httpx.MockTransport(handler)
 
 
+def variant_tools(variant: Mapping[str, Any], fallback: httpx.MockTransport) -> httpx.MockTransport:
+    """Wrap a base source transport so `followup-context` carries the item's approved instructions.
+
+    Without this the runtime answers from the harness-default clinic note, so a cited
+    `instruction_id` is never the one the corpus authored.
+    """
+    fixtures = (variant.get("environment") or {}).get("fixtures") or {}
+    instructions = fixtures.get("approved_instructions") or []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        response = fallback.handle_request(request)
+        if (
+            not instructions
+            or response.status_code != 200
+            or "followup-context" not in request.url.path
+        ):
+            return response
+        payload = json.loads(response.content)
+        payload["instructions"] = [
+            {
+                "instruction_id": entry["instruction_id"],
+                "version": "1",
+                "locale": "en-SG",
+                "approved_text": entry["approved_text"],
+                "synthetic": True,
+            }
+            for entry in instructions
+        ][:5]
+        return httpx.Response(200, json=payload)
+
+    return httpx.MockTransport(handler)
+
+
 def source_run_provenance(
     variant: Mapping[str, Any],
     *,

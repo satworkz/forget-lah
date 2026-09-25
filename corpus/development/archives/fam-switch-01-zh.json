@@ -7,7 +7,7 @@
     "model_id": "claude-sonnet-4-5-20250929",
     "prompt_version": "1",
     "started_at": "2026-09-24T09:00:00+08:00",
-    "request_id": "ab5999e3-211b-4eab-aed7-28a101212bf9"
+    "request_id": "1ddeefb3-f722-418d-b8af-bb7be00db98e"
   },
   "translation_status": "ok",
   "observed": {
@@ -37,8 +37,8 @@
             "index": 0,
             "task_type": "QUESTION",
             "outcome": "ANSWERED",
-            "instruction_id": "DEMO-DENTAL-NOTE",
-            "quote": "Demo clinic note: bring your appointment confirmation.",
+            "instruction_id": "instr-fast",
+            "quote": "Do not eat or drink after midnight before the procedure.",
             "relation": null,
             "practical_issue": null,
             "dependency": null,
@@ -76,15 +76,9 @@
     "replay_version": "1",
     "variant_id": "fam-switch-01-zh",
     "origin": "replay",
-    "grade": "FAILED",
+    "grade": "PASS",
     "unscored_reason": null,
     "hard_failures": [],
-    "differences": [
-      {
-        "path": "checkpoints[0].tasks",
-        "expected": "len 0",
-        "observed": "len 1"
-      }
-    ]
+    "differences": []
   }
 }

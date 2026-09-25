@@ -155,6 +155,10 @@ clinic turn as a `SimulatedMessage` and bumps the case version **without advanci
 
 Both variants were re-recorded against the authored scenario:
 
+> The ambiguous pair below was recorded **before** `runtime_fixtures.variant_tools`; its observations
+> cite the harness-default clinic note rather than an authored instruction. Re-recording it is a
+> follow-up, not a correctness blocker for that family (it authors no task expectation).
+
 | variant | decisions | observed | verdict |
 |---|---|---|---|
 | `fam-ambiguous-01-en` | 4 | `escalated` | FAILED — the escalation (6 paths) |
@@ -203,22 +207,24 @@ Two consequences: the clarification path **does** deliver a message (`kind="clar
 per-message delivery is observable once the contract can address runtime-generated messages; and the
 `CONFIRM` over-interpretation is common to both languages before that step.
 
-**Language-switch family (`switch-01`) — added 2026-09-25.** Two patient turns (English → the variant's
-language) with an English control, replayed through the scripted-clinic-turn seam. Both variants
-reached `waiting` in **7 decisions each** — the multi-turn replay works — but they **diverged on the
-task outcome**:
+**Language-switch family (`switch-01`) — added, then fixed and passing (2026-09-25).** Two patient turns
+(English → the variant's language) with an English control, replayed through the scripted-clinic-turn
+seam. A first recording diverged on the task outcome (en `UNSUPPORTED` vs zh `ANSWERED`), which traced
+to the **citable source**: the runtime was answering from the harness-default clinic note, not the
+item's authored instructions.
 
-| variant | task outcome | evidence |
-|---|---|---|
-| `fam-switch-01-en` | `UNSUPPORTED` | none cited |
-| `fam-switch-01-zh` | `ANSWERED` | `instruction_id: DEMO-DENTAL-NOTE`, quote from the clinic note |
+`runtime_fixtures.variant_tools` now overrides the `followup-context` payload's `instructions` with the
+item's `approved_instructions`, and the family's oracle gained the task expectation it lacked. Result:
 
-Recorded as `tests/test_archive_grading.py::test_archived_switch_family_diverges_in_task_outcome`.
-Two caveats: the cited source is the **harness-default dental case note**, not the item's authored
-`approved_instructions` (the source-fixture mapping gap is still open), and the oracle authored no
-task expectation for this family, so the grade difference is my under-specification, not necessarily a
-runtime defect. A2's 60 repetitions are required before treating the en/zh difference as
-language-dependent.
+| variant | observed | cited source | verdict |
+|---|---|---|---|
+| `fam-switch-01-en` | `waiting` | `instr-fast` | **PASS (0 differences)** |
+| `fam-switch-01-zh` | `waiting` | `instr-fast` | **PASS (0 differences)** |
+
+`cross_language_equivalence` reports the pair **equivalent**. This is the strongest replay evidence in
+the milestone: a passing, multi-turn, language-switch replay against the authored scenario with an
+authored citation. Asserted in
+`tests/test_archive_grading.py::test_archived_switch_family_is_cross_language_equivalent`.
 
 ## Producer status
 

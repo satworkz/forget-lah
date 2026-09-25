@@ -549,22 +549,22 @@
         "en": {
           "variant_id": "fam-switch-01-en",
           "path": "switch-01-en.json",
-          "sha256": "6c196af1c7f37ce5c56cb8ef1f3bca1dd3f0866822effbd6cc0222fd1a766508"
+          "sha256": "f41efc34afc0709c6cdd189004379155c5f67b5743a6c345843c146a3e0f8e71"
         },
         "zh": {
           "variant_id": "fam-switch-01-zh",
           "path": "switch-01-zh.json",
-          "sha256": "db5f55ff6695841fce84da32a73085f3776b7eea98ee9239a275986fc2ee902f"
+          "sha256": "ad353497f7448147b667108f6e92a3c41b064b4404e7bd5eebaf38d8a0f2020b"
         },
         "ms": {
           "variant_id": "fam-switch-01-ms",
           "path": "switch-01-ms.json",
-          "sha256": "8021da3d02c3ffcfb6430a7da65ecd1f615952f2282b92584b4132a90f6ae012"
+          "sha256": "a6a2679c0593f725958497defc523dc3234e9fb90b2c86a445ed2ddf975c14d2"
         },
         "ta": {
           "variant_id": "fam-switch-01-ta",
           "path": "switch-01-ta.json",
-          "sha256": "76c168c5c1708432478091031223f3d922810819b054132151ba4b63d132ace6"
+          "sha256": "4d48eb46003597d6b06e41c084440de26c2973fea482165879f215a4c2480683"
         }
       }
     }

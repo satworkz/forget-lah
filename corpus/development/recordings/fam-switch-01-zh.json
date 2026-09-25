@@ -5,67 +5,67 @@
   "runtime_commit": null,
   "records": [
     {
-      "request_id": "9e34bf68-ab85-4ebc-9cef-479e2c1e68f7",
+      "request_id": "75e4a766-7924-4940-89ed-bb319075ed37",
       "repair": false,
-      "observation_sha256": "d6b5f32c83c9ae62b308bf70e273d7bf91df4582a087ba8c6919d6fb5a287979",
-      "reply_text": "{\"request_id\":\"9e34bf68-ab85-4ebc-9cef-479e2c1e68f7\",\"expected_case_version\":3,\"reason_code\":\"FOLLOWUP_REVIEW_REQUIRED\",\"step_type\":\"DELEGATE\",\"target\":\"engagement\",\"goal\":\"Review recall-overdue dental case context and determine next steps given no patient contact capability.\"}",
-      "input_tokens": 2257,
-      "output_tokens": 92,
-      "latency_ms": 2684
+      "observation_sha256": "55be3713e5136a005f723c3653b542daf56ff34467ee25553fbf3da2d0dec6e7",
+      "reply_text": "{\"request_id\":\"75e4a766-7924-4940-89ed-bb319075ed37\",\"expected_case_version\":3,\"reason_code\":\"FOLLOWUP_REVIEW_REQUIRED\",\"step_type\":\"DELEGATE\",\"target\":\"engagement\",\"goal\":\"Review recall-overdue dental case with no contact/booking capability; assess source status and patient context.\"}",
+      "input_tokens": 2256,
+      "output_tokens": 89,
+      "latency_ms": 4671
     },
     {
-      "request_id": "cea6742b-d9e8-4b68-ba66-7070aa167e7c",
+      "request_id": "c92260ff-a68a-4865-945b-ccd662847724",
       "repair": false,
-      "observation_sha256": "e41211611a7bbd6d393530374567f71a9d5b2ed1aaa6b68108321072ad9bf3ad",
-      "reply_text": "{\"request_id\":\"cea6742b-d9e8-4b68-ba66-7070aa167e7c\",\"expected_case_version\":7,\"reason_code\":\"PATIENT_NEEDS_REVIEWED\",\"preparation_plans\":[],\"patient_questions\":[\"What should I bring with me on the day?\"],\"step_type\":\"REVIEW_NEEDS\",\"reply_event_id\":\"0b0def02-f8d7-46aa-902f-e614f6ce1c2d\",\"updates\":[],\"appointment_intent\":\"UNSPECIFIED\",\"appointment_request_quote\":null,\"attendance_qualification\":null}",
-      "input_tokens": 3618,
-      "output_tokens": 150,
-      "latency_ms": 9132
+      "observation_sha256": "ab9819b9ddce8db5e38e33e227ffc6758c2bad6c73b3f7a0939607f4fc04335c",
+      "reply_text": "{\"request_id\":\"c92260ff-a68a-4865-945b-ccd662847724\",\"expected_case_version\":7,\"reason_code\":\"PATIENT_NEEDS_REVIEWED\",\"preparation_plans\":[],\"patient_questions\":[\"What should I bring with me on the day?\"],\"step_type\":\"REVIEW_NEEDS\",\"reply_event_id\":\"89fb1fe1-a327-4b27-83fb-f6f5de8a5761\",\"updates\":[],\"appointment_intent\":\"UNSPECIFIED\",\"appointment_request_quote\":null,\"attendance_qualification\":null,\"question\":null,\"comprehension_quote\":null,\"concern_quote\":null}",
+      "input_tokens": 3610,
+      "output_tokens": 162,
+      "latency_ms": 8564
     },
     {
-      "request_id": "3df9b084-b55b-4b75-9515-6b636087d330",
+      "request_id": "adb902c7-aa57-491c-9b5d-d97f174d2ce4",
       "repair": false,
-      "observation_sha256": "73715e739256ca6b89afb767b9f7bc2d0debe1302b0f115247806247c2abaf45",
-      "reply_text": "{\"request_id\":\"3df9b084-b55b-4b75-9515-6b636087d330\",\"expected_case_version\":8,\"reason_code\":\"PREPARATION_REVIEW_REQUIRED\",\"step_type\":\"DELEGATE\",\"target\":\"preparation\",\"goal\":\"What should I bring with me on the day?\"}",
+      "observation_sha256": "95b4b2b0f116bf6ae1b963b637d7914da5c6844e85384d4d52ba346ab1669f58",
+      "reply_text": "{\"request_id\":\"adb902c7-aa57-491c-9b5d-d97f174d2ce4\",\"expected_case_version\":8,\"reason_code\":\"PREPARATION_REVIEW_REQUIRED\",\"step_type\":\"DELEGATE\",\"target\":\"preparation\",\"goal\":\"What should I bring with me on the day?\"}",
+      "input_tokens": 3560,
+      "output_tokens": 82,
+      "latency_ms": 3047
+    },
+    {
+      "request_id": "d23eedc9-d549-4131-9859-bac6c0db2c79",
+      "repair": false,
+      "observation_sha256": "db23a18b1fb58678cc3b5fe845bb80cb22e58efa492e877ca7600e0871487e4f",
+      "reply_text": "{\"request_id\":\"d23eedc9-d549-4131-9859-bac6c0db2c79\",\"expected_case_version\":11,\"reason_code\":\"SPECIALIST_REVIEW_FINISHED\",\"scheduling_review\":[{\"instruction_id\":\"instr-prep\",\"quote\":\"Please arrive ten minutes early and bring your medication list.\",\"effect\":\"INFORMATION\",\"date_from\":null,\"date_to\":null,\"condition_quote\":null,\"patient_question\":null,\"if_not_met\":null,\"consequence_quote\":null},{\"instruction_id\":\"instr-fast\",\"quote\":\"Do not eat or drink after midnight before the procedure.\",\"effect\":\"INFORMATION\",\"date_from\":null,\"date_to\":null,\"condition_quote\":null,\"patient_question\":null,\"if_not_met\":null,\"consequence_quote\":null},{\"instruction_id\":\"instr-loc\",\"quote\":\"All appointments are at the main clinic, 12 Example Road.\",\"effect\":\"INFORMATION\",\"date_from\":null,\"date_to\":null,\"condition_quote\":null,\"patient_question\":null,\"if_not_met\":null,\"consequence_quote\":null}],\"question_answers\":[{\"question_index\":0,\"outcome\":\"ANSWERED\",\"instruction_id\":\"instr-prep\",\"quote\":\"bring your medication list\",\"relation\":null,\"practical_issue\":null,\"dependency\":null,\"actions\":[]}],\"step_type\":\"RETURN\",\"evidence_ids\":[\"9123c0f2-a3c7-424e-9c71-ea5f1181818c\",\"8ac23fdc-fbc8-4b3d-af33-465fcb16e18f\"]}",
+      "input_tokens": 4196,
+      "output_tokens": 388,
+      "latency_ms": 5178
+    },
+    {
+      "request_id": "ad7cae0c-7d01-40d4-a98e-39faf7893c4a",
+      "repair": false,
+      "observation_sha256": "bd1b041e07db40df70702ca1d2693b06f5a4490a3e0705c49cede6bb24f03a66",
+      "reply_text": "{\"request_id\":\"ad7cae0c-7d01-40d4-a98e-39faf7893c4a\",\"expected_case_version\":14,\"reason_code\":\"PATIENT_NEEDS_REVIEWED\",\"preparation_plans\":[],\"patient_questions\":[\"\\u660e\\u767d\\u4e86\\u3002\\u90a3\\u6211\\u9700\\u8981\\u7a7a\\u8179\\u5417\\uff1f\"],\"step_type\":\"REVIEW_NEEDS\",\"reply_event_id\":\"1d2cc403-f85c-4435-8e1d-97f08b0900e8\",\"updates\":[],\"appointment_intent\":\"UNSPECIFIED\",\"appointment_request_quote\":null,\"attendance_qualification\":null,\"question\":null,\"comprehension_quote\":null,\"concern_quote\":null}",
+      "input_tokens": 3616,
+      "output_tokens": 174,
+      "latency_ms": 10096
+    },
+    {
+      "request_id": "4da16e80-8165-44f2-886e-d665f5e335d5",
+      "repair": false,
+      "observation_sha256": "2f36d902bf4e73a704fe3b1a436e303efe41026db92266d81e0e3594eed505bc",
+      "reply_text": "{\"request_id\":\"4da16e80-8165-44f2-886e-d665f5e335d5\",\"expected_case_version\":15,\"reason_code\":\"PREPARATION_REVIEW_REQUIRED\",\"step_type\":\"DELEGATE\",\"target\":\"preparation\",\"goal\":\"Answer patient question about fasting requirement: \\u660e\\u767d\\u4e86\\u3002\\u90a3\\u6211\\u9700\\u8981\\u7a7a\\u8179\\u5417\\uff1f\"}",
       "input_tokens": 3562,
-      "output_tokens": 80,
-      "latency_ms": 2297
+      "output_tokens": 95,
+      "latency_ms": 2727
     },
     {
-      "request_id": "922ac242-f4b9-430e-b234-26033e42a203",
+      "request_id": "ca631840-4f1f-449f-a9d0-1c5e3345b670",
       "repair": false,
-      "observation_sha256": "9c1d493fbb585c6a04e8a79124860f18dcdd8b9eeba8a7a1699f01d1095e8b9f",
-      "reply_text": "{\"request_id\":\"922ac242-f4b9-430e-b234-26033e42a203\",\"expected_case_version\":11,\"reason_code\":\"SPECIALIST_REVIEW_FINISHED\",\"scheduling_review\":[{\"instruction_id\":\"DEMO-DENTAL-NOTE\",\"quote\":\"Demo clinic note: bring your appointment confirmation.\",\"effect\":\"INFORMATION\",\"date_from\":null,\"date_to\":null,\"condition_quote\":null,\"patient_question\":null,\"if_not_met\":null,\"consequence_quote\":null}],\"question_answers\":[{\"question_index\":0,\"outcome\":\"ANSWERED\",\"instruction_id\":\"DEMO-DENTAL-NOTE\",\"quote\":\"bring your appointment confirmation.\",\"relation\":null,\"practical_issue\":null,\"dependency\":null,\"actions\":[]}],\"step_type\":\"RETURN\",\"evidence_ids\":[\"95e67f76-f9e8-4d35-9cfe-c7bc23284a92\",\"c842d585-1df7-4f5f-bff9-4a1bfc420dce\"]}",
-      "input_tokens": 4112,
-      "output_tokens": 253,
-      "latency_ms": 6313
-    },
-    {
-      "request_id": "829c15dc-6505-4a13-b6ec-f771e88d24ea",
-      "repair": false,
-      "observation_sha256": "ebfc4b62f63c2867593eb0adaccb13a992a2946f750c5280c4dbfd909a56f86a",
-      "reply_text": "{\"request_id\":\"829c15dc-6505-4a13-b6ec-f771e88d24ea\",\"expected_case_version\":14,\"reason_code\":\"PATIENT_NEEDS_REVIEWED\",\"preparation_plans\":[],\"patient_questions\":[\"\\u660e\\u767d\\u4e86\\u3002\\u90a3\\u6211\\u9700\\u8981\\u7a7a\\u8179\\u5417\\uff1f\"],\"step_type\":\"REVIEW_NEEDS\",\"reply_event_id\":\"039feea2-392f-4747-b354-ca6fd2b13246\",\"updates\":[],\"appointment_intent\":\"UNSPECIFIED\",\"appointment_request_quote\":null,\"attendance_qualification\":null,\"question\":null,\"comprehension_quote\":null,\"concern_quote\":null}",
-      "input_tokens": 3592,
-      "output_tokens": 165,
-      "latency_ms": 8682
-    },
-    {
-      "request_id": "91423f12-85c1-4479-9d55-a62537856e7c",
-      "repair": false,
-      "observation_sha256": "4d554ae58e2c7f6d89a1372aa8b1f3ceff5baf5a0d076d1819c4b64870e4fba5",
-      "reply_text": "{\"request_id\":\"91423f12-85c1-4479-9d55-a62537856e7c\",\"expected_case_version\":15,\"reason_code\":\"PREPARATION_REVIEW_REQUIRED\",\"step_type\":\"DELEGATE\",\"target\":\"preparation\",\"goal\":\"Answer patient question about fasting requirement: \\u660e\\u767d\\u4e86\\u3002\\u90a3\\u6211\\u9700\\u8981\\u7a7a\\u8179\\u5417\\uff1f\"}",
-      "input_tokens": 3541,
-      "output_tokens": 94,
-      "latency_ms": 6802
-    },
-    {
-      "request_id": "6c81c70d-00e0-4d05-b47e-bb76828072ea",
-      "repair": false,
-      "observation_sha256": "7bff02fc69b1e97cb6248a65848f8e90bb039a1d38aee8d3a045c28611dfaa02",
-      "reply_text": "{\"request_id\":\"6c81c70d-00e0-4d05-b47e-bb76828072ea\",\"expected_case_version\":18,\"reason_code\":\"SPECIALIST_REVIEW_FINISHED\",\"scheduling_review\":[{\"instruction_id\":\"DEMO-DENTAL-NOTE\",\"quote\":\"Demo clinic note: bring your appointment confirmation.\",\"effect\":\"INFORMATION\",\"date_from\":null,\"date_to\":null,\"condition_quote\":null,\"patient_question\":null,\"if_not_met\":null,\"consequence_quote\":null}],\"question_answers\":[{\"question_index\":0,\"outcome\":\"ANSWERED\",\"instruction_id\":\"DEMO-DENTAL-NOTE\",\"quote\":\"Demo clinic note: bring your appointment confirmation.\",\"relation\":null,\"practical_issue\":null,\"dependency\":null,\"actions\":[]}],\"step_type\":\"RETURN\",\"evidence_ids\":[\"5a6d4e4b-c172-47f3-a3cf-2a0db905ad26\",\"676e7af2-3868-4e09-a29f-5d84fce6b108\"]}",
-      "input_tokens": 4126,
-      "output_tokens": 260,
-      "latency_ms": 4089
+      "observation_sha256": "8d3f83aa332f2e0bc2879281a1c77021d97d001a3a101eb75dec7a974e981387",
+      "reply_text": "{\"request_id\":\"ca631840-4f1f-449f-a9d0-1c5e3345b670\",\"expected_case_version\":18,\"reason_code\":\"SPECIALIST_REVIEW_FINISHED\",\"scheduling_review\":[{\"instruction_id\":\"instr-prep\",\"quote\":\"Please arrive ten minutes early and bring your medication list.\",\"effect\":\"INFORMATION\",\"date_from\":null,\"date_to\":null,\"condition_quote\":null,\"patient_question\":null,\"if_not_met\":null,\"consequence_quote\":null},{\"instruction_id\":\"instr-fast\",\"quote\":\"Do not eat or drink after midnight before the procedure.\",\"effect\":\"INFORMATION\",\"date_from\":null,\"date_to\":null,\"condition_quote\":null,\"patient_question\":null,\"if_not_met\":null,\"consequence_quote\":null},{\"instruction_id\":\"instr-loc\",\"quote\":\"All appointments are at the main clinic, 12 Example Road.\",\"effect\":\"INFORMATION\",\"date_from\":null,\"date_to\":null,\"condition_quote\":null,\"patient_question\":null,\"if_not_met\":null,\"consequence_quote\":null}],\"question_answers\":[{\"question_index\":0,\"outcome\":\"ANSWERED\",\"instruction_id\":\"instr-fast\",\"quote\":\"Do not eat or drink after midnight before the procedure.\",\"relation\":null,\"practical_issue\":null,\"dependency\":null,\"actions\":[]}],\"step_type\":\"RETURN\",\"evidence_ids\":[\"81f863bb-baa1-42ec-82c7-a0333148498c\",\"289346b0-6b13-46ac-bf85-3168b29aaa60\"]}",
+      "input_tokens": 4205,
+      "output_tokens": 388,
+      "latency_ms": 7879
     }
   ],
   "run_status": "waiting",

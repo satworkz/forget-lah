@@ -637,6 +637,14 @@ SCENARIOS = [
         },
         meaning="Asks an answerable preparation question in English.",
         intent="UNSPECIFIED",
+        tasks=[
+            {
+                "task_type": "QUESTION",
+                "outcome": "ANSWERED",
+                "instruction_id": "instr-fast",
+                "quote": "after midnight",
+            }
+        ],
         switch={
             "turn_id": "t4",
             "step_type": "INTERPRET_INSTRUCTION_CHECK",

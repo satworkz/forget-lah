@@ -150,7 +150,15 @@
     {
       "after_turn_id": "t4",
       "appointment_intent": "UNSPECIFIED",
-      "tasks": [],
+      "tasks": [
+        {
+          "index": 0,
+          "task_type": "QUESTION",
+          "outcome": "ANSWERED",
+          "instruction_id": "instr-fast",
+          "quote": "after midnight"
+        }
+      ],
       "instruction_checks": [],
       "memory": [],
       "callback_requested": false,
@@ -211,6 +219,6 @@
   "integrity": {
     "generation_seed": 1082,
     "replay_seed": 2082,
-    "content_hash": "28852df2c7294e5c8a47e8cec82cf6bb8a5e24763de8e801533cf68897dcef8e"
+    "content_hash": "f42f96c11d5332a42239737720322e3fbb761b64d73d571844a2243ef87200a7"
   }
 }
