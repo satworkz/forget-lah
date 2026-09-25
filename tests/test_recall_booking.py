@@ -106,7 +106,7 @@ def test_model_interpretation_drives_selection_instead_of_phrase_matching(
     drain(runtime, tools=tools, model=Interpreter())
     result = view(runtime[1], case_id)
     if invalid_field:
-        assert result["run"]["status"] == "paused"
+        assert result["run"]["status"] == "escalated"
         assert result["steps"][-1]["policy"]["decision"] == "DENY"
         assert source_count(source_engine) == 0
         return
@@ -387,7 +387,7 @@ def test_reply_cannot_be_ignored_by_waiting_again(simulated_runtime):
 
     drain(runtime, tools=tools, model=IgnoreReply())
     done = view(runtime[1], case_id)
-    assert done["run"]["status"] == "paused"
+    assert done["run"]["status"] == "escalated"
     assert done["steps"][-1]["policy"]["reason_codes"] == ["PATIENT_REPLY_ALREADY_AVAILABLE"]
 
 

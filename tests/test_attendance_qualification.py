@@ -216,7 +216,7 @@ def test_attendance_qualification_requires_exact_patient_quote(simulated_runtime
         ),
     )
     result = view(runtime[1], case)
-    assert result["run"]["status"] == "paused"
+    assert result["run"]["status"] == "escalated"
     assert source_count(source_engine) == 0
 
 

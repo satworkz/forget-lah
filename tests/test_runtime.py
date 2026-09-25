@@ -177,7 +177,8 @@ def test_gateway_blocks_unsupported_clinical_proposal_even_if_model_ignores_sche
     assert last["policy"]["decision"] == "DENY"
     assert last["policy"]["risk"] != "RED"
     assert last["policy"]["reason_codes"] == ["CLINICAL_ESCALATION_REQUIRES_STAFF_FLAG"]
-    assert result["run"]["status"] == "paused" and result["handoff"] is None
+    assert result["run"]["status"] == "escalated"
+    assert result["handoff"]["risk"] == "AMBER"
 
 
 def test_clinical_concern_is_a_rule_and_never_waits_for_model(runtime):
@@ -488,7 +489,7 @@ def test_invalid_model_output_repairs_once_then_pauses_without_raw_text(runtime)
     drain(runtime, model=model)
     result = view(client, case_id)
     assert model.calls == 2
-    assert result["run"]["status"] == "paused"
+    assert result["run"]["status"] == "escalated"
     assert result["steps"][-1]["attempts"] == 2
     assert "untrusted secret" not in json.dumps(result)
     failures = result["steps"][-1]["validation_failures"]
@@ -877,7 +878,7 @@ def test_case_journey_denial_does_not_claim_tool_executed(runtime):
 
     drain(runtime, model=WrongTool())
     data = journey(client, case_id)
-    assert data["current"]["status"] == "paused"
+    assert data["current"]["status"] == "escalated"
     step = next(e for e in data["entries"] if e["kind"] == "decision" and e["origin"] == "mock")
     assert "blocked" in step["summary"]
     assert not any(x["title"] == "Actual tool result" for x in step["stages"])

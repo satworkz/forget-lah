@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     def translation_configured(self) -> bool:
         return (
             self.multilingual_enabled
-            and self.agent_model_mode == "anthropic"
+            and self.agent_model_mode in {"anthropic", "organiser"}
             and self.model_configured
         )
 

@@ -13,6 +13,7 @@ from forget_lah.channel import channel_tick
 from forget_lah.db import AuditEvent, FollowupCase, Job, make_engine, session_factory, uid, utcnow
 from forget_lah.detector import detect
 from forget_lah.runtime.engine import claim_run, process_run
+from forget_lah.runtime.failures import recover_paused_failures
 from forget_lah.runtime.startup import queue_case_review, queue_ready_reviews
 from forget_lah.settings import Settings
 from forget_lah.source import DEMO_CLINIC_ID, read_candidates
@@ -119,6 +120,7 @@ def worker_tasks(factory, settings):
         if now < next_control:
             return False
         next_control = now + 1
+        recover_paused_failures(factory, settings)
         if now >= next_detection:
             next_detection = now + settings.source_poll_interval_seconds
             try:

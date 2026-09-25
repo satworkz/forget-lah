@@ -169,7 +169,7 @@ def test_attendance_interpretation_rejects_foreign_binding(simulated_runtime, fi
 
     drain(runtime, tools=tools, model=Forged())
     result = view(runtime[1], case_id)
-    assert result["run"]["status"] == "paused"
+    assert result["run"]["status"] == "escalated"
     assert result["steps"][-1]["policy"]["decision"] == "DENY"
     assert source_count(source_engine) == 0
 
@@ -196,13 +196,15 @@ def test_successful_reads_are_not_offered_again_and_gateway_blocks_repetition(si
 
     drain(runtime, model=RepeatRead(), tools=tools)
     result = view(runtime[1], case_id)
-    assert result["run"]["status"] == "paused"
+    assert result["run"]["status"] == "escalated"
     assert result["steps"][-1]["policy"]["reason_codes"] == ["READ_EVIDENCE_ALREADY_AVAILABLE"]
     assert sum(bool(s["tool_result"]) for s in result["steps"]) == 1
 
 
 @pytest.mark.parametrize("pause_code", ["ROLE_BUDGET_EXHAUSTED", "MODEL_REQUEST_TOO_LARGE"])
-def test_role_budget_recovery_preserves_receipt_and_specialists(simulated_runtime, pause_code):
+def test_role_budget_failure_handoff_preserves_receipt_and_specialists(
+    simulated_runtime, pause_code
+):
     runtime, tools, _, source_engine = simulated_runtime
     case_id, run_id = start(runtime, "myopia")
     drain(runtime, tools=tools)
@@ -223,19 +225,29 @@ def test_role_budget_recovery_preserves_receipt_and_specialists(simulated_runtim
     assert source_count(source_engine) == 1
     with runtime[0]() as db:
         checkpoint = dict(db.get(AgentRun, run_id).checkpoint)
-    assert event(runtime[1], case_id, "retry").status_code == 202
-    with runtime[0]() as db:
-        resumed = db.get(AgentRun, run_id)
-        assert resumed.checkpoint["latest_event"] == checkpoint["latest_event"]
-        assert resumed.checkpoint["returned_specialists"] == checkpoint["returned_specialists"]
-        assert resumed.step_count == before["run"]["step_count"]
+    assert event(runtime[1], case_id, "retry").status_code == 409
     drain(runtime, tools=tools)
     after = view(runtime[1], case_id)
-    assert after["run"]["status"] == "completed"
-    assert after["run"]["step_count"] == before["run"]["step_count"] + 2
+    assert after["run"]["status"] == "escalated"
+    assert after["handoff"]["reason_code"] == "AUTOMATION_REVIEW_REQUIRED"
+    assert after["run"]["step_count"] == before["run"]["step_count"]
     assert after["run"]["step_limit"] == before["run"]["step_limit"] == runtime[2].agent_max_steps
     assert source_count(source_engine) == 1
-    assert after["steps"][: len(before["steps"])] == before["steps"]
+    assert after["steps"] == before["steps"]
+    with runtime[0]() as db:
+        held = db.get(AgentRun, run_id)
+        assert held.checkpoint["latest_event"] == checkpoint["latest_event"]
+        assert held.checkpoint["returned_specialists"] == checkpoint["returned_specialists"]
+    assert (
+        len(
+            [
+                m
+                for m in after["patient_simulator"]["messages"]
+                if m["kind"] == "failure_acknowledgement"
+            ]
+        )
+        == 1
+    )
 
 
 @pytest.mark.parametrize("specialty", ["dental", "myopia", "antenatal"])
@@ -422,8 +434,12 @@ def test_unclear_negative_or_rescheduling_reply_never_writes(simulated_runtime, 
     assert result["run"]["status"] == "escalated" and result["handoff"]["risk"] == "AMBER"
     assert source_count(source_engine) == 0
     messages = result["patient_simulator"]["messages"]
-    assert all(m["kind"] in {"reminder", "options"} for m in messages)
-    if len(messages) > 1:
+    assert all(m["kind"] in {"reminder", "options", "failure_acknowledgement"} for m in messages)
+    for message in messages:
+        if message["kind"] == "failure_acknowledgement":
+            assert message["evidence"]["staff_review_requested"] is True
+            assert "appointment has been changed" not in message["body"]
+    if messages[-1]["kind"] == "options":
         assert "no alternative slots" in messages[-1]["body"]
         assert "slots are available now" not in messages[-1]["body"]
         assert result["handoff"]["reason_code"] == "NO_AVAILABLE_SLOTS"
@@ -505,7 +521,7 @@ def test_forged_completion_is_denied(simulated_runtime):
 
     drain(runtime, tools=tools, model=Forged())
     result = view(runtime[1], case_id)
-    assert result["run"]["status"] == "paused"
+    assert result["run"]["status"] == "escalated"
     assert result["steps"][-1]["policy"]["decision"] == "DENY"
     assert source_count(source_engine) == 0
 

@@ -318,7 +318,7 @@ def test_rich_scan_answer_filters_dates_through_booking(simulated_runtime, mode,
     result = view(runtime[1], case)
     assert source_count(source_engine) == 0
     if mode == "bypass":
-        assert result["run"]["status"] == "paused"
+        assert result["run"]["status"] == "escalated"
         assert result["steps"][-1]["policy"]["reason_codes"] == [
             "INSTRUCTION_ANSWER_CONSTRAINTS_REQUIRED"
         ]
@@ -409,7 +409,7 @@ def test_scan_answer_typography_preserves_source_and_rejects_changed_words(
     assert result["events"][-1]["content"] == reply
     assert source_count(source_engine) == 0
     if fabricated:
-        assert result["run"]["status"] == "paused"
+        assert result["run"]["status"] == "escalated"
         assert step["policy"]["reason_codes"] == ["INSTRUCTION_CHECK_ANSWER_NOT_IN_REPLY"]
     else:
         assert step["decision"]["answer_quote"] == reply.split(" Can you")[0]

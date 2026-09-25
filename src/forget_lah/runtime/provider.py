@@ -93,18 +93,7 @@ def post_model_json(settings, url, payload, headers, transport=None):
                         "MODEL_RATE_LIMITED" if code == 429 else "MODEL_UNAVAILABLE", True, delay
                     )
                 if code != 200:
-                    error_body = response.read().decode("utf-8", errors="replace")
-                    try:
-                        error_payload = json.loads(error_body)
-                        error = error_payload.get("error", {})
-                        error_type = error.get("type", "unknown")
-                        error_message = str(error.get("message", ""))[:1000]
-                    except (ValueError, TypeError, AttributeError):
-                        error_type = "unknown"
-                        error_message = ""
-                    print(
-                        f"MODEL_HTTP_ERROR status={code} type={error_type} message={error_message}"
-                    )
+                    print(f"MODEL_HTTP_ERROR status={code}")
                     raise ModelError("MODEL_HTTP_ERROR")
                 data = bytearray()
                 for chunk in response.iter_bytes():
@@ -945,6 +934,9 @@ class OrganiserModel:
         self.settings, self.transport = settings, transport
 
     def decide(self, observation: dict, *, repair=False) -> ModelReply:
+        return self.complete(prompt_for(observation, repair))
+
+    def complete(self, prompt: str, *, max_tokens=512) -> ModelReply:
         url = self.settings.llm_gateway_url.rstrip("/")
         parsed = urlsplit(url)
         key = self.settings.llm_gateway_api_key
@@ -964,9 +956,9 @@ class OrganiserModel:
         payload = {
             "model": self.settings.llm_model,
             # The starter kit notes system prompts may be overridden at the gateway.
-            "messages": [{"role": "user", "content": prompt_for(observation, repair)}],
+            "messages": [{"role": "user", "content": prompt}],
             "stream": False,
-            "options": {"temperature": 0, "num_predict": 512},
+            "options": {"temperature": 0, "num_predict": max_tokens},
         }
         result, latency = post_model_json(
             self.settings,
@@ -993,6 +985,28 @@ class OrganiserModel:
             raise ModelError("MODEL_CONNECTION_FAILED", True) from exc
         except (ValueError, TypeError, AttributeError) as exc:
             raise ModelError("MODEL_ENVELOPE_INVALID") from exc
+
+
+def organiser_json(settings, *, system, context, schema, max_tokens=1024, transport=None):
+    """Text-only structured output; callers retain their typed/evidence validation."""
+    prompt = (
+        system
+        + "\nReturn only a JSON object, without markdown.\nSCHEMA="
+        + json.dumps(schema, separators=(",", ":"), ensure_ascii=False)
+        + "\nDATA="
+        + json.dumps(context, separators=(",", ":"), ensure_ascii=False)
+    )
+    reply = OrganiserModel(settings, transport).complete(prompt, max_tokens=max_tokens)
+    text = reply.text.strip()
+    if text.startswith("```json\n") and text.endswith("\n```"):
+        text = text[8:-4]
+    try:
+        parsed = json.loads(text, object_pairs_hook=unique_object, parse_constant=reject_constant)
+        if not isinstance(parsed, dict):
+            raise ValueError()
+        return parsed
+    except (ValueError, TypeError) as exc:
+        raise ModelError("MODEL_SCHEMA_INVALID") from exc
 
 
 def selected_option(text):

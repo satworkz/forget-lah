@@ -77,7 +77,7 @@ def test_unreviewed_or_forged_notes_cannot_authorize_offer(simulated_runtime, fa
     bound = (datetime.now(UTC) + timedelta(days=10)).date().isoformat()
     drain(runtime, tools=tools, model=ReviewedModel(bound, fault))
     result = view(runtime[1], case)
-    assert result["run"]["status"] == "paused"
+    assert result["run"]["status"] == "escalated"
     assert not any(m["kind"] == "options" for m in result["patient_simulator"]["messages"])
     assert source_count(engine) == 0
 

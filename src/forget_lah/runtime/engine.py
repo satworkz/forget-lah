@@ -2119,6 +2119,22 @@ def store_proposal(factory, settings, run_id, token, step_id, reply):
                 step.status = "rejected"
                 pause(run, "MODEL_SCHEMA_INVALID")
             return None
+        if isinstance(decision, DelegateDecision):
+            reason = (
+                "PREPARATION_REVIEW_REQUIRED"
+                if decision.target == "preparation"
+                else "FOLLOWUP_REVIEW_REQUIRED"
+            )
+            if decision.reason_code != reason:
+                step.observation = {
+                    **step.observation,
+                    "delegation_reason_correction": {
+                        "original_proposal": decision.model_dump(),
+                        "corrected_reason": reason,
+                        "origin": "rule",
+                    },
+                }
+                decision = decision.model_copy(update={"reason_code": reason})
         step.decision = decision.model_dump()
         step.error_code = None
         step.policy = policy_for(db, run, case, step, decision)
@@ -2385,7 +2401,7 @@ def execute_pending_tool(factory, settings, run_id, token, step_id, tools):
         return True
 
 
-def process_run(factory, settings, run_id, token, *, model=None, tools=None):
+def _process_run(factory, settings, run_id, token, *, model=None, tools=None):
     work = prepare_step(factory, settings, run_id, token)
     if work is None:
         return False
@@ -2416,3 +2432,17 @@ def process_run(factory, settings, run_id, token, *, model=None, tools=None):
         if tool_name is None:
             return True
     return execute_pending_tool(factory, settings, run_id, token, work["step_id"], tools)
+
+
+def process_run(factory, settings, run_id, token, *, model=None, tools=None):
+    from forget_lah.runtime.failures import escalate_failure
+
+    try:
+        result = _process_run(factory, settings, run_id, token, model=model, tools=tools)
+    except Exception:
+        # Fresh transaction; never log an exception body containing patient data.
+        # If persistence is unavailable, let the supervised worker retry recovery.
+        escalate_failure(factory, settings, run_id, unexpected_token=token)
+        return False
+    escalate_failure(factory, settings, run_id)
+    return result
