@@ -203,6 +203,23 @@ Two consequences: the clarification path **does** deliver a message (`kind="clar
 per-message delivery is observable once the contract can address runtime-generated messages; and the
 `CONFIRM` over-interpretation is common to both languages before that step.
 
+**Language-switch family (`switch-01`) — added 2026-09-25.** Two patient turns (English → the variant's
+language) with an English control, replayed through the scripted-clinic-turn seam. Both variants
+reached `waiting` in **7 decisions each** — the multi-turn replay works — but they **diverged on the
+task outcome**:
+
+| variant | task outcome | evidence |
+|---|---|---|
+| `fam-switch-01-en` | `UNSUPPORTED` | none cited |
+| `fam-switch-01-zh` | `ANSWERED` | `instruction_id: DEMO-DENTAL-NOTE`, quote from the clinic note |
+
+Recorded as `tests/test_archive_grading.py::test_archived_switch_family_diverges_in_task_outcome`.
+Two caveats: the cited source is the **harness-default dental case note**, not the item's authored
+`approved_instructions` (the source-fixture mapping gap is still open), and the oracle authored no
+task expectation for this family, so the grade difference is my under-specification, not necessarily a
+runtime defect. A2's 60 repetitions are required before treating the en/zh difference as
+language-dependent.
+
 ## Producer status
 
 The producer is built and exercised end-to-end by `tests/test_archive_producer.py`: it freezes the

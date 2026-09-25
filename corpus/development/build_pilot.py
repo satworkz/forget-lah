@@ -102,6 +102,8 @@ def _scenario(
     unscored_reason: str | None = None,
     contact_permission: str = "allowed",
     tags: list[str] | None = None,
+    switch: dict[str, Any] | None = None,
+    first_patient_language: str | None = None,
 ) -> dict[str, Any]:
     return {
         "slug": slug,
@@ -130,6 +132,8 @@ def _scenario(
         "unscored_reason": unscored_reason,
         "contact_permission": contact_permission,
         "tags": tags or [stratum],
+        "switch": switch,
+        "first_patient_language": first_patient_language,
     }
 
 
@@ -619,6 +623,37 @@ SCENARIOS = [
         wait_reason="AWAITING_PATIENT_REPLY",
         tags=["ambiguous-short-reply", "history-dependent"],
     ),
+    _scenario(
+        slug="switch-01",
+        stratum="questions",
+        clinic_kind="reminder",
+        clinic_turn="t1_reminder",
+        step_type="REVIEW_NEEDS",
+        patient={
+            "en": "What should I bring with me on the day?",
+            "zh": "What should I bring with me on the day?",
+            "ms": "What should I bring with me on the day?",
+            "ta": "What should I bring with me on the day?",
+        },
+        meaning="Asks an answerable preparation question in English.",
+        intent="UNSPECIFIED",
+        switch={
+            "turn_id": "t4",
+            "step_type": "INTERPRET_INSTRUCTION_CHECK",
+            "clinic_kind": "doctor_instruction_check",
+            "clinic_turn": "t1_instruction",
+            "patient": {
+                "en": "Understood. And do I need to fast?",
+                "zh": "明白了。那我需要空腹吗？",
+                "ms": "Faham. Perlukah saya berpuasa?",
+                "ta": "புரிந்தது. நான் உண்ணாவிரதம் இருக்க வேண்டுமா?",
+            },
+            "meaning": "Continues in the switched language and asks about fasting.",
+        },
+        wait_reason="AWAITING_PATIENT_REPLY",
+        tags=["language-switch", "questions"],
+        first_patient_language="en",
+    ),
 ]
 
 
@@ -626,6 +661,8 @@ def _build_item(scenario: dict[str, Any], language: str, index: int) -> dict[str
     slug = scenario["slug"]
     family_id = f"fam-{slug}"
     clinic_body = CLINIC[scenario["clinic_turn"]]
+    switch = scenario.get("switch")
+    last_patient_turn = switch["turn_id"] if switch else "t2"
     memory: list[dict[str, Any]] = []
     for entry in scenario["memory"]:
         rendered = {
@@ -642,7 +679,7 @@ def _build_item(scenario: dict[str, Any], language: str, index: int) -> dict[str
 
     tasks = [{"index": position, **task} for position, task in enumerate(scenario["tasks"])]
     checkpoint: dict[str, Any] = {
-        "after_turn_id": "t2",
+        "after_turn_id": last_patient_turn,
         "appointment_intent": scenario["intent"],
         "tasks": tasks,
         "instruction_checks": [],
@@ -675,6 +712,48 @@ def _build_item(scenario: dict[str, Any], language: str, index: int) -> dict[str
             }
         ]
 
+    conversation: list[dict[str, Any]] = [
+        {
+            "turn_id": "t1",
+            "origin": "history",
+            "speaker": "clinic",
+            "clinic_turn_kind": scenario["clinic_kind"],
+            "body": clinic_body,
+            "language_tag": "en",
+        },
+        {
+            "turn_id": "t2",
+            "origin": "replay",
+            "speaker": "patient",
+            "expected_step_type": scenario["step_type"],
+            "body": scenario["patient"][language],
+            "language_tag": scenario.get("first_patient_language") or LANGUAGE_TAG[language],
+        },
+    ]
+    meanings = [{"turn_id": "t2", "intended_meaning": scenario["meaning"]}]
+    if switch:
+        conversation.extend(
+            [
+                {
+                    "turn_id": "t3",
+                    "origin": "history",
+                    "speaker": "clinic",
+                    "clinic_turn_kind": switch["clinic_kind"],
+                    "body": CLINIC[switch["clinic_turn"]],
+                    "language_tag": "en",
+                },
+                {
+                    "turn_id": switch["turn_id"],
+                    "origin": "replay",
+                    "speaker": "patient",
+                    "expected_step_type": switch["step_type"],
+                    "body": switch["patient"][language],
+                    "language_tag": LANGUAGE_TAG[language],
+                },
+            ]
+        )
+        meanings.append({"turn_id": switch["turn_id"], "intended_meaning": switch["meaning"]})
+
     item: dict[str, Any] = {
         "corpus_version": "1",
         "identity": {
@@ -706,28 +785,9 @@ def _build_item(scenario: dict[str, Any], language: str, index: int) -> dict[str
             "contact_permission": scenario["contact_permission"],
             "memory": [],
         },
-        "conversation": [
-            {
-                "turn_id": "t1",
-                "origin": "history",
-                "speaker": "clinic",
-                "clinic_turn_kind": scenario["clinic_kind"],
-                "body": clinic_body,
-                "language_tag": "en",
-            },
-            {
-                "turn_id": "t2",
-                "origin": "replay",
-                "speaker": "patient",
-                "expected_step_type": scenario["step_type"],
-                "body": scenario["patient"][language],
-                "language_tag": LANGUAGE_TAG[language],
-            },
-        ],
+        "conversation": conversation,
         "meaning_contract": {
-            "intended_meaning_by_turn": [
-                {"turn_id": "t2", "intended_meaning": scenario["meaning"]}
-            ],
+            "intended_meaning_by_turn": meanings,
             "unresolved_ambiguity": [],
             "must_not_infer": ["must not invent availability", "must not make a source write"],
         },

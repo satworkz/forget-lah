@@ -540,10 +540,37 @@
           "sha256": "d982e08e1973763b7445d49c5b7bc147d598ec0ed7b99235d0168e1d125b7f9e"
         }
       }
+    },
+    "fam-switch-01": {
+      "scenario_id": "scn-switch-01",
+      "primary_stratum": "questions",
+      "split": "development",
+      "variants": {
+        "en": {
+          "variant_id": "fam-switch-01-en",
+          "path": "switch-01-en.json",
+          "sha256": "6c196af1c7f37ce5c56cb8ef1f3bca1dd3f0866822effbd6cc0222fd1a766508"
+        },
+        "zh": {
+          "variant_id": "fam-switch-01-zh",
+          "path": "switch-01-zh.json",
+          "sha256": "db5f55ff6695841fce84da32a73085f3776b7eea98ee9239a275986fc2ee902f"
+        },
+        "ms": {
+          "variant_id": "fam-switch-01-ms",
+          "path": "switch-01-ms.json",
+          "sha256": "8021da3d02c3ffcfb6430a7da65ecd1f615952f2282b92584b4132a90f6ae012"
+        },
+        "ta": {
+          "variant_id": "fam-switch-01-ta",
+          "path": "switch-01-ta.json",
+          "sha256": "76c168c5c1708432478091031223f3d922810819b054132151ba4b63d132ace6"
+        }
+      }
     }
   },
   "counts": {
-    "families": 20,
-    "variants": 80
+    "families": 21,
+    "variants": 84
   }
 }

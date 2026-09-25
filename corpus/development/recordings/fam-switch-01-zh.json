@@ -1,0 +1,143 @@
+{
+  "recording_version": "1",
+  "variant_id": "fam-switch-01-zh",
+  "model_id": "claude-sonnet-4-5-20250929",
+  "runtime_commit": null,
+  "records": [
+    {
+      "request_id": "9e34bf68-ab85-4ebc-9cef-479e2c1e68f7",
+      "repair": false,
+      "observation_sha256": "d6b5f32c83c9ae62b308bf70e273d7bf91df4582a087ba8c6919d6fb5a287979",
+      "reply_text": "{\"request_id\":\"9e34bf68-ab85-4ebc-9cef-479e2c1e68f7\",\"expected_case_version\":3,\"reason_code\":\"FOLLOWUP_REVIEW_REQUIRED\",\"step_type\":\"DELEGATE\",\"target\":\"engagement\",\"goal\":\"Review recall-overdue dental case context and determine next steps given no patient contact capability.\"}",
+      "input_tokens": 2257,
+      "output_tokens": 92,
+      "latency_ms": 2684
+    },
+    {
+      "request_id": "cea6742b-d9e8-4b68-ba66-7070aa167e7c",
+      "repair": false,
+      "observation_sha256": "e41211611a7bbd6d393530374567f71a9d5b2ed1aaa6b68108321072ad9bf3ad",
+      "reply_text": "{\"request_id\":\"cea6742b-d9e8-4b68-ba66-7070aa167e7c\",\"expected_case_version\":7,\"reason_code\":\"PATIENT_NEEDS_REVIEWED\",\"preparation_plans\":[],\"patient_questions\":[\"What should I bring with me on the day?\"],\"step_type\":\"REVIEW_NEEDS\",\"reply_event_id\":\"0b0def02-f8d7-46aa-902f-e614f6ce1c2d\",\"updates\":[],\"appointment_intent\":\"UNSPECIFIED\",\"appointment_request_quote\":null,\"attendance_qualification\":null}",
+      "input_tokens": 3618,
+      "output_tokens": 150,
+      "latency_ms": 9132
+    },
+    {
+      "request_id": "3df9b084-b55b-4b75-9515-6b636087d330",
+      "repair": false,
+      "observation_sha256": "73715e739256ca6b89afb767b9f7bc2d0debe1302b0f115247806247c2abaf45",
+      "reply_text": "{\"request_id\":\"3df9b084-b55b-4b75-9515-6b636087d330\",\"expected_case_version\":8,\"reason_code\":\"PREPARATION_REVIEW_REQUIRED\",\"step_type\":\"DELEGATE\",\"target\":\"preparation\",\"goal\":\"What should I bring with me on the day?\"}",
+      "input_tokens": 3562,
+      "output_tokens": 80,
+      "latency_ms": 2297
+    },
+    {
+      "request_id": "922ac242-f4b9-430e-b234-26033e42a203",
+      "repair": false,
+      "observation_sha256": "9c1d493fbb585c6a04e8a79124860f18dcdd8b9eeba8a7a1699f01d1095e8b9f",
+      "reply_text": "{\"request_id\":\"922ac242-f4b9-430e-b234-26033e42a203\",\"expected_case_version\":11,\"reason_code\":\"SPECIALIST_REVIEW_FINISHED\",\"scheduling_review\":[{\"instruction_id\":\"DEMO-DENTAL-NOTE\",\"quote\":\"Demo clinic note: bring your appointment confirmation.\",\"effect\":\"INFORMATION\",\"date_from\":null,\"date_to\":null,\"condition_quote\":null,\"patient_question\":null,\"if_not_met\":null,\"consequence_quote\":null}],\"question_answers\":[{\"question_index\":0,\"outcome\":\"ANSWERED\",\"instruction_id\":\"DEMO-DENTAL-NOTE\",\"quote\":\"bring your appointment confirmation.\",\"relation\":null,\"practical_issue\":null,\"dependency\":null,\"actions\":[]}],\"step_type\":\"RETURN\",\"evidence_ids\":[\"95e67f76-f9e8-4d35-9cfe-c7bc23284a92\",\"c842d585-1df7-4f5f-bff9-4a1bfc420dce\"]}",
+      "input_tokens": 4112,
+      "output_tokens": 253,
+      "latency_ms": 6313
+    },
+    {
+      "request_id": "829c15dc-6505-4a13-b6ec-f771e88d24ea",
+      "repair": false,
+      "observation_sha256": "ebfc4b62f63c2867593eb0adaccb13a992a2946f750c5280c4dbfd909a56f86a",
+      "reply_text": "{\"request_id\":\"829c15dc-6505-4a13-b6ec-f771e88d24ea\",\"expected_case_version\":14,\"reason_code\":\"PATIENT_NEEDS_REVIEWED\",\"preparation_plans\":[],\"patient_questions\":[\"\\u660e\\u767d\\u4e86\\u3002\\u90a3\\u6211\\u9700\\u8981\\u7a7a\\u8179\\u5417\\uff1f\"],\"step_type\":\"REVIEW_NEEDS\",\"reply_event_id\":\"039feea2-392f-4747-b354-ca6fd2b13246\",\"updates\":[],\"appointment_intent\":\"UNSPECIFIED\",\"appointment_request_quote\":null,\"attendance_qualification\":null,\"question\":null,\"comprehension_quote\":null,\"concern_quote\":null}",
+      "input_tokens": 3592,
+      "output_tokens": 165,
+      "latency_ms": 8682
+    },
+    {
+      "request_id": "91423f12-85c1-4479-9d55-a62537856e7c",
+      "repair": false,
+      "observation_sha256": "4d554ae58e2c7f6d89a1372aa8b1f3ceff5baf5a0d076d1819c4b64870e4fba5",
+      "reply_text": "{\"request_id\":\"91423f12-85c1-4479-9d55-a62537856e7c\",\"expected_case_version\":15,\"reason_code\":\"PREPARATION_REVIEW_REQUIRED\",\"step_type\":\"DELEGATE\",\"target\":\"preparation\",\"goal\":\"Answer patient question about fasting requirement: \\u660e\\u767d\\u4e86\\u3002\\u90a3\\u6211\\u9700\\u8981\\u7a7a\\u8179\\u5417\\uff1f\"}",
+      "input_tokens": 3541,
+      "output_tokens": 94,
+      "latency_ms": 6802
+    },
+    {
+      "request_id": "6c81c70d-00e0-4d05-b47e-bb76828072ea",
+      "repair": false,
+      "observation_sha256": "7bff02fc69b1e97cb6248a65848f8e90bb039a1d38aee8d3a045c28611dfaa02",
+      "reply_text": "{\"request_id\":\"6c81c70d-00e0-4d05-b47e-bb76828072ea\",\"expected_case_version\":18,\"reason_code\":\"SPECIALIST_REVIEW_FINISHED\",\"scheduling_review\":[{\"instruction_id\":\"DEMO-DENTAL-NOTE\",\"quote\":\"Demo clinic note: bring your appointment confirmation.\",\"effect\":\"INFORMATION\",\"date_from\":null,\"date_to\":null,\"condition_quote\":null,\"patient_question\":null,\"if_not_met\":null,\"consequence_quote\":null}],\"question_answers\":[{\"question_index\":0,\"outcome\":\"ANSWERED\",\"instruction_id\":\"DEMO-DENTAL-NOTE\",\"quote\":\"Demo clinic note: bring your appointment confirmation.\",\"relation\":null,\"practical_issue\":null,\"dependency\":null,\"actions\":[]}],\"step_type\":\"RETURN\",\"evidence_ids\":[\"5a6d4e4b-c172-47f3-a3cf-2a0db905ad26\",\"676e7af2-3868-4e09-a29f-5d84fce6b108\"]}",
+      "input_tokens": 4126,
+      "output_tokens": 260,
+      "latency_ms": 4089
+    }
+  ],
+  "run_status": "waiting",
+  "run_diagnostics": {
+    "available_at": null,
+    "lease_until": null,
+    "steps": [
+      [
+        "completed",
+        null,
+        0
+      ],
+      [
+        "completed",
+        null,
+        1
+      ],
+      [
+        "completed",
+        null,
+        0
+      ],
+      [
+        "completed",
+        null,
+        1
+      ],
+      [
+        "completed",
+        null,
+        2
+      ],
+      [
+        "completed",
+        null,
+        0
+      ],
+      [
+        "completed",
+        null,
+        0
+      ],
+      [
+        "completed",
+        null,
+        1
+      ],
+      [
+        "completed",
+        null,
+        1
+      ],
+      [
+        "completed",
+        null,
+        2
+      ],
+      [
+        "completed",
+        null,
+        0
+      ],
+      [
+        "completed",
+        null,
+        0
+      ],
+      [
+        "completed",
+        null,
+        1
+      ]
+    ]
+  }
+}

@@ -62,8 +62,10 @@ semantically matching English control (register markers may include `code_switch
 
 ## Delivery status
 
-Both tranches are emitted: **20 families / 80 variants** — family A and family B of every stratum —
-produced by `corpus/development/build_pilot.py` and validated by the contract suite.
+Both tranches are emitted, plus the language-switch family:
+**21 families / 84 variants** — family A and family B of every stratum, plus `switch-01` (two patient
+turns: English → the variant's language, with an English control) — produced by
+`corpus/development/build_pilot.py` and validated by the contract suite.
 
 Still not claimable by authoring alone: **human review per language** and the **replay
 demonstration** (no execution harness exists). M2 is therefore *authored, not accepted*.

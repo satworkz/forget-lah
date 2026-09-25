@@ -158,22 +158,24 @@ def test_record_a_live_decision_stream(live) -> None:
 
     case_id, run_id = start(live)
     _drain_until_idle(live, recorder)
-    # Controlled input: replay the item's authored clinic turns into the case history before the
-    # patient reply, so the model sees the scenario it is meant to interpret.
+    # Walk the authored conversation in order: clinic turns are controlled inputs, patient turns are
+    # executed and drained. Multi-turn families (language switching) therefore replay faithfully.
     for turn in variant["conversation"]:
-        if turn.get("origin") == "history" and turn.get("speaker") == "clinic":
+        if turn["speaker"] == "clinic":
             assert event(client, case_id, "scripted_clinic_turn", turn["body"]).status_code in {
                 200,
                 202,
             }
-    patient_text = variant["conversation"][-1]["body"]
-    response = event(client, case_id, "demo_reply", patient_text)
-    for _ in range(3):
-        if response.status_code == 202:
-            break
-        response = event(client, case_id, "demo_reply", patient_text)
-    assert response.status_code == 202, response.text
-    _drain_until_idle(live, recorder)
+            continue
+        if turn.get("origin") != "replay":
+            continue
+        response = event(client, case_id, "demo_reply", turn["body"])
+        for _ in range(3):
+            if response.status_code == 202:
+                break
+            response = event(client, case_id, "demo_reply", turn["body"])
+        assert response.status_code == 202, response.text
+        _drain_until_idle(live, recorder)
 
     with factory() as db:
         run = db.get(AgentRun, run_id)
@@ -218,6 +220,7 @@ def test_record_a_live_decision_stream(live) -> None:
         variant,
         checkpoint=checkpoint,
         terminal=_terminal(run_status, checkpoint),
+        after_turn_id=variant["checkpoint_oracle"][0]["after_turn_id"],
         memory_updates=build_memory(updates),
         delivery={
             "expected_block": None,

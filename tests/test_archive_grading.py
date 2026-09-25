@@ -48,6 +48,29 @@ def test_archived_en_and_zh_diverge() -> None:
     assert not any(path.endswith("memory") for path in paths)
 
 
+def test_archived_switch_family_diverges_in_task_outcome() -> None:
+    """Recorded finding: the language-switch family agrees on the terminal but not the task outcome.
+
+    Both en and zh reached `waiting` in 7 decisions, but en answered the preparation question with
+    UNSUPPORTED while zh answered from a clinic source note. Asserted so a fix flips this test
+    deliberately.
+    """
+    en_path = ARCHIVES / "fam-switch-01-en.json"
+    zh_path = ARCHIVES / "fam-switch-01-zh.json"
+    if not (en_path.exists() and zh_path.exists()):
+        pytest.skip("need both switch-family archives")
+    en = json.loads(en_path.read_text())
+    zh = json.loads(zh_path.read_text())
+
+    assert (
+        en["evidence"]["observed_run_status"] == zh["evidence"]["observed_run_status"] == "waiting"
+    )
+    result = cross_language_equivalence(en["observed"], zh["observed"])
+    assert result["equivalent"] is False
+    paths = [difference["path"] for difference in result["differences"]]
+    assert any(".tasks[" in path for path in paths)
+
+
 def test_archive_carries_truthful_provenance() -> None:
     path = ARCHIVES / f"{VARIANT}.json"
     if not path.exists():
