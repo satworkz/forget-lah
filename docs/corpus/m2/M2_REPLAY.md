@@ -99,32 +99,35 @@ The archive producer reuses the runtime test apparatus rather than reimplementin
 
 ## Recorded findings (2026-09-25)
 
-Two real archives exist for the ambiguous family, both graded from captured observations:
+Two real archives exist for the ambiguous family, both graded from captured observations and both
+re-recorded with the authored source (`variant_tools`):
 
 | variant | model | decisions | observed | verdict |
 |---|---|---|---|---|
-| `fam-ambiguous-01-en` | `claude-sonnet-4-5-20250929` | 5 | `escalated` | FAILED (6 paths — the escalation) |
-| `fam-ambiguous-01-zh` | `claude-sonnet-4-5-20250929` | 2 | `waiting` | **PASS (0 paths)** |
+| `fam-ambiguous-01-en` | `claude-sonnet-4-5-20250929` | 7 | `escalated` | FAILED (7 paths) |
+| `fam-ambiguous-01-zh` | `claude-sonnet-4-5-20250929` | 8 | `escalated` | FAILED (7 paths — identical set) |
 
-**Cross-language divergence (investigated).** `cross_language_equivalence` reports the two variants as
-**not equivalent**. Reading the recorded decisions gives a different verdict for each difference:
+**Cross-language equivalence — resolved.** The earlier en-escalated / zh-waited divergence was a
+**harness-default-source artefact**, not a language defect: before `variant_tools` the runtime answered
+and escalated from the default clinic note. With the authored instructions served, the pair is
+**equivalent** (`cross_language_equivalence` → `True`) and both fail on the *same* paths. The remaining
+failure is shared and language-independent:
 
-1. **zh memory — resolved: permitted and no longer graded.** `replay` now normalises two
-   non-deciding differences before comparing: a **visit-scoped `preferred_language` whose value equals
-   the variant's own language** (D2 comprehension repair — permitted, not required), and an
-   **unrecorded `callback_requested` treated as `false`** (the runtime stores no negative callback).
-   zh fell from 3 differing paths to **1**; en from 8 to **7**.
-2. **en escalation — inconclusive: the run did not use the authored scenario.** The recorded decisions
-   are `DELEGATE → REVIEW_NEEDS(UNSPECIFIED, updates: []) → TOOL READ_SOURCE → DELEGATE → ESCALATE`
-   with reason **`CAPABILITY_UNAVAILABLE`**. But the harness injects only the **patient reply text**:
-   the clinic history and source data come from the runtime's *default detected case* (`start()`
-   selects by specialty), the item's `conversation` is never injected, and its `source_api` is empty.
-   The model therefore never saw the authored ambiguous scenario, so the escalation cannot be
-   attributed to the runtime, the model or the oracle. **Ruling: inconclusive — implement the
-   item→case/conversation/source mapping, then repeat (A2: 60 runs) before any behavioural claim.**
-3. **Trajectory length differs by language for the same scenario** — 5 decisions (en) vs 2 (zh).
-   Sampling variance of this kind is exactly why A2 requires 60 predeclared repetitions and 60/60
-   passes rather than one run per variant.
+- both over-interpret a bare acknowledgement as `CONFIRM` (ruled in `oracle_rubric.md` W2b), and
+- both escalate rather than clarify.
+
+Asserted in
+`tests/test_archive_grading.py::test_archived_ambiguous_family_is_cross_language_equivalent`.
+
+**Normalisation retained.** `replay` still normalises two non-deciding differences: a visit-scoped
+`preferred_language` whose value equals the variant's own language (D2 comprehension repair), and an
+unrecorded `callback_requested` treated as `false`.
+
+**Historical note.** An earlier recording of this pair diverged on one token — en returned
+`CAPABILITY_UNAVAILABLE` and zh `AMBIGUOUS_REPLY`, and `engine.py:1797-1820` maps the latter to a
+clarification wait while any other reason becomes a handoff. That single-token sampling difference is
+exactly what A2's 60/60 rule exists to catch, and it no longer appears once the authored source is
+used.
 
 **Delivery expectation — adjudicated as an oracle error (fixed).** Both archives had flagged
 `checkpoints[0].delivery.expected_message_delivery`. The schema documents that field as delivery

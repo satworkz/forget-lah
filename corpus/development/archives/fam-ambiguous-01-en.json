@@ -7,7 +7,7 @@
     "model_id": "claude-sonnet-4-5-20250929",
     "prompt_version": "1",
     "started_at": "2026-09-24T09:00:00+08:00",
-    "request_id": "466c78f3-5335-493f-971c-2171ff0386ff"
+    "request_id": "792f108a-5449-4bab-a5ad-354b8872677b"
   },
   "translation_status": "ok",
   "observed": {
@@ -56,7 +56,7 @@
   },
   "evidence": {
     "recording": "fam-ambiguous-01-en.json",
-    "recorded_decisions": 6,
+    "recorded_decisions": 7,
     "observed_run_status": "escalated"
   },
   "verdict": {

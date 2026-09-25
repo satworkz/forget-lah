@@ -26,12 +26,11 @@ def test_archived_observation_regrades_deterministically() -> None:
     assert verdict["grade"] in {"PASS", "FAILED", "UNSCORED"}
 
 
-def test_archived_en_and_zh_diverge() -> None:
-    """Recorded finding: the en and zh variants of the ambiguous family do NOT match.
+def test_archived_ambiguous_family_is_cross_language_equivalent() -> None:
+    """With the authored source, en and zh agree — and both fail identically on the CONFIRM over-read.
 
-    en escalated where the oracle expects waiting; zh waited but recorded a memory update the oracle
-    did not author. The divergence is asserted (not skipped) so a future fix flips this test
-    deliberately.
+    The earlier en-escalated/zh-waited divergence disappeared once `variant_tools` served the item's
+    authored instructions; it was a harness-default-source artefact, not a language defect.
     """
     en_path = ARCHIVES / "fam-ambiguous-01-en.json"
     zh_path = ARCHIVES / "fam-ambiguous-01-zh.json"
@@ -40,12 +39,11 @@ def test_archived_en_and_zh_diverge() -> None:
     en = json.loads(en_path.read_text())
     zh = json.loads(zh_path.read_text())
 
-    result = cross_language_equivalence(en["observed"], zh["observed"])
-    assert result["equivalent"] is False
-    paths = [difference["path"] for difference in result["differences"]]
-    assert any(path.startswith("terminal") for path in paths)
-    # The visit-only language update D2 permits is no longer reported as a difference.
-    assert not any(path.endswith("memory") for path in paths)
+    assert en["verdict"]["grade"] == zh["verdict"]["grade"] == "FAILED"
+    assert cross_language_equivalence(en["observed"], zh["observed"])["equivalent"] is True
+    en_paths = {difference["path"] for difference in en["verdict"]["differences"]}
+    zh_paths = {difference["path"] for difference in zh["verdict"]["differences"]}
+    assert en_paths == zh_paths, "both languages must fail on the same paths"
 
 
 def test_archived_switch_family_is_cross_language_equivalent() -> None:

@@ -7,7 +7,7 @@
     "model_id": "claude-sonnet-4-5-20250929",
     "prompt_version": "1",
     "started_at": "2026-09-24T09:00:00+08:00",
-    "request_id": "2fe5d005-c5f7-42d6-9506-12fa3fa7cad3"
+    "request_id": "c34cc9a4-6842-45d6-b0e8-758c3f9c7281"
   },
   "translation_status": "ok",
   "observed": {
@@ -44,7 +44,7 @@
           }
         ],
         "callback_requested": null,
-        "wait_reason": "AWAITING_PATIENT_REPLY",
+        "wait_reason": null,
         "delivery": {
           "expected_block": null,
           "effective_language": "zh",
@@ -53,10 +53,9 @@
       }
     ],
     "terminal_oracle": {
-      "kind": "waiting",
-      "run_status": "waiting",
-      "wait_reason": "AWAITING_PATIENT_REPLY",
-      "intended": true
+      "kind": "escalated",
+      "run_status": "escalated",
+      "outcome": null
     },
     "scoring": {
       "scored": true,
@@ -65,8 +64,8 @@
   },
   "evidence": {
     "recording": "fam-ambiguous-01-zh.json",
-    "recorded_decisions": 6,
-    "observed_run_status": "waiting"
+    "recorded_decisions": 8,
+    "observed_run_status": "escalated"
   },
   "verdict": {
     "replay_version": "1",
@@ -80,6 +79,36 @@
         "path": "checkpoints[0].appointment_intent",
         "expected": "UNSPECIFIED",
         "observed": "CONFIRM"
+      },
+      {
+        "path": "checkpoints[0].wait_reason",
+        "expected": "AWAITING_PATIENT_REPLY",
+        "observed": null
+      },
+      {
+        "path": "terminal.intended",
+        "expected": true,
+        "observed": "<absent>"
+      },
+      {
+        "path": "terminal.kind",
+        "expected": "waiting",
+        "observed": "escalated"
+      },
+      {
+        "path": "terminal.outcome",
+        "expected": "<absent>",
+        "observed": null
+      },
+      {
+        "path": "terminal.run_status",
+        "expected": "waiting",
+        "observed": "escalated"
+      },
+      {
+        "path": "terminal.wait_reason",
+        "expected": "AWAITING_PATIENT_REPLY",
+        "observed": "<absent>"
       }
     ]
   }
