@@ -91,6 +91,15 @@ def create_app(settings: Settings | None = None, engine=None, bridge_analyzer=No
     )
     limiter = LoginLimiter()
 
+    async def unexpected_error(request: Request, exc: Exception):
+        # An unbound HTTP failure is not authority to send a patient message.
+        return JSONResponse(
+            {
+                "detail": "Unable to complete this request. Please try again or contact clinic staff."
+            },
+            status_code=500,
+        )
+
     @app.exception_handler(SQLAlchemyError)
     async def database_error(request: Request, exc: SQLAlchemyError):
         # Driver errors may embed identifiers or bound values. Do not echo or log them.
@@ -133,6 +142,17 @@ def create_app(settings: Settings | None = None, engine=None, bridge_analyzer=No
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["X-Frame-Options"] = "DENY"
         return response
+
+    @app.middleware("http")
+    async def safe_error_boundary(request: Request, call_next):
+        try:
+            return await call_next(request)
+        except Exception as exc:
+            # Catch before ServerErrorMiddleware can log raw exception values.
+            response = await unexpected_error(request, exc)
+            response.headers["Cache-Control"] = "no-store"
+            response.headers["X-Content-Type-Options"] = "nosniff"
+            return response
 
     def authorise(db, request):
         identity = session_principal(db, request.cookies.get("forget_lah_session"))

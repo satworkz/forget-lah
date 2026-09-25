@@ -285,8 +285,8 @@ def test_historical_tasks_repair_once_without_mutating_evidence(
     assert step["validation_failures"][0]["proposal"]["preparation_plans"] == [
         "I will go for a movie"
     ]
-    assert result["handoff"] is None
     if repair_succeeds:
+        assert result["handoff"] is None
         assert step["status"] == "completed"
         assert step["decision"]["appointment_intent"] == "CONFIRM"
         assert step["decision"]["preparation_plans"] == []
@@ -294,6 +294,7 @@ def test_historical_tasks_repair_once_without_mutating_evidence(
         from test_patient_simulation import source_count
 
         assert result["run"]["pause_reason"] == "MODEL_EVIDENCE_INVALID"
+        assert result["handoff"]["reason_code"] == "AUTOMATION_REVIEW_REQUIRED"
         assert source_count(simulated_runtime[3]) == 0
 
 

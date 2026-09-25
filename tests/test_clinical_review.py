@@ -51,7 +51,7 @@ def test_gateway_rejects_attendance_as_symptom_even_if_model_ignores_schema(simu
 
     drain(runtime, tools=tools, model=BadQuote())
     result = view(runtime[1], case_id)
-    assert result["handoff"] is None
+    assert result["handoff"]["reason_code"] == "AUTOMATION_REVIEW_REQUIRED"
     assert result["steps"][-1]["policy"]["reason_codes"] == [
         "ADMINISTRATIVE_TEXT_IS_NOT_SYMPTOM_EVIDENCE"
     ]
@@ -144,7 +144,7 @@ def test_clinical_report_requires_patient_evidence(simulated_runtime, invalid):
     event(runtime[1], case_id, "demo_reply", REPLY).raise_for_status()
     drain(runtime, tools=tools, model=ClinicalModel(invalid))
     result = view(runtime[1], case_id)
-    assert result["run"]["status"] == "paused"
-    assert result["handoff"] is None
+    assert result["run"]["status"] == "escalated"
+    assert result["handoff"]["reason_code"] == "AUTOMATION_REVIEW_REQUIRED"
     assert result["steps"][-1]["policy"]["decision"] == "DENY"
     assert source_count(source_engine) == 0

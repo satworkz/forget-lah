@@ -60,7 +60,12 @@ def translate_staff_one(factory, settings, *, translator=translate):
         event.staff_translation = claim
     try:
         body = translator(settings, original, "en")
-        result = {"language": "en", "status": "ready", "body": body, "provider": "anthropic"}
+        result = {
+            "language": "en",
+            "status": "ready",
+            "body": body,
+            "provider": settings.agent_model_mode,
+        }
     except ModelError as exc:
         result = {"language": "en", "status": "failed", "error": exc.code}
     with factory.begin() as db:

@@ -569,3 +569,53 @@ def test_parallel_agents_process_different_cases_without_reclaim(postgres_schema
             release.set()
         for future in futures:
             assert future.result(timeout=15)
+
+
+@pytest.mark.postgres
+def test_concurrent_failure_recovery_creates_one_handoff_and_notice(postgres_schema):
+    from forget_lah.runtime.failures import escalate_failure
+    from forget_lah.runtime.models import AgentEvent, SimulatedMessage, StaffHandoff
+
+    _, factory = postgres_schema
+    command.upgrade(Config("alembic.ini"), "head")
+    seed_runs(factory, 1)
+    with factory.begin() as db:
+        run = db.scalar(select(AgentRun))
+        run_id = run.id
+        reply_id = uid()
+        db.add(
+            AgentEvent(
+                id=reply_id,
+                clinic_id=run.clinic_id,
+                case_id=run.case_id,
+                run_id=run.id,
+                client_key=uid(),
+                actor_id=run.authorised_by,
+                expected_case_version=run.start_case_version,
+                kind="demo_reply",
+                content="Please help me change my appointment",
+            )
+        )
+        run.status = "paused"
+        run.checkpoint = {
+            "pause_reason": "POLICY_DENIED",
+            "latest_event": {
+                "id": reply_id,
+                "kind": "demo_reply",
+                "content": "Please help me change my appointment",
+            },
+        }
+    settings = Settings(patient_simulator_enabled=True, _env_file=None)
+    barrier = Barrier(2)
+
+    def recover():
+        barrier.wait(timeout=10)
+        return escalate_failure(factory, settings, run_id)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda _: recover(), range(2)))
+    assert sorted(results) == [False, True]
+    with factory() as db:
+        assert len(list(db.scalars(select(StaffHandoff)))) == 1
+        assert len(list(db.scalars(select(SimulatedMessage)))) == 1
+        assert db.get(AgentRun, run_id).status == "escalated"

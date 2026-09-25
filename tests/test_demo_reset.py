@@ -143,8 +143,9 @@ def test_reset_reseed_failure_rolls_back_deletion(reset_app, monkeypatch):
         raise RuntimeError("injected seed failure")
 
     monkeypatch.setattr("forget_lah.demo_reset.save_candidate", fail)
-    with pytest.raises(RuntimeError, match="injected seed failure"):
-        client.post("/api/demo/reset", headers=mutation(client), json=expected)
+    response = client.post("/api/demo/reset", headers=mutation(client), json=expected)
+    assert response.status_code == 500
+    assert "injected seed failure" not in response.text
     with factory() as db:
         assert set(db.scalars(select(FollowupCase.id))) == set(expected["expected_case_ids"])
         assert db.scalar(select(func.count()).select_from(Patient)) == 3

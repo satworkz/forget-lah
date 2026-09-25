@@ -184,7 +184,7 @@ def test_retry_cannot_reset_exhausted_reply_allowance(simulated_runtime):
         run.step_count = run.checkpoint["turn_start_step"] + runtime[2].agent_max_steps
     drain(runtime, tools=tools)
     assert view(runtime[1], case)["run"]["pause_reason"] == "STEP_BUDGET_EXHAUSTED"
-    event(runtime[1], case, "retry").raise_for_status()
+    assert event(runtime[1], case, "retry").status_code == 409  # Staff review owns recovery.
     drain(runtime, tools=tools)
     result = view(runtime[1], case)
     assert result["run"]["pause_reason"] == "STEP_BUDGET_EXHAUSTED"

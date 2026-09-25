@@ -152,3 +152,23 @@ User-directed validation: only the 14 new focused tests were run, all passed; Ru
 Release `20260923-translation-plan` deployed API/worker after seven new focused tests passed. Grossly incomplete translations are withheld and receive at most one budgeted retry; pending plan replies route directly to Preparation and can resume source-bound attendance consent for the unchanged appointment time. Ruff/format and frontend build passed; full regression was not rerun per user instruction. Both backups validated, all 34 table hashes matched, revisions and environment unchanged, readiness passed. All nine case histories, source records, phone bindings and channel state matched predeployment snapshots. No live model replay or message was sent. Alex's failed recording remains paused and unchanged. See REPLY_RECOVERY.md for limitations.
 
 **23 September: required translation sections deployed (`20260923-translation-sections`).** Nine new offline tests, Ruff/format and web/runtime builds passed. Both database backups validated; all 34 table hashes, authenticated readiness, all nine case histories, source data and phone/channel state preserved. No paid inference, automatic retry or outgoing message was performed. Full regression remains with the user; live translation success is not yet verified. See REPLY_RECOVERY.md.
+
+
+## 25 September: organiser gateway deployed
+
+API and worker now use the supplied organiser gateway/model for agents, Bridge intake and translations. Application/source heads remain `0017`/`sim0004`. Both databases were backed up; 34-table pre-existing values matched before provider switching. Seven waiting/paused runs received the new provider with security audit records and all other fields unchanged. The live AWS synthetic check returned MODEL_CONNECTION_VERIFIED in 3120 ms. Focused tests: 156 passed/1 skipped, plus 33 Docker/PostgreSQL tests passed. See [organiser integration, limitations and recovery](ORGANISER_GATEWAY.md). This supersedes earlier notes that organiser verification is pending.
+
+
+## 25 September: business and technical failure handoff deployed
+
+Release `20260925-failure-handoff` uses `forget-lah-failure:20260925` for API and worker; the frontend remains unchanged. Exact runtime source hashes matched the checkout after deployment. Organiser configuration and all environment values are unchanged. No migration, reset, fixture seed or appointment replay was performed.
+
+Both PostgreSQL databases were backed up and the archives validated. All pre-existing values across 34 tables matched before and after API restart, before the worker resumed. Application/source versions remain `0017`/`sim0004`. Previous images and configuration are retained in the release backup directory for rollback.
+
+The existing policy-denied Omar review was recovered into one unowned AMBER staff handoff and one static Malay acknowledgement without another model call. Its appointment time, version, available options and original decision evidence are unchanged; Bridge follow-up status is now `needs_staff`. At verification, acknowledgement delivery remained queued: the enrolled phone's last inbound message was approximately 36.3 hours old, outside the application's 23-hour outbound reply gate. No provider receipt exists yet. A queued message is not a delivered message, and the gate was not bypassed.
+
+Public HTTPS/readiness, protected access, secure login, authenticated audit/appointment reads and CSRF rejection passed. API/worker source manifests and organiser settings matched; PostgreSQL has no public port binding. Scans of recent API/worker/web/source/database logs found no matches for the nine configured credential values checked.
+
+Validation: Ruff and formatting passed; Docker runtime and frontend builds passed. The full regression run recorded 713 passed, 14 skipped and 12 failures in older expectations for pause/retry/no-message behavior. Those assertions were updated while retaining source-write and evidence protections. The affected-suite rerun recorded 126 passed with four remaining old slot-message assumptions; those were corrected and all six unclear-reply cases passed. The final acceptance run covering every previously failing case, all new failure tests and PostgreSQL migration/concurrency tests passed **51/51**. The complete broad suite was not repeated after these targeted fixes. Two test-client dependency deprecation warnings remain. No paid model or source-action replay was used for this repair.
+
+See [failure behavior, exact changed files and limitations](FAILURE_HANDLING.md). Staff navigation: open the case, locate **Staff owner needed**, and choose **Accept handoff as me**. Accepting ownership does not itself resolve the patient's request.

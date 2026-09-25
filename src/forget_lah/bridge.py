@@ -471,6 +471,12 @@ def _rows_for_model(rows: list[dict]) -> list[dict]:
 
 
 def _anthropic_json(settings: Settings, *, system: str, context: dict, schema: dict) -> dict:
+    if settings.agent_model_mode == "organiser":
+        from forget_lah.runtime.provider import organiser_json
+
+        return organiser_json(
+            settings, system=system, context=context, schema=schema, max_tokens=1024
+        )
     key = settings.anthropic_api_key
     if not key or not key.get_secret_value().strip():
         raise ModelError("MODEL_NOT_CONFIGURED")
@@ -531,7 +537,7 @@ class AnthropicBridgeAnalyzer:
         previous_mapping: list[dict] | None = None,
         staff_instruction: str | None = None,
     ) -> BridgeBatchAnalysis:
-        if self.settings.agent_model_mode != "anthropic":
+        if self.settings.agent_model_mode not in {"anthropic", "organiser"}:
             raise ModelError("MODEL_NOT_CONFIGURED")
         profile_data = _anthropic_json(
             self.settings,
@@ -557,8 +563,9 @@ class AnthropicBridgeAnalyzer:
         )
         profile = BridgeProfileAnalysis.model_validate(profile_data)
         normalized: list[BridgeRecordAnalysis] = []
-        for start in range(0, len(rows), NORMALIZE_CHUNK_ROWS):
-            chunk = rows[start : start + NORMALIZE_CHUNK_ROWS]
+        chunk_size = 1 if self.settings.agent_model_mode == "organiser" else NORMALIZE_CHUNK_ROWS
+        for start in range(0, len(rows), chunk_size):
+            chunk = rows[start : start + chunk_size]
             data = _anthropic_json(
                 self.settings,
                 system=(

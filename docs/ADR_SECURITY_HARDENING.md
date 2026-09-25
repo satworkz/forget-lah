@@ -1,6 +1,6 @@
 # ADR: focused security hardening
 
-Status: implemented and deployed locally on 22 September 2026; AWS deployment pending. Migration `0016`, local readiness, authorized audit access, runtime grants and preservation of existing values across 33 tables were verified. See implementation status for backups and deployment details.
+Status: implemented. The original local security deployment used migration `0016`; subsequent AWS releases and migration heads are recorded in [AWS deployment evidence](AWS_DEMO.md). See implementation status for validation, backups and deployment details.
 
 ## Security by Architecture
 
@@ -9,6 +9,8 @@ Adopt centralized per-clinic role filtering, deterministic policy rechecks, mini
 Migration `0016` preserves existing membership authority as `staff` and adds a security-event ledger. Unknown roles fail closed. Staff and admin share the current staff-action permission set; auditor is read-only; viewer sees masked summaries. No new product workflow or appointment engine is introduced.
 
 Use existing agent events, policy decisions, source receipts and notification ledgers rather than duplicating them. Add transactional audit entries only where Bridge review/approval and option changes or retry requests previously lacked durable actor/change history. Denials are recorded after the rejected request transaction has ended, so rollback does not discard them. Do not claim historical evidence that was not originally captured.
+
+Policy denials and terminal workflow failures now produce a case-bound staff review and an eligible fixed patient acknowledgement; they never authorize a denied source action. See [failure handling and limits](FAILURE_HANDLING.md).
 
 ## Future Production Hardening — NOT YET IMPLEMENTED
 
