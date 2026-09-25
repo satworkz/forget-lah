@@ -61,6 +61,21 @@ Correct: selection requires a *selection*. With no identifying content, the corr
 use history or seek clarification (`CLARIFY`); a forced selection is a failure even if the chosen
 slot happens to match.
 
+**W2b — bare "ok" after a neutral reminder (recorded 2026-09-25).**
+Wrong reading: treat the acknowledgement as an attendance confirmation (`appointment_intent:
+CONFIRM`).
+Correct: a reminder **asks nothing**, so `"ok"` acknowledges receipt. Confirming attendance requires
+either a clinic turn that asked for confirmation or the patient stating it. The graded intent is
+`UNSPECIFIED` with a `CLARIFY`/`waiting` terminal; reading `CONFIRM` here is an unsupported
+interpretation and fails the `ambiguous_short_reply` stratum.
+
+Evidence and ruling: both language variants of `fam-ambiguous-01` returned `CONFIRM` for a bare `"ok"`
+after a reminder, while the oracle expects `UNSPECIFIED` (and en additionally escalated). The
+behaviour is language-independent, so it is a **general pipeline defect — the runtime
+over-interprets an acknowledgement — not a language defect**. The corpus is right; the runtime is the
+thing to fix. Confirming it as systematic requires A2's 60 predeclared repetitions; a single run
+cannot distinguish a systematic over-read from sampling variance.
+
 **W3 — mid-thread language switch (English → Tamil) with no explicit request.**
 Wrong reading: record a lasting `preferred_language` change.
 Correct: a switch alone changes no lasting preference. A comprehension repair may set a **visit-only**

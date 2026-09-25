@@ -172,14 +172,15 @@ re-recorded. Both languages still return `appointment_intent: CONFIRM` for a bar
 So the mismatch is **not** language-dependent and **not** caused by the leading turn: with a neutral
 reminder, a bare acknowledgement is interpreted as an attendance confirmation. The oracle expects
 `UNSPECIFIED` + `CLARIFY`, per the `ambiguous_short_reply` rule *"do not force an unsupported
-interpretation"*. This is now a clean adjudication for the reviewer:
-
-- if `CONFIRM` is acceptable for reminder + `ok`, the **oracle** is wrong;
-- if not, the **runtime over-interprets** a bare acknowledgement — a shared, language-independent
-  behaviour, which the programme PRD treats as a general pipeline defect (not a language defect).
+interpretation"*. This is now a **ruling**, recorded in `oracle_rubric.md` §4 W2b: a reminder asks nothing, so `"ok"`
+acknowledges receipt, and confirming attendance requires a clinic turn that asked for it. The corpus
+is right and the **runtime over-interprets an acknowledgement** — a shared, language-independent
+behaviour, which the programme PRD classifies as a general pipeline defect rather than a language
+defect. It is a runtime item to escalate, not a corpus fix. A2's 60 repetitions are required before
+calling the over-read systematic.
 
 The en/zh **terminals still differ** (`escalated` vs `waiting`), so the cross-language check remains
-inequivalent. A2's 60 repetitions are required before calling the `CONFIRM` behaviour systematic.
+inequivalent.
 
 ## Producer status
 
