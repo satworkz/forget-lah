@@ -42,6 +42,17 @@ def test_build_tasks_joins_questions_types_and_answers() -> None:
     assert [task["index"] for task in tasks] == [0, 1]
 
 
+def test_observation_from_runtime_defaults_an_absent_intent_to_unspecified() -> None:
+    """The runtime itself defaults the checkpoint intent to UNSPECIFIED (engine.py:399)."""
+    variant = _variant("ambiguous-01-en.json")
+    observation = observation_from_runtime(
+        variant,
+        checkpoint={"patient_questions": [], "patient_task_types": []},
+        terminal={"kind": "waiting", "run_status": "waiting", "intent": True},
+    )
+    assert observation["checkpoint_oracle"][0]["appointment_intent"] == "UNSPECIFIED"
+
+
 def test_build_tasks_leaves_absent_answers_none() -> None:
     checkpoint = {
         "patient_questions": ["a question with no answer"],
@@ -51,6 +62,23 @@ def test_build_tasks_leaves_absent_answers_none() -> None:
     tasks = build_tasks(checkpoint)
     assert tasks[0]["outcome"] is None
     assert tasks[0]["actions"] == []
+
+
+def test_observation_defaults_an_absent_intent_to_unspecified() -> None:
+    """The runtime itself defaults an unset intent to UNSPECIFIED (engine.py:399)."""
+    variant = _variant("ambiguous-01-en.json")
+    observation = observation_from_runtime(
+        variant,
+        checkpoint={"wait_reason": "AWAITING_PATIENT_REPLY"},
+        terminal={
+            "kind": "waiting",
+            "run_status": "waiting",
+            "wait_reason": "AWAITING_PATIENT_REPLY",
+            "intended": True,
+        },
+        delivery={"expected_block": None, "effective_language": "en"},
+    )
+    assert observation["checkpoint_oracle"][0]["appointment_intent"] == "UNSPECIFIED"
 
 
 def test_build_memory_derives_expected_status() -> None:

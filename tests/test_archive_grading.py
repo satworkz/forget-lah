@@ -27,10 +27,11 @@ def test_archived_observation_regrades_deterministically() -> None:
 
 
 def test_archived_ambiguous_family_is_cross_language_equivalent() -> None:
-    """With the authored source, en and zh agree — and both fail identically on the CONFIRM over-read.
+    """After the clarification fix, en and zh pass identically and are equivalent.
 
-    The earlier en-escalated/zh-waited divergence disappeared once `variant_tools` served the item's
-    authored instructions; it was a harness-default-source artefact, not a language defect.
+    The runtime fix (CLARIFY offered in the simulation review phase + the CONFIRM precondition in the
+    prompt, specified by @oracle) removed both the CONFIRM over-read and the escalation. The earlier
+    en-escalated/zh-waited divergence had been a harness-default-source artefact.
     """
     en_path = ARCHIVES / "fam-ambiguous-01-en.json"
     zh_path = ARCHIVES / "fam-ambiguous-01-zh.json"
@@ -39,11 +40,12 @@ def test_archived_ambiguous_family_is_cross_language_equivalent() -> None:
     en = json.loads(en_path.read_text())
     zh = json.loads(zh_path.read_text())
 
-    assert en["verdict"]["grade"] == zh["verdict"]["grade"] == "FAILED"
+    assert en["verdict"]["grade"] == zh["verdict"]["grade"] == "PASS"
     assert cross_language_equivalence(en["observed"], zh["observed"])["equivalent"] is True
-    en_paths = {difference["path"] for difference in en["verdict"]["differences"]}
-    zh_paths = {difference["path"] for difference in zh["verdict"]["differences"]}
-    assert en_paths == zh_paths, "both languages must fail on the same paths"
+    assert en["observed"]["checkpoint_oracle"][0]["appointment_intent"] == "UNSPECIFIED"
+    assert (
+        en["evidence"]["observed_run_status"] == zh["evidence"]["observed_run_status"] == "waiting"
+    )
 
 
 def test_archived_switch_family_is_cross_language_equivalent() -> None:

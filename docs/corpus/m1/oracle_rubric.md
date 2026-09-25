@@ -69,12 +69,11 @@ either a clinic turn that asked for confirmation or the patient stating it. The 
 `UNSPECIFIED` with a `CLARIFY`/`waiting` terminal; reading `CONFIRM` here is an unsupported
 interpretation and fails the `ambiguous_short_reply` stratum.
 
-Evidence and ruling: both language variants of `fam-ambiguous-01` returned `CONFIRM` for a bare `"ok"`
-after a reminder, while the oracle expects `UNSPECIFIED` (and en additionally escalated). The
-behaviour is language-independent, so it is a **general pipeline defect — the runtime
-over-interprets an acknowledgement — not a language defect**. The corpus is right; the runtime is the
-thing to fix. Confirming it as systematic requires A2's 60 predeclared repetitions; a single run
-cannot distinguish a systematic over-read from sampling variance.
+**Fixed 2026-09-25.** `provider.py` now offers `CLARIFY` in the simulation review phase (the allowlist
+previously forced an intent and then an escalation), and the prompt defines `CONFIRM` as requiring a
+preceding clinic turn that asked for confirmation — a one-way reminder asks nothing. Both variants now
+grade **PASS (0 differences)** and remain cross-language equivalent. The A2 repetition requirement still
+applies to any future behavioural claim.
 
 **W3 — mid-thread language switch (English → Tamil) with no explicit request.**
 Wrong reading: record a lasting `preferred_language` change.

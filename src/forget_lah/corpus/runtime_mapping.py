@@ -141,7 +141,7 @@ def observation_from_runtime(
         "checkpoint_oracle": [
             {
                 "after_turn_id": after_turn_id,
-                "appointment_intent": checkpoint.get("appointment_intent"),
+                "appointment_intent": checkpoint.get("appointment_intent") or "UNSPECIFIED",
                 "attendance_qualification": (
                     {"status": checkpoint["attendance_qualification"]}
                     if isinstance(checkpoint.get("attendance_qualification"), str)

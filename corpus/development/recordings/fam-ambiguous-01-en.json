@@ -5,70 +5,25 @@
   "runtime_commit": null,
   "records": [
     {
-      "request_id": "cf9595ec-a339-4a23-85b9-4ebd32774c3a",
+      "request_id": "1a299d81-0380-4b5e-a510-380b3868e9b8",
       "repair": false,
-      "observation_sha256": "c1355012f3c7255a1c0c7dab7fda84aba40cc9161f972022a4be745dde6cf21d",
-      "reply_text": "{\"request_id\":\"cf9595ec-a339-4a23-85b9-4ebd32774c3a\",\"expected_case_version\":3,\"reason_code\":\"FOLLOWUP_REVIEW_REQUIRED\",\"step_type\":\"DELEGATE\",\"target\":\"engagement\",\"goal\":\"Review overdue dental recall context; contact unavailable so read-only assessment of source status and patient history.\"}",
-      "input_tokens": 2250,
-      "output_tokens": 94,
-      "latency_ms": 3360
-    },
-    {
-      "request_id": "7ffe971b-3494-4a16-a608-fff5251679d3",
-      "repair": false,
-      "observation_sha256": "4400cc2172c10a0319bcaee62e6a176f9bb8d07287ad3ecd3a2b3b60b708f223",
-      "reply_text": "{\"request_id\":\"7ffe971b-3494-4a16-a608-fff5251679d3\",\"expected_case_version\":7,\"reason_code\":\"PATIENT_NEEDS_REVIEWED\",\"preparation_plans\":[],\"patient_questions\":[],\"step_type\":\"REVIEW_NEEDS\",\"reply_event_id\":\"f8b2b4ec-befe-4731-b455-f95e66a4053f\",\"updates\":[],\"appointment_intent\":\"CONFIRM\",\"appointment_request_quote\":\"ok\",\"attendance_qualification\":null,\"question\":null,\"comprehension_quote\":null,\"concern_quote\":null}",
-      "input_tokens": 3603,
-      "output_tokens": 151,
-      "latency_ms": 9241
-    },
-    {
-      "request_id": "5111eb2d-6547-41bd-b212-8e9672e9a08d",
-      "repair": false,
-      "observation_sha256": "73d0f4ba077ae847c506a4ada2a6d41a7d448d1ab25432e95d356fec49cf8aec",
-      "reply_text": "{\"request_id\":\"5111eb2d-6547-41bd-b212-8e9672e9a08d\",\"expected_case_version\":8,\"reason_code\":\"PREPARATION_REVIEW_REQUIRED\",\"step_type\":\"DELEGATE\",\"target\":\"preparation\",\"goal\":\"Review appointment details and patient context for 2026-09-25 at 10:00\"}",
-      "input_tokens": 1968,
+      "observation_sha256": "1f4dc035248a940e61bee78f3bd0482ce9697703a43c75d401ecc31e80abe77f",
+      "reply_text": "{\"request_id\":\"1a299d81-0380-4b5e-a510-380b3868e9b8\",\"expected_case_version\":3,\"reason_code\":\"FOLLOWUP_REVIEW_REQUIRED\",\"step_type\":\"DELEGATE\",\"target\":\"engagement\",\"goal\":\"Review recall-overdue context; contact and booking unavailable but read-only review useful.\"}",
+      "input_tokens": 2261,
       "output_tokens": 92,
-      "latency_ms": 5110
+      "latency_ms": 3713
     },
     {
-      "request_id": "777476ea-ebe5-4bfa-9ad8-e5e6f1abf9a8",
+      "request_id": "d1600b2c-d43c-4fdd-9870-252d84c73647",
       "repair": false,
-      "observation_sha256": "6106b38eb04e7d08fcd822a1954dac806ec4c7958f183205d303ff899d0ac02d",
-      "reply_text": "{\"request_id\":\"777476ea-ebe5-4bfa-9ad8-e5e6f1abf9a8\",\"expected_case_version\":11,\"reason_code\":\"SPECIALIST_REVIEW_FINISHED\",\"scheduling_review\":[{\"instruction_id\":\"instr-prep\",\"quote\":\"Please arrive ten minutes early and bring your medication list.\",\"effect\":\"INFORMATION\",\"date_from\":null,\"date_to\":null,\"condition_quote\":null,\"patient_question\":null,\"if_not_met\":null,\"consequence_quote\":null},{\"instruction_id\":\"instr-fast\",\"quote\":\"Do not eat or drink after midnight before the procedure.\",\"effect\":\"INFORMATION\",\"date_from\":null,\"date_to\":null,\"condition_quote\":null,\"patient_question\":null,\"if_not_met\":null,\"consequence_quote\":null},{\"instruction_id\":\"instr-loc\",\"quote\":\"All appointments are at the main clinic, 12 Example Road.\",\"effect\":\"INFORMATION\",\"date_from\":null,\"date_to\":null,\"condition_quote\":null,\"patient_question\":null,\"if_not_met\":null,\"consequence_quote\":null}],\"step_type\":\"RETURN\",\"evidence_ids\":[\"8e1307aa-53d1-452a-8cad-b83860a4e952\",\"d935f0c9-5371-47b7-a2ec-e34139667b16\"]}",
-      "input_tokens": 2879,
-      "output_tokens": 334,
-      "latency_ms": 10652
-    },
-    {
-      "request_id": "62f39493-b8b2-426e-9daf-9226f5964190",
-      "repair": false,
-      "observation_sha256": "6f40d376a964cab7ae923724beaaa150877e523a193da28bfbb4b8742592ebaf",
-      "reply_text": "{\"request_id\":\"62f39493-b8d2-426e-9daf-9226f5964190\",\"expected_case_version\":12,\"reason_code\":\"FOLLOWUP_REVIEW_REQUIRED\",\"step_type\":\"DELEGATE\",\"target\":\"engagement\",\"goal\":\"Interpret patient reply 'ok' and determine appointment confirmation intent or need for clarification\"}",
-      "input_tokens": 1751,
-      "output_tokens": 90,
-      "latency_ms": 4474
-    },
-    {
-      "request_id": "62f39493-b8b2-426e-9daf-9226f5964190",
-      "repair": true,
-      "observation_sha256": "ca7e34340ddfe53b7acb3a0024b9ff71cd7824d50fce994177f52484e2b58d40",
-      "reply_text": "{\"request_id\":\"62f39493-b8b2-426e-9daf-9226f5964190\",\"expected_case_version\":12,\"reason_code\":\"FOLLOWUP_REVIEW_REQUIRED\",\"step_type\":\"DELEGATE\",\"target\":\"engagement\",\"goal\":\"Obtain appointment confirmation consent and source receipt evidence for simulated attendance acknowledgement.\"}",
-      "input_tokens": 1801,
-      "output_tokens": 87,
-      "latency_ms": 3009
-    },
-    {
-      "request_id": "cea96560-5c45-4b5c-af64-f34476eeed04",
-      "repair": false,
-      "observation_sha256": "d15ebb9eefae8ef03f905bfcf858e14d492b21c963a4d7aa1712d631a88c5f11",
-      "reply_text": "{\"request_id\":\"cea96560-5c45-4b5c-af64-f34476eeed04\",\"expected_case_version\":14,\"reason_code\":\"CAPABILITY_UNAVAILABLE\",\"step_type\":\"ESCALATE\"}",
-      "input_tokens": 2246,
-      "output_tokens": 62,
-      "latency_ms": 5343
+      "observation_sha256": "d7fe93a5b3bb0226bf0dd2b7e53aec63a7d298ebe2c61d69a3b34fc63105491d",
+      "reply_text": "{\"request_id\":\"d1600b2c-d43c-4fdd-9870-252d84c73647\",\"expected_case_version\":7,\"reason_code\":\"AMBIGUOUS_REPLY\",\"step_type\":\"CLARIFY\",\"reply_event_id\":\"6bd86c60-efeb-46f7-820f-76f86b5f13ce\",\"question\":\"Will you attend your appointment today at 10:00?\",\"concern_quote\":null,\"excluded_minutes\":[],\"remember_exclusions\":false,\"evidence_quotes\":[]}",
+      "input_tokens": 4125,
+      "output_tokens": 134,
+      "latency_ms": 10936
     }
   ],
-  "run_status": "escalated",
+  "run_status": "waiting",
   "run_diagnostics": {
     "available_at": null,
     "lease_until": null,
@@ -82,41 +37,6 @@
         "completed",
         null,
         1
-      ],
-      [
-        "completed",
-        null,
-        0
-      ],
-      [
-        "completed",
-        null,
-        1
-      ],
-      [
-        "completed",
-        null,
-        1
-      ],
-      [
-        "completed",
-        null,
-        0
-      ],
-      [
-        "completed",
-        null,
-        0
-      ],
-      [
-        "completed",
-        null,
-        1
-      ],
-      [
-        "completed",
-        null,
-        2
       ],
       [
         "completed",

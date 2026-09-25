@@ -100,23 +100,27 @@ The archive producer reuses the runtime test apparatus rather than reimplementin
 ## Recorded findings (2026-09-25)
 
 Two real archives exist for the ambiguous family, both graded from captured observations and both
-re-recorded with the authored source (`variant_tools`):
+re-recorded with the authored source (`variant_tools`) **and the clarification fix**:
 
 | variant | model | decisions | observed | verdict |
 |---|---|---|---|---|
-| `fam-ambiguous-01-en` | `claude-sonnet-4-5-20250929` | 7 | `escalated` | FAILED (7 paths) |
-| `fam-ambiguous-01-zh` | `claude-sonnet-4-5-20250929` | 8 | `escalated` | FAILED (7 paths — identical set) |
+| `fam-ambiguous-01-en` | `claude-sonnet-4-5-20250929` | 2 | `waiting` | **PASS (0 paths)** |
+| `fam-ambiguous-01-zh` | `claude-sonnet-4-5-20250929` | 2 | `waiting` | **PASS (0 paths)** |
 
-**Cross-language equivalence — resolved.** The earlier en-escalated / zh-waited divergence was a
-**harness-default-source artefact**, not a language defect: before `variant_tools` the runtime answered
-and escalated from the default clinic note. With the authored instructions served, the pair is
-**equivalent** (`cross_language_equivalence` → `True`) and both fail on the *same* paths. The remaining
-failure is shared and language-independent:
+**The failure was a real runtime defect, and it is fixed.** Recorded symptom: both languages returned
+`appointment_intent: CONFIRM` and escalated instead of clarifying. `@oracle` traced it to the
+simulation review phase (`provider.py:367`), which allowlisted only `REVIEW_NEEDS` and `REPORT_SYMPTOMS`,
+so **`CLARIFY` was unreachable**; with no clarify option the coordinator forced an intent and later
+chose `EscalateDecision`. Applied changes:
 
-- both over-interpret a bare acknowledgement as `CONFIRM` (ruled in `oracle_rubric.md` W2b), and
-- both escalate rather than clarify.
+- `provider.py:367` now allowlists `CLARIFY` in the phase;
+- the prompt defines `CONFIRM` as requiring a preceding clinic turn that *asked* for confirmation, and
+  states that a one-way reminder asks nothing (so a bare acknowledgement stays `UNSPECIFIED`);
+- the observation mapping now turns an unset `appointment_intent` into `UNSPECIFIED`, mirroring the
+  runtime's own default (`engine.py:399`).
 
-Asserted in
+Both variants went from FAILED (7 paths) to **PASS (0 paths)** and remain cross-language
+**equivalent**. Guarded by `tests/test_clarification_phase.py` and
 `tests/test_archive_grading.py::test_archived_ambiguous_family_is_cross_language_equivalent`.
 
 **Normalisation retained.** `replay` still normalises two non-deciding differences: a visit-scoped

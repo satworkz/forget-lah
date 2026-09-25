@@ -29,6 +29,7 @@ milestone beyond the new pure projection module.
 | Replay grading core | `uv run pytest tests/test_corpus_replay.py` | **9 passed** (PASS/FAILED/UNSCORED verdicts, hard translation failures, cross-language equivalence) |
 | Runtime→observation mapping | `uv run pytest tests/test_runtime_mapping.py` | **5 passed** (task join, absent-answer handling, mapped run grades PASS, missing-answer FAILED, determinism) |
 | Archive producer | `uv run pytest tests/test_archive_producer.py` | **2 passed** (source transport; end-to-end produce → write → grade) |
+| Clarification-phase fix | `uv run pytest tests/test_clarification_phase.py` | **3 passed** (CLARIFY offered in the phase; withheld after a returned specialist and after two clarifications) |
 | Full suite | `uv run pytest` | **exit code 0** (all tests passed or skipped) — see below |
 | Web build | `pnpm --dir apps/web build` | **NOT RUN** — `pnpm` is not installed in this environment; no frontend or API-contract change in this revision |
 | PostgreSQL concurrency | — | **skipped** without `TEST_DATABASE_URL`; SQLite results do not establish PostgreSQL locking behaviour |

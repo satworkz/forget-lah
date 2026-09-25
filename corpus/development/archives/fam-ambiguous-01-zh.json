@@ -7,7 +7,7 @@
     "model_id": "claude-sonnet-4-5-20250929",
     "prompt_version": "1",
     "started_at": "2026-09-24T09:00:00+08:00",
-    "request_id": "c34cc9a4-6842-45d6-b0e8-758c3f9c7281"
+    "request_id": "1626c3cb-5c07-4fdb-96de-80cd363b6126"
   },
   "translation_status": "ok",
   "observed": {
@@ -30,21 +30,13 @@
     "checkpoint_oracle": [
       {
         "after_turn_id": "t2",
-        "appointment_intent": "CONFIRM",
+        "appointment_intent": "UNSPECIFIED",
         "attendance_qualification": null,
         "tasks": [],
         "instruction_checks": [],
-        "memory": [
-          {
-            "key": "preferred_language",
-            "operation": "set",
-            "scope": "visit",
-            "expected_status": "active",
-            "value": "zh"
-          }
-        ],
+        "memory": [],
         "callback_requested": null,
-        "wait_reason": null,
+        "wait_reason": "AWAITING_PATIENT_REPLY",
         "delivery": {
           "expected_block": null,
           "effective_language": "zh",
@@ -53,9 +45,10 @@
       }
     ],
     "terminal_oracle": {
-      "kind": "escalated",
-      "run_status": "escalated",
-      "outcome": null
+      "kind": "waiting",
+      "run_status": "waiting",
+      "wait_reason": "AWAITING_PATIENT_REPLY",
+      "intended": true
     },
     "scoring": {
       "scored": true,
@@ -64,52 +57,16 @@
   },
   "evidence": {
     "recording": "fam-ambiguous-01-zh.json",
-    "recorded_decisions": 8,
-    "observed_run_status": "escalated"
+    "recorded_decisions": 2,
+    "observed_run_status": "waiting"
   },
   "verdict": {
     "replay_version": "1",
     "variant_id": "fam-ambiguous-01-zh",
     "origin": "replay",
-    "grade": "FAILED",
+    "grade": "PASS",
     "unscored_reason": null,
     "hard_failures": [],
-    "differences": [
-      {
-        "path": "checkpoints[0].appointment_intent",
-        "expected": "UNSPECIFIED",
-        "observed": "CONFIRM"
-      },
-      {
-        "path": "checkpoints[0].wait_reason",
-        "expected": "AWAITING_PATIENT_REPLY",
-        "observed": null
-      },
-      {
-        "path": "terminal.intended",
-        "expected": true,
-        "observed": "<absent>"
-      },
-      {
-        "path": "terminal.kind",
-        "expected": "waiting",
-        "observed": "escalated"
-      },
-      {
-        "path": "terminal.outcome",
-        "expected": "<absent>",
-        "observed": null
-      },
-      {
-        "path": "terminal.run_status",
-        "expected": "waiting",
-        "observed": "escalated"
-      },
-      {
-        "path": "terminal.wait_reason",
-        "expected": "AWAITING_PATIENT_REPLY",
-        "observed": "<absent>"
-      }
-    ]
+    "differences": []
   }
 }
