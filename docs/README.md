@@ -1,33 +1,41 @@
-# forget-lah documentation
+# Documentation guide
 
-**Security:** [Security by Architecture](SECURITY_ARCHITECTURE.md) and [security ADR](ADR_SECURITY_HARDENING.md) distinguish implemented RBAC, intake, privacy and audit controls from future production hardening.
+## For judges
 
-**Current feature reference:** [Feature guide and patient memory](FEATURE_GUIDE.md) documents implemented behavior, all demo capabilities, preference tests and remaining limitations. Migration `0006` extends time preferences to attributed patient concerns; this supersedes earlier time-only descriptions.
+Start with the [submission index](submission/README.md) and [current capabilities](CURRENT_CAPABILITIES.md). The application is an intelligent patient follow-up layer; use the current summary to distinguish delivered behaviour from historical plans.
 
-**Want to change the test records?** Use [CLINIC_SIMULATOR.md](CLINIC_SIMULATOR.md) to edit schedules and notes, add slots and create fresh scenarios.
+| Document | Purpose |
+| --- | --- |
+| [Business proposal](submission/Forget-lah_Business_Proposal.pdf) | Problem, workflow value, pilot targets and delivery assumptions |
+| [Technical document](submission/Forget-lah_Technical_Document.pdf) | Architecture, agent roles, source ownership, security and evidence |
+| [Feature guide](FEATURE_GUIDE.md) | Detailed scenarios and capability boundaries |
+| [Bridge intake](BRIDGE_INTAKE.md) | No-API route, review/approval and follow-up ownership |
+| [Security architecture](SECURITY_ARCHITECTURE.md) | Implemented controls and future hardening |
+| [Case journey](CASE_JOURNEY.md) | Saved decisions, source evidence, policy and human ownership |
+| [Performance](PERFORMANCE.md) | Selective model calls, worker concurrency and planned reactive wake-ups |
+| [Organiser gateway](ORGANISER_GATEWAY.md) | Provider integration, bounded requests and recorded checks |
+| [Failure handling](FAILURE_HANDLING.md) | Durable review, acknowledgement and recovery limits |
+| [Validation](VALIDATION.md) | Dated verification records; not a substitute for current CI |
+| [Roadmap](NEXT_MILESTONE.md) | Future scope and pilot/production gates |
 
-**Connecting your own Claude account? Start with [CLAUDE_SETUP.md](CLAUDE_SETUP.md)** for account/key setup, the connection check and the remaining delivery steps.
+## Maintainer and test operations
 
-**Already running the app? Start with [AGENT_RUNTIME.md](AGENT_RUNTIME.md)** for the new agent buttons, three demo flows and technical explanation. On a new computer, first use [TEAM_START_HERE.md](TEAM_START_HERE.md) for installation. Its [PDF version](forget-lah_Team_Quick_Start.pdf) is the preserved v0.1 foundation guide; the M2a agent instructions are in AGENT_RUNTIME.md.
+These guides are for authorised team members operating synthetic test environments. They are not a request for judges to reset records, enrol phones or send messages.
 
-Markdown (`.md`) files are editable documents. GitHub displays them as formatted pages; in VS Code, press **Ctrl+Shift+V** to preview them. The application does not need these documents to run, but keeping them with the source helps the team maintain instructions alongside code changes.
+- [Cloud testing](TEAM_CLOUD_TESTING.md) and [AWS deployment history](AWS_DEMO.md)
+- [Windows/team setup](TEAM_START_HERE.md), [Linux setup](UBUNTU_QUICK_START.md), [first run](FIRST_RUN.md)
+- [Provider setup](CLAUDE_SETUP.md), [WhatsApp setup](WHATSAPP_SETUP.md), [clinic simulator](CLINIC_SIMULATOR.md), [reset controls](DEMO_RESET.md)
+- [Staff appointment-change design](ADR_STAFF_APPOINTMENT_CHANGE.md) and [deferred gaps](STAFF_APPOINTMENT_CHANGE_GAPS.md)
+- [Typed agent contract](contracts/agent-decision-v1.json)
 
-| Document | Purpose | Who needs it? |
-| --- | --- | --- |
-| [PATIENT_SIMULATOR.md](PATIENT_SIMULATOR.md) | Test reminder, confirmation, acknowledgement and automatic completion | Everyone testing follow-up |
-| [CLAUDE_SETUP.md](CLAUDE_SETUP.md) | Own Claude account, private configuration, live check, provider switching and delivery order | Everyone setting up live inference |
-| [AGENT_RUNTIME.md](AGENT_RUNTIME.md) | Current agent demo, technical components, contracts, state and organiser configuration | Everyone using M2a |
-| [CASE_JOURNEY.md](CASE_JOURNEY.md) | Read the full case history, component activities and input/output evidence | Everyone learning or debugging a flow |
-| [DEMO_RESET.md](DEMO_RESET.md) | Enable the reset button and recreate a clean demo safely | Demo presenters |
-| [contracts/agent-decision-v1.json](contracts/agent-decision-v1.json) | Complete machine-readable model decision schema | Agent/API developers |
-| [TEAM_START_HERE.md](TEAM_START_HERE.md) | Install, start, sign in and test the available flows | Everyone getting started |
-| [FIRST_RUN.md](FIRST_RUN.md) | Short link to the team guide; retained for existing references | No separate reading required |
-| [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) | What is implemented and what is still pending | Developers and demo presenters |
-| [LIVE_CLAUDE_VALIDATION.md](LIVE_CLAUDE_VALIDATION.md) | Verified direct-Claude dental journey, usage, fixes and steps to repeat it | Developers and demo presenters |
-| [VALIDATION.md](VALIDATION.md) | Recorded test results and their limits | Developers and testers |
-| [NEXT_MILESTONE.md](NEXT_MILESTONE.md) | Upcoming implementation work | Developers planning the next milestone |
-| [design/](design/forget-lah_README.md) | Detailed architecture, contracts, data design and planning | Developers needing design background |
+Credentials, real contact details and deployment recovery files remain outside Git. Never publish `.env`, private keys, database dumps or screenshots containing real participant details.
 
-The design folder is the preserved earlier design pack. Its `forget-lah` filenames and wording are historical; the current project and repository are **forget-lah**, and Python imports use **forget_lah**. Use the team guide for executable startup steps and IMPLEMENTATION_STATUS.md for current behaviour. Do not treat every feature described in the design pack as already implemented.
+## Historical records and experiments
 
-Keep the Markdown sources for maintenance and the PDF for easy sharing. No documentation files need to be deleted to run the app.
+Keep these as evidence of design evolution, not as current product claims:
+
+- [Implementation chronology](IMPLEMENTATION_STATUS.md): dated entries supersede earlier states.
+- [M2a runtime guide](AGENT_RUNTIME.md), [patient simulator milestone](PATIENT_SIMULATOR.md), [early direct-Claude validation](LIVE_CLAUDE_VALIDATION.md).
+- [Original design pack](design/forget-lah_README.md) and [v0.1 setup PDF](forget-lah_Team_Quick_Start.pdf).
+- [DSPy/GEPA experiment](DSPY_GEPA_SPIKE.md): separate scratch experiment, not the deployed runtime or a production accuracy claim.
+- [Video rehearsal materials](video/START_HERE.md): earlier recording instructions; the final submission video supersedes those cuts.

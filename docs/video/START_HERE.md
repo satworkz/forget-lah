@@ -1,5 +1,7 @@
 > **Updated 23 September:** Priya’s full reschedule is now verified after a deployed routing fix. Her fresh recording start is 30 September 10:00 SGT. Read [the current recording handoff](RECORDING_HANDOFF_2026-09-23.md) first. The report below preserves the earlier rehearsal and its limitations.
 
+> Historical recording/rehearsal package. Earlier cuts and staging instructions below are superseded by the final video identified in the [Submission index](../submission/README.md).
+
 # Forget-lah video demo package
 
 The three patient starts are staged on AWS. Use **Priya (demo)**, **Ms Chen** (Chinese) and **Mr Calvin** (Malay). Omar's connected teammate phone was left intact; no disconnection is needed.

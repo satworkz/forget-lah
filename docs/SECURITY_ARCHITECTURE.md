@@ -1,5 +1,7 @@
 # Security by Architecture
 
+> Control reference with dated deployment history. Earlier statements that AWS was unchanged are historical; later deployment records are in [AWS_DEMO](AWS_DEMO.md) and [Implementation status](IMPLEMENTATION_STATUS.md). Controls and production limitations remain explicit below.
+
 **Local deployment completed, 22 September 2026:** migration `0016` is active locally; API, worker and web use the verified images. Both databases were backed up and all pre-existing column values across 33 tables matched before migration and after API/web restart, before resuming the worker. Readiness, staff authentication, masked summaries, audit access and runtime table grants passed. AWS remains on its existing release. This update supersedes the implementation-time deployment status below.
 
 Decision: retain the existing follow-up architecture and add deterministic access and evidence controls. This is hackathon/demo hardening, not a certification or a claim of production readiness.

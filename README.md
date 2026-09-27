@@ -1,24 +1,73 @@
-# forget-lah
+# Forget-lah
 
-**Team testing release:** [Staff workspace, AWS reset, WhatsApp test-phone setup and four-language messages](docs/TEAM_CLOUD_TESTING.md). Staff pages are the default; Developer testing preserves detailed traces and simulator controls. All clinic records and appointment writes remain synthetic.
+**Intelligent patient follow-up. Staff remain in control.**
 
-**Hosted demo:** [Singapore AWS deployment](docs/AWS_DEMO.md) documents the HTTPS synthetic demo and separate cloud staff login. Local Windows and Ubuntu commands below remain unchanged.
+NUS-ISS Show Me Your Agents | **SP-ARK Agents** | **N63VHYEX**
 
-**Current feature reference:** [Feature guide and patient memory](docs/FEATURE_GUIDE.md) documents implemented behavior, all demo capabilities, preference tests and remaining limitations. Migration `0006` extends time preferences to attributed patient concerns; this supersedes earlier time-only descriptions.
+[Submission documents](docs/submission/README.md) · [Technical document](docs/submission/Forget-lah_Technical_Document.pdf) · [Business proposal](docs/submission/Forget-lah_Business_Proposal.pdf) · [Checks](https://github.com/satworkz/forget-lah/actions/workflows/checks.yml)
 
-Patient follow-up with a clear next step. NUS-ISS Show Me Your Agents hackathon.
+## The problem
 
-**New:** [Adaptive follow-up and preference memory](docs/ADAPTIVE_FOLLOWUP.md) explains timing constraints, preparation callbacks, visit-readiness evidence and explicitly saved simulator preferences, with team demo steps.
+Dental clinics repeatedly review records, identify follow-ups, contact patients, interpret replies, check doctor instructions and update the correct system. Routine coordination takes staff away from critical clinic work. Patients may forget appointments or prerequisites, face language barriers, or need clarification after clinic hours.
 
-**Current release: 0.2.0, local agent runtime (M2a). Synthetic records only.** The Coordinator now delegates to Engagement and Preparation, reads source evidence, waits for a fictional reply and reaches an owned staff handoff. Decisions are explicitly simulated by default. Direct Anthropic inference is connected and has been exercised with synthetic dental reviews. The organiser gateway is deployed and verified; see [organiser integration](docs/ORGANISER_GATEWAY.md) for coverage and limitations. See [live validation](docs/LIVE_CLAUDE_VALIDATION.md) for measured outcomes and limitations. No real patient messages or real appointment writes are enabled; local simulator messages and synthetic source updates are supported. See [implementation status](docs/IMPLEMENTATION_STATUS.md).
+The problem is not sending a reminder. It is everything that happens after the patient replies.
 
-To connect your own Claude account, start with [Claude setup](docs/CLAUDE_SETUP.md). For the existing demo, start with [Run and understand the agents](docs/AGENT_RUNTIME.md) for the new buttons, three demo flows and technical explanation. Use the [team quick-start guide](docs/TEAM_START_HERE.md) for installing the foundation on a new computer, or the [documentation index](docs/README.md) for other references.
+Forget-lah started with dental follow-up, but the same workflow applies more broadly. The dental, scan-prerequisite and ophthalmology examples demonstrate different capabilities of one follow-up layer. Forget-lah is **not a chatbot**, an EMR, a general clinic scheduler or a medical-diagnosis system.
 
-## First run on Windows
+## Start here, judges
 
-**Using Ubuntu?** Follow [Ubuntu quick start](docs/UBUNTU_QUICK_START.md). The companion `scripts/dev.sh` supports setup, build, start and local container deployment. Windows commands below are unchanged.
+1. Read the [business proposal](docs/submission/Forget-lah_Business_Proposal.pdf) for the problem, workflow value and proposed pilot measures.
+2. Read the [technical document](docs/submission/Forget-lah_Technical_Document.pdf) for the architecture, agent roles, source ownership, controls and evidence.
+3. Use the final video link supplied in the submission email. The [submission index](docs/submission/README.md) identifies the final file and deployment evidence.
+4. Inspect [current capabilities](docs/CURRENT_CAPABILITIES.md), [security](docs/SECURITY_ARCHITECTURE.md), [selective model use](docs/PERFORMANCE.md) and [recorded verification](docs/VALIDATION.md).
 
-Open this project folder in VS Code. Open Terminal > New Terminal and use PowerShell. Docker Desktop must be running Linux containers.
+The hackathon uses **synthetic clinic records and designated WhatsApp test participants**. Demonstrated workflow outcomes are not production clinical outcomes. Pilot targets and future capabilities are labelled separately.
+
+## How it fits into a clinic
+
+```mermaid
+flowchart TD
+    A[Clinic System: master records] <-->|Authorised API| F[Forget-lah follow-up workflow]
+    B[Legacy spreadsheet export] --> I[Intelligent Intake]
+    I --> R[Staff review and approval]
+    R --> F
+    F <--> P[Patients via WhatsApp]
+    F <--> S[Clinic staff dashboard]
+    F <--> D[(PostgreSQL: workflow, evidence and Bridge lifecycle)]
+```
+
+- **API-backed clinics:** the existing Clinic System remains the master record. Reads and permitted updates go through its authorised API. The hackathon source is a synthetic clinic simulator.
+- **No-API clinics:** staff-approved Intelligent Intake creates Forget-lah-owned follow-up records in PostgreSQL. Bridge never writes the mock-clinic tables and does not become a full EMR. Follow-up options must come from staff or the appropriate source.
+- **Patient communication:** WhatsApp is implemented for controlled testing. Patients can reply or initiate grounded follow-up questions, including outside clinic hours while the service runs. Sandbox enrolment and messaging-window limits apply; production proactive templates are not implemented.
+
+## Agentic reasoning with deterministic control
+
+Three logical agent roles run inside the durable Python worker:
+
+| Role | Responsibility |
+| --- | --- |
+| Coordinator | Direct the workflow, delegate to specialists and verify completion or staff handoff. Only Coordinator delegates. |
+| Engagement | Understand intent and preferences; coordinate supported administrative next steps against source evidence. |
+| Preparation | Interpret clinic-approved instructions, prerequisites and contextual conflicts; surface unanswered clinical questions. |
+
+Deterministic code handles clear supported protocol responses, state, mandatory reads, authority, policy, validation, source operations and audit receipts. Models assist with semantic understanding, multilingual meaning and intake mapping. **Model output is a proposal, never proof of identity, consent or booking success.**
+
+Typed proposals pass the policy gateway before tools execute. Durable state and evidence survive individual model calls. Exceptions require named staff ownership. The [organiser model gateway](docs/ORGANISER_GATEWAY.md) is integrated; use is bounded by token, step, retry and shared usage controls.
+
+## What the demonstration shows
+
+| Scenario | Evidence |
+| --- | --- |
+| Ahmad | Attendance intent and reported dental symptoms are separated; clinical concerns go to staff. |
+| Priya | Doctor-defined scan prerequisites constrain the next appointment options and validated change. |
+| Alex | Multilingual reasoning identifies a conflict between driving and the clinic's preparation instruction. |
+| Intelligent Intake | Semantic mapping, uncertainty review, staff correction, approval and provenance. |
+| Staff change | Staff retain control through the same authority, source and policy checks. |
+| Security & Audit | Scoped access, saved decisions, source receipts, staff actions and intake evidence. |
+
+## Run locally
+
+Prerequisites: Docker Desktop on Windows, or Docker with Compose on Linux. The default local setup uses synthetic fixtures and simulation; no paid model access is required for that mode.
 
 ```powershell
 ./scripts/dev.ps1 doctor
@@ -26,30 +75,17 @@ Open this project folder in VS Code. Open Terminal > New Terminal and use PowerS
 ./scripts/dev.ps1 up
 ```
 
-`setup` creates a private `.env` with random passwords. Open that file locally and use DEMO_STAFF_EMAIL and DEMO_STAFF_PASSWORD to sign in. Never commit or share `.env`. Existing setup credentials are preserved if you run setup again.
+On Linux, use the corresponding `./scripts/dev.sh doctor`, `setup` and `up` commands. Open **http://localhost:8080**. Find the generated staff credentials in your private `.env`; never commit them. See the [Linux quick start](docs/UBUNTU_QUICK_START.md) and [maintainer documentation](docs/README.md#maintainer-and-test-operations).
 
-Open **http://localhost:8080**. The first build downloads images and dependencies. The worker detects cases and automatically queues a review when foundation processing finishes; no start button or open browser is needed. Open a patient's agent review to watch it progress and follow [the demonstration steps](docs/AGENT_RUNTIME.md#2-try-the-three-demonstration-flows). Existing `.env` credentials and database records survive the automatic migrations through `0006`.
+The worker automatically detects eligible cases and queues reviews. Preserve existing data when restarting; do not reset or replay shared demo cases merely to inspect them. External messaging and live-model use require explicit configuration and authorised test participants.
 
-```powershell
-./scripts/dev.ps1 status
-./scripts/dev.ps1 logs
-./scripts/dev.ps1 test
-./scripts/dev.ps1 down
-```
+## Implementation and verification
 
-`down` preserves the database volume. Do not add `--volumes` unless you intentionally want to erase the local demonstration database. Changing database passwords in `.env` does not change an existing database volume's passwords.
+React → Caddy/FastAPI → PostgreSQL, with a persistent Python worker, bounded agent runtime, source adapters and WhatsApp delivery. [Database and source ownership](docs/submission/Forget-lah_Technical_Document.pdf) are explained at a high level in the technical document.
 
-## What runs
+The documented AWS demo is a single-host prototype built with high availability in mind. Durable queues, leases, idempotency and bounded concurrency support recovery; redundant hosts, reactive wake-ups and production capacity validation remain future work. See [performance and planned reactive design](docs/PERFORMANCE.md) and [failure recovery](docs/FAILURE_HANDLING.md).
 
-Browser → Caddy/React → FastAPI → PostgreSQL. The worker detects follow-up cases, resumes agent runs, calls the configured model adapter and dispatches allowlisted reads through the policy gateway. Three logical agent roles share that worker. Bootstrap applies Alembic migrations and seeds the synthetic clinic/staff login before startup. PostgreSQL has no published port; the web app binds to local loopback only.
-
-The mock clinic is a database-backed simulator. Open **Clinic simulator** in the sidebar to edit schedules and notes, add slots or create fresh synthetic episodes. The existing PostgreSQL server hosts its isolated database/user; forget-lah continues to read the clinic APIs. Dates are seeded once and edits survive restarts. Follow the [simulator guide](docs/CLINIC_SIMULATOR.md). No provider key is required in default simulation mode. Optional organiser mode is described in [AGENT_RUNTIME.md](docs/AGENT_RUNTIME.md#6-organiser-claude-configuration).
-
-## Development without rebuilding containers
-
-Docker is the standard team path. Developers may additionally install Python 3.12, uv 0.12.12, Node 24 and pnpm 11.19.0.
-
-```powershell
+```text
 uv sync --frozen
 uv run ruff check .
 uv run ruff format --check .
@@ -58,18 +94,10 @@ pnpm --dir apps/web install --frozen-lockfile
 pnpm --dir apps/web build
 ```
 
-Python tests use temporary SQLite databases with the actual Alembic migrations. Eleven PostgreSQL checks cover job/run claiming, migration preservation, schema alignment, atomic live-call budgets, shared pacing, competing resets/automatic starters and conflicting simulator edits. They run in Compose and GitHub Actions; without TEST_DATABASE_URL they explicitly skip. Model HTTP tests use simulated responses and consume no organiser credits. UI/API contracts remain reviewed TypeScript interfaces; generated OpenAPI types are pending.
+PostgreSQL checks require `TEST_DATABASE_URL`; SQLite skips do not prove PostgreSQL concurrency. Live-model tests are opt-in. Recorded test counts belong to their dated runs; consult Actions for the selected commit rather than assuming an old result applies to every revision.
 
-## GitHub and team sharing
+## Security, boundaries and roadmap
 
-Repository: https://github.com/satworkz/forget-lah. Each teammate uses their own GitHub account, clones the source, and runs `doctor`, `setup` and `up` to generate their own local environment.
+Implemented controls include clinic/role scoping, queued authority rechecks, policy-gated actions, model-context minimisation, bounded intake parsing and audit evidence. Free text and intake rows can still contain personal information; minimisation is not anonymisation. No production healthcare certification is claimed.
 
-Keep `.env`, credentials, local dependencies and database backups out of Git. Review GitHub Actions for the specific shared commit; a local test result does not establish that CI passed.
-
-## Design and next milestone
-
-Start with [the design index](docs/design/forget-lah_README.md). Then read [current implementation status](docs/IMPLEMENTATION_STATUS.md) and [next milestone](docs/NEXT_MILESTONE.md).
-
-Sources for infrastructure conventions: [FastAPI container deployment](https://fastapi.tiangolo.com/deployment/docker/), [Compose startup conditions](https://docs.docker.com/compose/how-tos/startup-order/). Use the organiser's actual onboarding and API contract before live integration.
-
-Test the new simulated confirmation and acknowledgement flow: [Patient simulator guide](docs/PATIENT_SIMULATOR.md).
+Future work includes Patient Companion/offline support, voice, caregiver and trusted-identity/consent integrations, follow-up pattern intelligence and additional provider integrations. See [current boundaries and roadmap](docs/NEXT_MILESTONE.md). Historical design material is retained as design history, not as a list of delivered capabilities.

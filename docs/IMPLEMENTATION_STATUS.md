@@ -1,5 +1,7 @@
 # Implementation status
 
+> Development chronology, not a single current checklist. Later dated entries supersede earlier limitations and deployment notes. Read [Current capabilities](CURRENT_CAPABILITIES.md) first for the submission snapshot.
+
 **25 September: business and technical failure handling deployed to AWS.** Terminal policy/business/model/source failures now route to staff review with an eligible patient acknowledgement. Delegation reason mismatch is corrected deterministically before full policy recheck. Consent, clinic boundaries, authority and source ownership remain enforced. See [failure handling](FAILURE_HANDLING.md).
 
 **25 September: organiser gateway deployed to AWS.** Agents, Bridge intake and translations use the supplied organiser model. Existing cases and review statuses preserved; seven saved runs switched provider with audit records. Live AWS model and authenticated checks passed. Validation: 156 focused tests passed/1 skipped plus 33 PostgreSQL/provider tests passed. No migration. See [organiser integration](ORGANISER_GATEWAY.md).
@@ -120,7 +122,9 @@ The first normal source read is a typed, persisted `origin=rule` tool action wit
 
 Six runtime tables store runs, steps, delegations, staff events, handoffs and the shared budget; migration `0004` adds simulated outgoing messages. Original migration `0001` is unchanged. The mock source has its own database and human-operated editor, plus a narrowly authenticated confirmation endpoint. Other source operations remain reads. Three agents are logical roles, not three independently deployed services. No LangGraph dependency is used.
 
-## Still pending
+## Historical M2a pending list (superseded)
+
+The following paragraphs describe the earlier local milestone. Several items were subsequently implemented; they are retained for history, not as the current capability list. Use [Current capabilities](CURRENT_CAPABILITIES.md) and the [Roadmap](NEXT_MILESTONE.md).
 
 Real patient identity/consent, staff MFA, a patient-facing app, real text/voice delivery, preference storage, source-owned booking writes, reviewed uploads, WhatsApp/SMS/telephone, push/calendar, Singpass, clinically reviewed content/policies, retention controls, Terraform and cloud hosting are not implemented. The local simulator is a test channel only. Future features in the historical design pack should not be presented as delivered.
 

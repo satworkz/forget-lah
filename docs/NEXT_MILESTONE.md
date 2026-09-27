@@ -1,14 +1,25 @@
-# Next milestone: the first authenticated patient journey
+# Roadmap and pilot gates
 
-The bounded M2a agent runtime is now implemented. See [AGENT_RUNTIME.md](AGENT_RUNTIME.md) for what the team can run today.
+Updated 27 September 2026. All items below are future work or validation gates, not delivered-product claims. For implemented behaviour, use [Current capabilities](CURRENT_CAPABILITIES.md).
 
-1. Direct Claude is connected and one fresh dental agent review has passed; see [the live validation record](LIVE_CLAUDE_VALIDATION.md). Keep simulation for repeatable offline tests. In parallel, obtain the organiser's private endpoint details and rerun the connection/journey checks there using [CLAUDE_SETUP.md](CLAUDE_SETUP.md). The organiser gateway has not been live-verified.
-2. Evaluate real-model intent, specialist selection, source grounding, malformed responses and adversarial replies. Record source/model/config versions and actual usage. The engineering tests are not the proposed 60 model evaluation scenarios.
-3. Add staff MFA and patient identity/consent enrolment. Implement a simple patient text flow with signed, replay-resistant inbound events. Staff demo replies must never become identity proof.
-4. Add realistic source-owned booking APIs with atomic slot conflicts, idempotency and source success evidence. Re-read availability and require current explicit patient confirmation before any write. Keep the product focused on follow-up.
-5. Complete the dental journey through verified attendance/booking plus approved preparation acknowledgement, or an owned staff handoff. Add explicitly confirmed preferences and reachable escalation ownership.
-6. Reuse the framework for myopia and antenatal data, with clinician-reviewed instructions and escalation rules. Clinical assessment is outside the agent's authority; do not infer urgency from tone alone.
-7. Spike external messaging/voice, Singpass and organiser hosting access early. Add the scoped patient UI, reviewed uploads, push/calendar and remaining channels only after the first reliable journey. Report mock/live status explicitly.
-8. Automate deployment using Terraform and CI/CD after confirming the organiser's account/service constraints. Add secrets management, HTTPS, retention, monitoring, backups and rollout verification before public exposure.
+## Controlled clinic pilot
 
-Team split: agent/policy owner; source/data owner; UI/channels owner; platform/quality owner. Pair on identity/security and rehearse using measured evidence.
+Agree eligible cases, approved clinical instructions, access, consent arrangements and staff escalation cover. Use representative cases to establish a baseline and measure the [proposed pilot targets](submission/Forget-lah_Business_Proposal.pdf). Replace the synthetic Clinic API with an authorised integration, or validate the clinic's approved Bridge data and scoped options. Complete production messaging enrolment/templates and governance before contacting real patients.
+
+## Availability, performance and operations
+
+Preserve durable PostgreSQL work, leases, policy and receipts while adding reactive wake-ups with polling recovery. Validate redundant application/worker operation, database failover, off-host backups and restore exercises. Measure concurrency, queue age, provider quotas, source contention and end-to-end delivery before claiming production capacity or availability.
+
+Extend saved case evidence with correlated operational traces, dashboards, alert ownership and retention. Complete the production hardening items in [Security architecture](SECURITY_ARCHITECTURE.md), including managed secrets, MFA, verified encryption-at-rest and incident procedures.
+
+## Patient and integration roadmap
+
+- Patient Companion with offline reminders and calendar integration.
+- Voice-enabled interaction and accessibility.
+- Caregiver-authorised support and trusted identity/consent integration, including potential Singpass integration subject to approval.
+- Follow-up Pattern Intelligence for clinic-reviewed proactive outreach.
+- Diagnostic, laboratory, physiotherapy and X-ray integration using authorised availability; nearby-provider preferences where consented.
+- Consent-based group reminders; education reminders remain exploratory reuse outside the clinical submission scope.
+- Availability watching/waitlisting and unresolved staff patient-check initiation require separate design and validation.
+
+The earlier M2a planning list remains in Git history. Organiser gateway integration, controlled WhatsApp, reviewed intake and supported source changes are now implemented; they should not be presented as unstarted milestones.

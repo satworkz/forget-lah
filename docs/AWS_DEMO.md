@@ -1,5 +1,7 @@
 # Singapore AWS demo
 
+> Maintainer deployment record. Later dated releases supersede the initial provider/deployment state below. Judges can start with the concise [Deployment evidence](submission/DEPLOYMENT_EVIDENCE.md); do not execute reset, rollback or test-contact procedures for review.
+
 ## Deployment scope
 
 The team authorised an organiser-account Lightsail deployment in `ap-southeast-1` on 18 September 2026. The existing direct Anthropic provider remains selected until the organiser URL/key are supplied and tested. Anthropic and Twilio charges are separate from the organiser's shared hosting/model allowance.

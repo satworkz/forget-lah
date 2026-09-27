@@ -1,5 +1,7 @@
 # forget-lah | Run and understand the agents
 
+> Historical M2a walkthrough (11 September). Commands and capability statements below describe that milestone. For the submitted AWS/WhatsApp implementation and organiser gateway, start with [Current capabilities](CURRENT_CAPABILITIES.md) and the [Technical Document](submission/Forget-lah_Technical_Document.pdf).
+
 **Milestone M2a · version 0.2.0 · 11 September 2026**
 
 This increment adds the agent runtime to the working foundation. The staff screen now shows the Coordinator choosing specialists, reading source evidence, waiting, resuming and arranging a staff handoff. The default model is a **deterministic simulation**, so every teammate can run it without a key or paid inference. Direct Claude has been connected and exercised with synthetic dental reviews; see [live validation](LIVE_CLAUDE_VALIDATION.md). A separate organiser adapter is implemented and tested with simulated HTTP responses; its live verification still requires the team's private configuration.
