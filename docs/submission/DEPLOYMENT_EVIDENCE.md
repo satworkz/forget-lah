@@ -20,4 +20,4 @@ The URL and checks below are recorded evidence, not a guarantee of current uptim
 | [Security architecture](../SECURITY_ARCHITECTURE.md) | Implemented boundary controls, audit and future production hardening |
 | [GitHub checks](https://github.com/satworkz/forget-lah/actions/runs/36126040277) | Successful CI for merge commit `80a9b4f`; CI validates source, not live-host uptime |
 
-The final submission video demonstrates the deployed product workflows with synthetic clinic records. A simulated clinic source is not a real clinical-system integration; a source receipt and notification delivery are separate evidence items.
+The [final submission video](https://youtu.be/9mEFRefGK3o) demonstrates the deployed product workflows with synthetic clinic records. A simulated clinic source is not a real clinical-system integration; a source receipt and notification delivery are separate evidence items.

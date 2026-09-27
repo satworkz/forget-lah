@@ -17,7 +17,7 @@ Dental clinics maintain regular follow-up schedules for routine examinations, pr
 | Repository | [satworkz/forget-lah](https://github.com/satworkz/forget-lah), default branch `main` |
 | Business proposal | [PDF, 5 pages](Forget-lah_Business_Proposal.pdf) |
 | Technical document | [PDF, 7 pages](Forget-lah_Technical_Document.pdf) |
-| Demo video | Final 20:58 video supplied through the submission email. A public/cloud video URL has not yet been recorded in this repository. |
+| Demo video | [Watch the final demonstration on YouTube](https://youtu.be/9mEFRefGK3o) - approximately 20:58 |
 | Deployment evidence | [Evidence summary](DEPLOYMENT_EVIDENCE.md) and dated repository deployment/verification records |
 
 ## Version and authenticity

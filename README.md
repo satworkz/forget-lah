@@ -18,7 +18,7 @@ Forget-lah started with dental follow-up, but the same workflow applies more bro
 
 1. Read the [business proposal](docs/submission/Forget-lah_Business_Proposal.pdf) for the problem, workflow value and proposed pilot measures.
 2. Read the [technical document](docs/submission/Forget-lah_Technical_Document.pdf) for the architecture, agent roles, source ownership, controls and evidence.
-3. Use the final video link supplied in the submission email. The [submission index](docs/submission/README.md) identifies the final file and deployment evidence.
+3. [Watch the final demonstration on YouTube](https://youtu.be/9mEFRefGK3o) (approximately 20:58). The [submission index](docs/submission/README.md) identifies the final file and deployment evidence.
 4. Inspect [current capabilities](docs/CURRENT_CAPABILITIES.md), [security](docs/SECURITY_ARCHITECTURE.md), [selective model use](docs/PERFORMANCE.md) and [recorded verification](docs/VALIDATION.md).
 
 The hackathon uses **synthetic clinic records and designated WhatsApp test participants**. Demonstrated workflow outcomes are not production clinical outcomes. Pilot targets and future capabilities are labelled separately.
