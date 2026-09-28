@@ -177,7 +177,9 @@ class ClinicTools:
                 timeout=10, follow_redirects=False, transport=self.transport
             ) as client:
                 with client.stream(
-                    "GET", f"{self.base_url}/internal/followup-context/{episode}"
+                    "GET",
+                    f"{self.base_url}/internal/followup-context/{episode}",
+                    params=binding.get("slot_date_window") or {},
                 ) as r:
                     if r.status_code == 404:
                         return self.failure(tool_name, "SOURCE_NOT_FOUND", False)

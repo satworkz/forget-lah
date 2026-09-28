@@ -283,6 +283,10 @@ def create_app(settings: Settings | None = None, engine=None, bridge_analyzer=No
             "agents": [{**agent, "status": settings.agent_model_mode} for agent in AGENT_CATALOG],
         }
 
+    from forget_lah.dashboard import install_dashboard_routes
+
+    install_dashboard_routes(app, factory, settings, authorise)
+
     @app.get("/api/cases")
     def list_cases(request: Request):
         with factory() as db:

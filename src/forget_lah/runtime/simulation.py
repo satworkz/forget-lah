@@ -67,6 +67,23 @@ def saved_reply(db, run):
     )
 
 
+def pending_dependency_question(db, run):
+    reply = saved_reply(db, run)
+    if not reply or run.checkpoint.get("dependency_date_processed") == reply.id:
+        return None
+    message = db.scalar(
+        select(SimulatedMessage)
+        .where(SimulatedMessage.run_id == run.id, SimulatedMessage.clinic_id == run.clinic_id)
+        .order_by(SimulatedMessage.created_at.desc())
+        .limit(1)
+    )
+    return (
+        message
+        if message and message.kind == "dependency_date" and message.event_id != reply.id
+        else None
+    )
+
+
 def pending_instruction_question(db, run):
     """Return the latest unresolved doctor-instruction question preceding this patient reply."""
     reply = saved_reply(db, run)
@@ -224,7 +241,7 @@ def current_instruction_gate(db, run, context_step, choice=None):
         if choice
         else {"starts_at": context_step.tool_result["data"].get("scheduled_at")}
     )
-    if target.get("starts_at") and not compatible([target], review):
+    if target.get("starts_at") and not compatible([target], review, resolutions):
         return False
     return True
 
@@ -290,7 +307,7 @@ def booking_choice(db, run):
         and review_step.status == "completed"
         and (review_step.policy or {}).get("decision") == "ALLOW"
         and instruction_gate_clear(review, resolutions)
-        and compatible([options[index]], review)
+        and compatible([options[index]], review, resolutions)
     )
     return {
         "scheduling_reviewed": reviewed,
@@ -472,7 +489,22 @@ def future_scheduled(data):
 
 
 def simulation_evidence(db, run):
+    dependency = pending_dependency_question(db, run)
     result = {
+        "dependency_question": (
+            {
+                "id": dependency.id,
+                "question": dependency.body,
+                "appointment_preferences": dependency.evidence.get("resume_context", {}).get(
+                    "barriers", {}
+                ),
+                "instruction_checks": dependency.evidence.get("resume_context", {}).get(
+                    "instruction_check_resolutions", []
+                ),
+            }
+            if dependency
+            else None
+        ),
         "enabled": simulation_enabled(run),
         "confirmation_authorized": False,
         "record_ready": False,
@@ -674,8 +706,17 @@ def simulation_evidence(db, run):
     )
     ack = latest_tool(steps, "send_simulated_acknowledgement", "coordinator")
     any_context = latest_tool(steps, "read_followup_context")
+    source_data = any_context.tool_result["data"] if any_context else {}
+    result["appointment_status_review_required"] = bool(
+        source_data.get("source_status") == "scheduled"
+        and not future_scheduled(source_data)
+        and not receipt
+    )
     result["recall_options_available"] = bool(
-        any_context and saved_reply(db, run) and (not choice or result["selection_needs_refresh"])
+        any_context
+        and not result["appointment_status_review_required"]
+        and saved_reply(db, run)
+        and (not choice or result["selection_needs_refresh"])
     )
     date_report = next(
         (
@@ -922,9 +963,9 @@ def save_options(db, run):
     slots = matching_slots(slots, constraints)
     requested_slots = slots
     review = run.checkpoint.get("scheduling_review")
-    slots = compatible(slots, review)
+    slots = compatible(slots, review, run.checkpoint.get("instruction_check_resolutions", []))
     restricted = [r for r in (review or []) if r["effect"] != "INFORMATION"]
-    clinical_conflict = bool(restricted and (len(slots) != len(requested_slots) or not slots))
+    clinical_conflict = bool(restricted and requested_slots and len(slots) != len(requested_slots))
     mismatch = bool(all_slots and not slots)
     scheduled = context.tool_result["data"].get("source_status") == "scheduled"
     unchanged = (

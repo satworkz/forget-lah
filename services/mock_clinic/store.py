@@ -2,7 +2,8 @@
 
 import hashlib
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, time, timedelta
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import (
     JSON,
@@ -167,7 +168,7 @@ def can_book_followup(row, now=None):
     )
 
 
-def envelope(db, row):
+def envelope(db, row, *, date_from=None, date_to=None):
     slots = list(
         db.scalars(
             select(Slot)
@@ -177,9 +178,27 @@ def envelope(db, row):
                 Slot.starts_at >= datetime.now(UTC),
             )
             .order_by(Slot.starts_at, Slot.id)
-            .limit(11)
+            .limit(500)
         )
     )
+    # Version covers all availability, independent of the requested date window.
+    version_slots = slots
+    if date_from:
+        lower = datetime.combine(date_from, time.min, ZoneInfo("Asia/Singapore"))
+        slots = [
+            s
+            for s in slots
+            if (s.starts_at.replace(tzinfo=UTC) if s.starts_at.tzinfo is None else s.starts_at)
+            >= lower
+        ]
+    if date_to:
+        upper = datetime.combine(date_to + timedelta(days=1), time.min, ZoneInfo("Asia/Singapore"))
+        slots = [
+            s
+            for s in slots
+            if (s.starts_at.replace(tzinfo=UTC) if s.starts_at.tzinfo is None else s.starts_at)
+            < upper
+        ]
     available = [
         {
             k: v
@@ -190,7 +209,7 @@ def envelope(db, row):
     ]
     # Availability edits also change source_version; a previous read remains historical evidence.
     digest = hashlib.sha256(
-        json.dumps([row.version, [slot_dict(s) for s in slots]], sort_keys=True).encode()
+        json.dumps([row.version, [slot_dict(s) for s in version_slots]], sort_keys=True).encode()
     ).hexdigest()[:16]
     return {
         "clinic_id": DEMO_CLINIC_ID,

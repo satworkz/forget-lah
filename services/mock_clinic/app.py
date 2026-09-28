@@ -1,5 +1,6 @@
 import secrets
 from contextlib import asynccontextmanager
+from datetime import date
 
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import SecretStr
@@ -85,12 +86,12 @@ def create_app(settings=None, engine=None):
             ]
 
     @app.get("/internal/followup-context/{episode}")
-    def context(episode: str):
+    def context(episode: str, date_from: date | None = None, date_to: date | None = None):
         with factory() as db:
             row = db.get(Episode, episode)
             if not row:
                 raise HTTPException(404, "Synthetic episode not found")
-            return envelope(db, row)
+            return envelope(db, row, date_from=date_from, date_to=date_to)
 
     @app.get("/internal/admin/snapshot")
     def snapshot():

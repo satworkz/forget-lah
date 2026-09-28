@@ -252,6 +252,8 @@ class ClinicalReportDecision(BoundDecision):
     attendance_quote: str | None = None
     contact_stop_quote: str | None = Field(default=None, max_length=240)
 
+    reply_language: Literal["en", "ms", "zh", "ta"] | None = None
+
 
 class ClarifyDecision(BoundDecision):
     step_type: Literal["CLARIFY"]
@@ -423,10 +425,24 @@ class BarrierDecision(BoundDecision):
     clarification_reason: Literal["NONE", "AMBIGUOUS_DATE", "UNRESOLVED_PREFERENCE"] = "NONE"
     next_action: Literal["SEARCH_SLOTS", "CLARIFY_TIME", "REVIEW_PREPARATION"]
 
+    dependency_question_id: str | None = None
+    completion_date: str | None = None
+    completion_quote: str | None = Field(default=None, max_length=240)
+
     @model_validator(mode="after")
     def valid_constraints(self):
         from datetime import date
 
+        if self.completion_date:
+            if self.next_action != "SEARCH_SLOTS" or self.clarification_question:
+                raise ValueError(
+                    "Uncertain completion dates must be clarified, not used for booking"
+                )
+            date.fromisoformat(self.completion_date)
+            if not self.completion_quote or not self.dependency_question_id:
+                raise ValueError("Completion dates require reply evidence and the pending question")
+        elif self.completion_quote:
+            raise ValueError("Completion quote requires a completion date")
         if any(not 0 <= minute <= 1439 for minute in self.excluded_minutes):
             raise ValueError("Excluded times must be minutes of day")
         if self.remember_exclusions and not self.excluded_minutes:
@@ -575,6 +591,9 @@ DECISION_FORMATS = {
         "question": "one short administrative clarification question, no advice or promises",
     },
     "ASSESS_BARRIERS": {
+        "dependency_question_id": "pending dependency question ID or null",
+        "completion_date": "prerequisite completion date from patient meaning, YYYY-MM-DD or null; never confuse requested appointment dates with completion",
+        "completion_quote": "exact supporting patient phrase for completion date, or null",
         "reply_event_id": "saved reply ID",
         "evidence_quotes": ["exact patient substrings supporting constraints or preparation issue"],
         "earliest_minute": "local SGT minute of day, or null",
@@ -593,6 +612,7 @@ DECISION_FORMATS = {
     "REPORT_SYMPTOMS": {
         "reply_event_id": "saved patient reply ID",
         "symptom_quotes": ["exact substring reporting current symptoms"],
+        "reply_language": "language of this patient reply: en/ms/zh/ta; null if uncertain. Detect from the reply, never the patient name.",
         "attendance_quote": "exact unconditional attendance acceptance substring, or null",
     },
     "INTERPRET_ATTENDANCE": {

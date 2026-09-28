@@ -38,7 +38,7 @@ def simulator(tmp_path):
 def transport_for(client):
     def handler(request):
         response = client.request(
-            request.method, request.url.path, headers=dict(request.headers), content=request.content
+            request.method, str(request.url), headers=dict(request.headers), content=request.content
         )
         return httpx.Response(response.status_code, json=response.json())
 
@@ -299,3 +299,39 @@ def test_console_requires_clinic_session_origin_csrf_and_internal_key(simulator,
         with store[1].begin() as db:
             db.scalar(select(Membership)).active = False
         assert console.get("/api/simulator").status_code == 403
+
+
+def test_month_search_filters_before_limit_and_keeps_source_version(simulator):
+    client, _ = simulator
+    for day in range(1, 14):
+        body = {
+            "request_id": str(uuid4()),
+            "specialty": "myopia",
+            "starts_at": f"2030-10-{day:02d}T10:00:00+08:00",
+            "ends_at": f"2030-10-{day:02d}T10:30:00+08:00",
+            "doctor": "Test clinician",
+            "available": True,
+        }
+        assert client.post("/internal/admin/slots", headers=ADMIN, json=body).status_code == 201
+    body.update(
+        request_id=str(uuid4()),
+        starts_at="2030-11-01T00:00:00+08:00",
+        ends_at="2030-11-01T00:30:00+08:00",
+    )
+    assert client.post("/internal/admin/slots", headers=ADMIN, json=body).status_code == 201
+    base = client.get(f"/internal/followup-context/{EPISODE}").json()
+    tools = ClinicTools("http://source", transport=transport_for(client))
+    binding = {k: base[k] for k in ("clinic_id", "patient_id", "source_episode_ref")}
+    binding["slot_date_window"] = {"date_from": "2030-11-01", "date_to": "2030-11-30"}
+    result = tools.execute("read_followup_context", binding)
+    assert result.status == "succeeded"
+    assert result.source_version == base["source_version"]
+    assert len(result.data["available_slots"]) == 1
+    assert result.data["available_slots"][0]["id"] == body["request_id"]
+    assert not result.data["more_available_slots"]
+    assert len(base["context"]["available_slots"]) == 10
+    empty = client.get(
+        f"/internal/followup-context/{EPISODE}?date_from=2030-12-01&date_to=2030-12-31"
+    ).json()
+    assert empty["context"]["available_slots"] == []
+    assert empty["source_version"] == base["source_version"]

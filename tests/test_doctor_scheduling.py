@@ -252,3 +252,18 @@ def test_identical_normalized_requirements_do_not_repeat_but_distinct_bounds_rem
     assert len(review) == 2
     assert all(r["date_to"] == "2026-09-30" for r in review)
     assert any(r["date_from"] == "2026-09-15" for r in review)
+
+
+def test_patient_time_mismatch_is_not_doctor_instruction_conflict(simulated_runtime):
+    runtime, tools, source, _ = simulated_runtime
+    add_slot(source, 10)
+    case, _ = start(runtime, "myopia")
+    drain(runtime, tools=tools)
+    event(runtime[1], case, "demo_reply", "Only after 3 pm please").raise_for_status()
+    bound = (datetime.now(UTC) + timedelta(days=10)).date().isoformat()
+    drain(runtime, tools=tools, model=ReviewedModel(bound))
+    result = view(runtime[1], case)
+    offer = result["patient_simulator"]["messages"][-1]
+    assert not offer["evidence"]["doctor_instruction_conflict"]
+    assert "within these instructions" not in offer["body"]
+    assert result["handoff"] is None

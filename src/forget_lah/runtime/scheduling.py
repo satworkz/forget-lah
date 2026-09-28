@@ -102,10 +102,33 @@ def normalize_review(review):
     return result
 
 
-def compatible(slots, review):
+def requires_completion_date(requirement):
+    return requirement.get("if_not_met") == "RESCHEDULE" and bool(
+        re.search(
+            r"\bafter\b.*\b(?:completion|completed)\b",
+            requirement.get("consequence_quote") or requirement.get("quote", ""),
+            re.I,
+        )
+    )
+
+
+def dependency_date_floor(resolutions):
+    dates = [
+        r["completion_date"]
+        for r in resolutions or []
+        if r.get("resolution") == "RESCHEDULE" and r.get("completion_date")
+    ]
+    return (date.fromisoformat(max(dates)) + timedelta(days=1)).isoformat() if dates else None
+
+
+def compatible(slots, review, resolutions=None):
     review = normalize_review(review)
     if review is None or any(r["effect"] == "CLINIC_REVIEW" for r in review):
         return []
+
+    if any(r.get("completion_date_pending") for r in resolutions or []):
+        return []
+    lower = dependency_date_floor(resolutions)
 
     def allowed(slot):
         day = (
@@ -114,7 +137,7 @@ def compatible(slots, review):
             .date()
             .isoformat()
         )
-        return all(
+        return (not lower or day >= lower) and all(
             (not r.get("date_from") or day >= r["date_from"])
             and (not r.get("date_to") or day <= r["date_to"])
             for r in review

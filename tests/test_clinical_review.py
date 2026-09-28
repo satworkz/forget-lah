@@ -148,3 +148,88 @@ def test_clinical_report_requires_patient_evidence(simulated_runtime, invalid):
     assert result["handoff"]["reason_code"] == "AUTOMATION_REVIEW_REQUIRED"
     assert result["steps"][-1]["policy"]["decision"] == "DENY"
     assert source_count(source_engine) == 0
+
+
+@pytest.mark.parametrize(
+    "language,reply,quote",
+    [
+        ("ms", "Ya, tetapi saya mengalami bengkak dan sakit.", "bengkak dan sakit"),
+        ("zh", "可以，但是我的眼睛肿痛。", "眼睛肿痛"),
+        ("ta", "எனக்கு வலி உள்ளது", "வலி"),
+    ],
+)
+def test_symptom_reply_language_without_saved_preference(simulated_runtime, language, reply, quote):
+    from forget_lah.runtime.models import SimulatedMessage
+
+    runtime, tools, _, source_engine = simulated_runtime
+    case_id, run_id = start(runtime, "myopia")
+    drain(runtime, tools=tools)
+    event(runtime[1], case_id, "demo_reply", reply).raise_for_status()
+
+    class LocalizedClinical(MockModel):
+        def decide(self, obs, **kwargs):
+            if obs["latest_event"].get("content") == reply:
+                assert "reply_language" in decision_formats_for(obs)["REPORT_SYMPTOMS"]
+                return ModelReply(
+                    json.dumps(
+                        {
+                            "request_id": obs["request_id"],
+                            "expected_case_version": obs["expected_case_version"],
+                            "step_type": "REPORT_SYMPTOMS",
+                            "reason_code": "PATIENT_REPORTED_SYMPTOMS",
+                            "reply_event_id": obs["latest_event"]["id"],
+                            "symptom_quotes": [quote],
+                            "reply_language": language,
+                        }
+                    )
+                )
+            return super().decide(obs, **kwargs)
+
+    drain(runtime, tools=tools, model=LocalizedClinical())
+    result = view(runtime[1], case_id)
+    assert result["handoff"]["reason_code"] == "PATIENT_REPORTED_SYMPTOMS"
+    assert result["handoff"]["risk"] == "RED"
+    assert source_count(source_engine) == 0
+    with runtime[0]() as db:
+        msg = db.scalar(
+            select(SimulatedMessage).where(
+                SimulatedMessage.run_id == run_id,
+                SimulatedMessage.kind == "clinical_acknowledgement",
+            )
+        )
+        if language == "ms":
+            assert msg.translation["status"] == "ready"
+            assert msg.translation["provider"] == "validated_template"
+            assert quote in msg.translation["body"]
+            assert "semakan klinikal" in msg.translation["body"]
+            assert "menghubungi anda semula" in msg.translation["body"]
+            return
+        assert msg.translation == {"language": language, "status": "pending"}
+        assert msg.evidence["reply_language"] == language
+
+    from test_translations import settings as translation_settings
+
+    from forget_lah.translations import translate_one
+
+    translated = {
+        "ms": "Terima kasih. Pihak klinik akan menghubungi anda.",
+        "zh": "谢谢。诊所会联系您。",
+        "ta": "நன்றி. மருத்துவமனை உங்களைத் தொடர்பு கொள்ளும்.",
+    }[language]
+    translate_one(
+        runtime[0],
+        translation_settings(),
+        translator=lambda settings, body, target: (
+            translated if target == language else "WRONG LANGUAGE"
+        ),
+    )
+    with runtime[0]() as db:
+        msg = db.scalar(
+            select(SimulatedMessage).where(
+                SimulatedMessage.run_id == run_id,
+                SimulatedMessage.kind == "clinical_acknowledgement",
+            )
+        )
+        assert msg.translation["status"] == "ready"
+        assert msg.translation["body"] == translated
+    assert view(runtime[1], case_id)["handoff"]["risk"] == "RED"

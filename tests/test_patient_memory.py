@@ -261,8 +261,13 @@ def test_explicit_language_restates_previous_message_without_reasking(simulated_
 @pytest.mark.parametrize("text", ["ஆம்", "Yes", "是的", "Ya"])
 @pytest.mark.parametrize("repair_succeeds", [True, False])
 def test_historical_tasks_repair_once_without_mutating_evidence(
-    simulated_runtime, text, repair_succeeds
+    simulated_runtime, text, repair_succeeds, monkeypatch
 ):
+    # Exercise historical model-output repair even for replies now handled by rules.
+    monkeypatch.setattr(
+        "forget_lah.runtime.engine.apply_routine_start_or_attendance", lambda *args: False
+    )
+
     class HistoricalModel(NeedsModel):
         repaired = False
 

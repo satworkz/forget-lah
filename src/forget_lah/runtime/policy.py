@@ -159,8 +159,19 @@ def policy_for(db, run, case, step, decision):
         else:
             reasons.append("CLARIFICATION_WITHOUT_APPOINTMENT_WRITE")
     elif isinstance(decision, BarrierDecision):
+        from forget_lah.runtime.simulation import pending_dependency_question
+
         reply = saved_reply(db, run)
-        if (
+        dependency = pending_dependency_question(db, run)
+        if (dependency and decision.dependency_question_id != dependency.id) or (
+            decision.dependency_question_id and not dependency
+        ):
+            deny = "DEPENDENCY_QUESTION_BINDING_REQUIRED"
+        elif decision.completion_quote and (
+            not reply or decision.completion_quote not in reply.content
+        ):
+            deny = "COMPLETION_DATE_QUOTE_NOT_IN_REPLY"
+        elif (
             not simulation_enabled(run)
             or run.active_role != "coordinator"
             or not reply

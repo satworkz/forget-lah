@@ -112,6 +112,7 @@ def test_language_memory_generates_budgeted_translation_without_changing_source(
             event_id=uid(),
             kind="acknowledgement",
             body="Confirmed for 21 at 10:00",
+            reply_language="ms",  # Explicit saved Chinese preference takes precedence.
             source_version="1",
             evidence={},
         )

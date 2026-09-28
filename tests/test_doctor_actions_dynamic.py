@@ -26,6 +26,55 @@ class DoctorActionModel(MockModel):
     def decide(self, obs, **kwargs):
         sim = obs.get("simulation", {})
         event = obs["latest_event"]
+        if sim.get("dependency_question"):
+            from forget_lah.runtime.provider import decision_formats_for, prompt_for
+
+            assert set(decision_formats_for(obs)) == {"ASSESS_BARRIERS", "REPORT_SYMPTOMS"}
+            prompt = prompt_for(obs, False).split("CONTEXT=")[0]
+            assert "Interpret natural language and relative dates" in prompt
+            # Scripted semantic outputs for these fixtures, not production parsing.
+            text = event["content"]
+            date_match = re.search(r"\d{4}-\d{2}-\d{2}", text)
+            natural = re.search(r"(?:3rd|3) October (\d{4})", text)
+            completion = (
+                date_match[0]
+                if date_match
+                else f"{natural[1]}-10-03"
+                if natural
+                else f"{datetime.now(UTC).year}-11-01"
+                if text == "Nov 1st"
+                else None
+            )
+            november = re.search(r"November(?: (\d{4}))?", text)
+            year = november[1] if november and november[1] else str(datetime.now(UTC).year)
+            unknown = "don't know" in text
+            preference = sim["dependency_question"]["appointment_preferences"]
+            return ModelReply(
+                json.dumps(
+                    {
+                        "request_id": obs["request_id"],
+                        "expected_case_version": obs["expected_case_version"],
+                        "step_type": "ASSESS_BARRIERS",
+                        "reason_code": "PATIENT_BARRIERS_REVIEWED",
+                        "reply_event_id": event["id"],
+                        "dependency_question_id": sim["dependency_question"]["id"],
+                        "evidence_quotes": [text],
+                        "completion_date": completion,
+                        "completion_quote": text if completion else None,
+                        "date_from": f"{year}-11-01" if november else preference.get("date_from"),
+                        "date_to": f"{year}-11-30" if november else preference.get("date_to"),
+                        "next_action": "SEARCH_SLOTS"
+                        if completion
+                        else "REVIEW_PREPARATION"
+                        if unknown
+                        else "CLARIFY_TIME",
+                        "preparation_issue": "INCOMPLETE" if unknown else "NONE",
+                        "clarification_question": None
+                        if completion or unknown
+                        else "I understand you prefer November. When is your scan due to be completed?",
+                    }
+                )
+            )
         if obs.get("instruction_constraints_pending"):
             return ModelReply(
                 json.dumps(
@@ -1100,3 +1149,170 @@ def test_exact_no_resumes_doctor_authorized_reschedule_without_reprocessing_chil
         (step.decision or {}).get("step_type") in {"REVIEW_NEEDS", "ASSESS_BARRIERS"}
         for step in child_steps
     )
+
+
+@pytest.mark.parametrize("answer", ["date", "unknown", "appointment_preference"])
+def test_dependency_date_required_before_options_and_receipt_completion(simulated_runtime, answer):
+    runtime, tools, source, source_engine = simulated_runtime
+    condition = "A mandatory scan must be completed before this appointment"
+    consequence = "If it is not completed, reschedule to an available appointment after the scan completion date."
+    set_note(source, "DEMO-ANTENATAL-VISIT-01", condition + ". " + consequence)
+    at = (datetime.now(UTC) + timedelta(days=12)).replace(hour=2, minute=0, second=0, microsecond=0)
+    for offset in (-1, 0, 1):
+        slot = at + timedelta(days=offset)
+        source.post(
+            "/internal/admin/slots",
+            headers=ADMIN,
+            json=new_slot(
+                specialty="antenatal",
+                starts_at=slot.isoformat(),
+                ends_at=(slot + timedelta(minutes=30)).isoformat(),
+            ),
+        ).raise_for_status()
+
+    class NoPostWriteModel(DoctorActionModel):
+        def decide(self, obs, **kwargs):
+            if obs["role"] == "coordinator" and any(
+                t["result"].get("tool_name") == "record_simulated_confirmation"
+                and t["result"].get("status") == "succeeded"
+                for t in obs.get("tools", [])
+            ):
+                raise AssertionError(
+                    "Verified receipt continuation must not rely on a model decision"
+                )
+            return super().decide(obs, **kwargs)
+
+    model = NoPostWriteModel(
+        condition_quote=condition,
+        question="Has the mandatory scan been completed?",
+        if_not_met="RESCHEDULE",
+        consequence_quote=consequence,
+    )
+    case, _ = start(runtime, "antenatal")
+    drain(runtime, tools=tools)
+    event(runtime[1], case, "demo_reply", "I confirm my attendance").raise_for_status()
+    drain(runtime, tools=tools, model=model)
+    event(runtime[1], case, "demo_reply", "no").raise_for_status()
+    drain(runtime, tools=tools, model=model)
+    result = view(runtime[1], case)
+    assert result["run"]["status"] == "waiting"
+    assert result["patient_simulator"]["messages"][-1]["kind"] == "dependency_date"
+    assert not any(m["kind"] == "options" for m in result["patient_simulator"]["messages"])
+    assert source_count(source_engine) == 0
+    reply = (
+        at.date().isoformat()
+        if answer == "date"
+        else "I don't know"
+        if answer == "unknown"
+        else "4th Oct should be fine"
+    )
+    event(runtime[1], case, "demo_reply", reply).raise_for_status()
+    drain(runtime, tools=tools, model=model)
+    result = view(runtime[1], case)
+    if answer != "date":
+        assert source_count(source_engine) == 0
+        assert result["run"]["status"] == ("escalated" if answer == "unknown" else "waiting")
+        assert not any(m["kind"] == "options" for m in result["patient_simulator"]["messages"])
+        return
+    offer = result["patient_simulator"]["messages"][-1]
+    with runtime[0]() as db:
+        assert any(
+            s.observation.get("application_rule", {}).get("name")
+            == "VALIDATED_DEPENDENCY_CONTINUATION"
+            for s in db.scalars(select(AgentStep).where(AgentStep.case_id == case))
+        )
+    assert offer["kind"] == "options", result
+    assert offer["evidence"]["slots"]
+    assert all(s["starts_at"][:10] > at.date().isoformat() for s in offer["evidence"]["slots"])
+    event(runtime[1], case, "demo_reply", "Option 1").raise_for_status()
+    drain(runtime, tools=tools, model=model)
+    result = view(runtime[1], case)
+    assert result["run"]["status"] == "completed", result
+    assert source_count(source_engine) == 1
+    assert result["patient_simulator"]["messages"][-1]["kind"] == "acknowledgement"
+    assert not result["handoff"]
+
+
+def test_routine_start_does_not_need_gateway_and_can_means_attendance(simulated_runtime):
+    runtime, tools, source, source_engine = simulated_runtime
+
+    class UnavailableModel:
+        def decide(self, *args, **kwargs):
+            raise AssertionError("Routine reminder must not call a model")
+
+    set_note(source, "DEMO-ANTENATAL-VISIT-01", SCAN_NOTE)
+    case, _ = start(runtime, "antenatal")
+    drain(runtime, tools=tools, model=UnavailableModel())
+    ready = view(runtime[1], case)
+    assert ready["run"]["status"] == "waiting"
+    assert not ready["handoff"]
+    event(runtime[1], case, "demo_reply", "can").raise_for_status()
+    drain(runtime, tools=tools, model=scan_model())
+    result = view(runtime[1], case)
+    assert result["patient_simulator"]["messages"][-1]["kind"] == "doctor_instruction_check"
+    assert source_count(source_engine) == 0
+    assert any(
+        s["origin"] == "rule"
+        and (s.get("decision") or {}).get("appointment_request_quote") == "can"
+        for s in result["steps"]
+    )
+
+
+@pytest.mark.parametrize("date_reply", ["natural_october", "Nov 1st"])
+def test_november_preference_survives_scan_date_question(simulated_runtime, date_reply):
+    runtime, tools, source, source_engine = simulated_runtime
+    condition = "A mandatory scan must be completed before this appointment"
+    consequence = "If it is not completed, reschedule to an available appointment after the scan completion date."
+    set_note(source, "DEMO-ANTENATAL-VISIT-01", condition + ". " + consequence)
+    year = datetime.now(UTC).year + (datetime.now(UTC).month > 10)
+    for month in (10, 11):
+        at = datetime(year, month, 6, 2, tzinfo=UTC)
+        source.post(
+            "/internal/admin/slots",
+            headers=ADMIN,
+            json=new_slot(
+                specialty="antenatal",
+                starts_at=at.isoformat(),
+                ends_at=(at + timedelta(minutes=30)).isoformat(),
+            ),
+        ).raise_for_status()
+    model = DoctorActionModel(
+        condition_quote=condition,
+        question="Has the scan been completed?",
+        if_not_met="RESCHEDULE",
+        consequence_quote=consequence,
+    )
+    case, _ = start(runtime, "antenatal")
+    drain(runtime, tools=tools)
+    for reply in ("can", "no", f"any slots in November {year}?"):
+        event(runtime[1], case, "demo_reply", reply).raise_for_status()
+        drain(runtime, tools=tools, model=model)
+    result = view(runtime[1], case)
+    question = result["patient_simulator"]["messages"][-1]
+    assert "November" in question["body"]
+    assert "YYYY-MM-DD" not in question["body"]
+    assert result["run"]["status"] == "waiting" and not result["handoff"]
+    assert source_count(source_engine) == 0
+    event(
+        runtime[1],
+        case,
+        "demo_reply",
+        f"my scan is on 3rd October {year}" if date_reply == "natural_october" else date_reply,
+    ).raise_for_status()
+    drain(runtime, tools=tools, model=model)
+    result = view(runtime[1], case)
+    offer = result["patient_simulator"]["messages"][-1]
+    with runtime[0]() as db:
+        assert any(
+            s.observation.get("application_rule", {}).get("name")
+            == "VALIDATED_DEPENDENCY_CONTINUATION"
+            for s in db.scalars(select(AgentStep).where(AgentStep.case_id == case))
+        )
+    assert offer["kind"] == "options", result
+    assert offer["evidence"]["slots"]
+    assert all(slot["starts_at"].startswith(f"{year}-11-") for slot in offer["evidence"]["slots"])
+    event(runtime[1], case, "demo_reply", "Option 1").raise_for_status()
+    drain(runtime, tools=tools, model=model)
+    result = view(runtime[1], case)
+    assert result["run"]["status"] == "completed", result
+    assert source_count(source_engine) == 1

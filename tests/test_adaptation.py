@@ -599,3 +599,49 @@ def test_refining_time_search_does_not_accept_old_offer(simulated_runtime):
     assert offer["kind"] == "options"
     assert [s["id"] for s in offer["evidence"]["slots"]] == [later]
     assert source_count(engine) == 0
+
+
+class NovemberModel(BarrierModel):
+    def decide(self, obs, **kwargs):
+        reply = super().decide(obs, **kwargs)
+        value = json.loads(reply.text)
+        if value["step_type"] == "ASSESS_BARRIERS":
+            value.update(earliest_minute=None, date_from="2030-11-01", date_to="2030-11-30")
+            return ModelReply(json.dumps(value))
+        return reply
+
+
+def test_runtime_searches_later_month_and_validates_selected_slot(simulated_runtime):
+    runtime, tools, source, engine = simulated_runtime
+    for day in range(1, 14):
+        at = datetime(2030, 10, day, 2, tzinfo=UTC)
+        body = new_slot(
+            specialty="myopia",
+            starts_at=at.isoformat(),
+            ends_at=(at + timedelta(minutes=30)).isoformat(),
+        )
+        assert source.post("/internal/admin/slots", headers=ADMIN, json=body).status_code == 201
+    at = datetime(2030, 11, 5, 2, tzinfo=UTC)
+    body = new_slot(
+        specialty="myopia",
+        starts_at=at.isoformat(),
+        ends_at=(at + timedelta(minutes=30)).isoformat(),
+    )
+    response = source.post("/internal/admin/slots", headers=ADMIN, json=body)
+    response.raise_for_status()
+    wanted = response.json()["id"]
+    case, _ = start(runtime, "myopia")
+    drain(runtime, tools=tools)
+    event(
+        runtime[1], case, "demo_reply", "Do you have available slots in November 2030?"
+    ).raise_for_status()
+    drain(runtime, tools=tools, model=NovemberModel())
+    result = view(runtime[1], case)
+    assert result["handoff"] is None
+    offer = result["patient_simulator"]["messages"][-1]
+    assert [s["id"] for s in offer["evidence"]["slots"]] == [wanted]
+    event(runtime[1], case, "demo_reply", "option 1 is fine").raise_for_status()
+    drain(runtime, tools=tools)
+    result = view(runtime[1], case)
+    assert result["run"]["status"] == "completed", result
+    assert source_count(engine) == 1

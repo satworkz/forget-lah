@@ -120,7 +120,11 @@ def patient_message(run, **fields):
                 fields["body"] = f"Hello {name},\n\n" + fields["body"]
             elif fields["body"].startswith("Thank you."):
                 fields["body"] = f"Thank you, {name}." + fields["body"][10:]
-    language = effective_memory(db, case).get("preferred_language", "en") if case else "en"
+    reply_language = fields.pop("reply_language", None)
+    memory = effective_memory(db, case) if case else {}
+    # An explicit saved preference wins; otherwise follow this reply, without
+    # inferring a permanent preference or changing the clinical workflow.
+    language = memory.get("preferred_language") or reply_language or "en"
     if language in {"zh", "ms", "ta"} and fields["body"] not in {
         language_ack(language),
         LANGUAGE_QUESTION,
@@ -158,3 +162,31 @@ def memory_ack(updates):
             else "This applies to this visit only."
         )
     return " ".join(dict.fromkeys(parts))
+
+
+def localize_clinical_acknowledgement(message, decision):
+    """Fixed Malay callback wording needs no generative translation.
+
+    Only use when the evidence quotes and target are both Malay. A different
+    explicit preference continues through the existing translation worker.
+    """
+    if decision.reply_language != "ms" or (message.translation or {}).get("language") != "ms":
+        return
+    body = (
+        "Terima kasih kerana mengesahkan bahawa anda bercadang untuk hadir. "
+        if decision.attendance_quote
+        else "Terima kasih kerana memaklumkan kepada kami. "
+    )
+    body += (
+        'Anda melaporkan: "'
+        + '"; "'.join(decision.symptom_quotes)
+        + '". Saya telah menandakan mesej anda untuk semakan klinikal dan meminta pasukan klinik menghubungi anda semula secepat mungkin.'
+    )
+    if decision.contact_stop_quote:
+        body += " Peringatan automatik telah dihentikan; semakan klinikal ini masih di bawah tanggungjawab klinik."
+    message.translation = {
+        "language": "ms",
+        "status": "ready",
+        "body": body,
+        "provider": "validated_template",
+    }

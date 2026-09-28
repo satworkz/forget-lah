@@ -280,6 +280,51 @@ def add_option(runtime, case_id):
     return response.json()["options"][0]
 
 
+@pytest.mark.parametrize("after_offer", [False, True])
+def test_expired_scheduled_bridge_requires_staff_before_offering_or_booking(
+    bridge_runtime, monkeypatch, after_offer
+):
+    from datetime import datetime, timedelta
+
+    from test_adaptation import BarrierModel
+
+    from forget_lah.runtime.failures import escalate_failure
+
+    runtime, tools, case_id = bridge_runtime
+    add_option(runtime, case_id)
+    begin(runtime, tools, case_id)
+    if after_offer:
+        event(
+            runtime[1], case_id, "demo_reply", "My daughter can accompany me after 3 pm"
+        ).raise_for_status()
+        drain(runtime, tools=tools, model=BarrierModel())
+        assert view(runtime[1], case_id)["patient_simulator"]["messages"][-1]["kind"] == "options"
+    before = view(runtime[1], case_id)
+    expired_now = datetime.fromisoformat(before["bridge"]["appointment_at"]) + timedelta(minutes=1)
+    monkeypatch.setattr("forget_lah.runtime.simulation.utcnow", lambda: expired_now)
+    event(
+        runtime[1],
+        case_id,
+        "demo_reply",
+        "option 1 is fine" if after_offer else "My daughter can accompany me after 3 pm",
+    ).raise_for_status()
+    drain(runtime, tools=tools, model=BarrierModel())
+    result = view(runtime[1], case_id)
+    assert result["run"]["status"] == "escalated", result
+    assert result["handoff"]["reason_code"] == "CAPABILITY_UNAVAILABLE"
+    assert result["bridge"]["appointment_at"] == before["bridge"]["appointment_at"]
+    assert receipts(runtime[0]) == 0
+    assert sum(m["kind"] == "options" for m in result["patient_simulator"]["messages"]) == int(
+        after_offer
+    )
+    assert result["steps"][-1]["origin"] == "rule"
+    escalate_failure(runtime[0], runtime[2], result["run"]["id"])
+    assert (
+        "original appointment time has passed"
+        in view(runtime[1], case_id)["patient_simulator"]["messages"][-1]["body"]
+    )
+
+
 @pytest.mark.parametrize("reschedule", [True, False])
 def test_bridge_books_and_reschedules_in_owned_tables(bridge_runtime, reschedule):
     from test_adaptation import BarrierModel

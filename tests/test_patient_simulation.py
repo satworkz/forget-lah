@@ -174,7 +174,12 @@ def test_attendance_interpretation_rejects_foreign_binding(simulated_runtime, fi
     assert source_count(source_engine) == 0
 
 
-def test_successful_reads_are_not_offered_again_and_gateway_blocks_repetition(simulated_runtime):
+def test_successful_reads_are_not_offered_again_and_gateway_blocks_repetition(
+    simulated_runtime, monkeypatch
+):
+    monkeypatch.setattr(
+        "forget_lah.runtime.engine.apply_routine_start_or_attendance", lambda *args: False
+    )
     runtime, tools, _, _ = simulated_runtime
     case_id, _ = start(runtime, "myopia")
 
@@ -203,12 +208,15 @@ def test_successful_reads_are_not_offered_again_and_gateway_blocks_repetition(si
 
 @pytest.mark.parametrize("pause_code", ["ROLE_BUDGET_EXHAUSTED", "MODEL_REQUEST_TOO_LARGE"])
 def test_role_budget_failure_handoff_preserves_receipt_and_specialists(
-    simulated_runtime, pause_code
+    simulated_runtime, pause_code, monkeypatch
 ):
     runtime, tools, _, source_engine = simulated_runtime
     case_id, run_id = start(runtime, "myopia")
     drain(runtime, tools=tools)
     event(runtime[1], case_id, "demo_reply", "I confirm my attendance")
+
+    # Reproduce historical runs made before receipt continuation became deterministic.
+    monkeypatch.setattr("forget_lah.runtime.engine.apply_post_write_progress", lambda *args: False)
 
     class LegacyBudgetPause(MockModel):
         def decide(self, obs, **kwargs):

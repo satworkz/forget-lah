@@ -98,6 +98,9 @@ def escalate_failure(factory, settings, run_id, *, unexpected_token=None):
             "failure_review": {"code": code, "notice": "withheld" if blocked else "queued"},
         }
         if not blocked:
+            notice = NOTICES["en"]
+            if language == "en" and run.checkpoint.get("appointment_status_review_required"):
+                notice = "Your original appointment time has passed. The clinic team needs to check its status before arranging a change. I've sent your request for staff review. No appointment change has been made."
             # Static translations remain usable when the model is unavailable.
             # Existing channel enrollment/consent and delivery retries still apply.
             db.add(
@@ -107,7 +110,7 @@ def escalate_failure(factory, settings, run_id, *, unexpected_token=None):
                     run_id=run.id,
                     event_id=reply.id,
                     kind="failure_acknowledgement",
-                    body=NOTICES["en"],
+                    body=notice,
                     translation={
                         "language": language,
                         "status": "ready",

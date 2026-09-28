@@ -54,7 +54,13 @@ from forget_lah.runtime.responses import (
     memory_ack,
     patient_message,
 )
-from forget_lah.runtime.scheduling import check_signature, normalize_review, pending_patient_checks
+from forget_lah.runtime.scheduling import (
+    check_signature,
+    dependency_date_floor,
+    normalize_review,
+    pending_patient_checks,
+    requires_completion_date,
+)
 from forget_lah.runtime.simulation import (
     booking_choice,
     clarification_allowed,
@@ -65,6 +71,7 @@ from forget_lah.runtime.simulation import (
     instruction_resume_context,
     latest_selection_offer,
     latest_tool,
+    pending_dependency_question,
     read_already_available,
     reply_evidence,
     save_acknowledgement,
@@ -704,6 +711,305 @@ def apply_confirmed_intent_review(db, settings, run, case, step):
     return True
 
 
+def apply_routine_start_or_attendance(db, settings, run, case, step):
+    """Closed administrative protocol only; mixed replies still require semantic review."""
+    if run.active_role != "coordinator" or not simulation_enabled(run):
+        return False
+    obs = step.observation
+    decision = None
+    context = latest_tool(current_tools(db, run), "read_followup_context")
+    if obs["latest_event"]["kind"] == "started" and not obs.get("returned_specialists") and context:
+        data = context.tool_result["data"]
+        if data.get("can_contact_patient") is False and data.get("can_write_appointments") is False:
+            decision = DelegateDecision(
+                request_id=step.id,
+                expected_case_version=case.case_version,
+                step_type="DELEGATE",
+                reason_code="FOLLOWUP_REVIEW_REQUIRED",
+                target="engagement",
+                goal="Prepare the routine follow-up reminder from the verified source and wait for the patient's reply.",
+            )
+    reply = saved_reply(db, run)
+    if reply and not obs.get("needs_reviewed"):
+        message = db.scalar(
+            select(SimulatedMessage)
+            .where(SimulatedMessage.run_id == run.id, SimulatedMessage.clinic_id == run.clinic_id)
+            .order_by(SimulatedMessage.created_at.desc())
+            .limit(1)
+        )
+        affirmative = reply.content.strip().casefold().rstrip(".! ") in {
+            "can",
+            "yes",
+            "yes please",
+            "yes pls",
+            "i can",
+            "can attend",
+        }
+        if message and message.kind == "reminder" and affirmative:
+            decision = NeedsDecision(
+                request_id=step.id,
+                expected_case_version=case.case_version,
+                step_type="REVIEW_NEEDS",
+                reason_code="PATIENT_NEEDS_REVIEWED",
+                reply_event_id=reply.id,
+                updates=[],
+                appointment_intent="CONFIRM",
+                appointment_request_quote=reply.content,
+            )
+    if decision is None:
+        return False
+    step.origin = "rule"
+    step.decision = decision.model_dump()
+    step.observation = {**obs, "application_rule": {"name": "ROUTINE_ADMINISTRATIVE_PROTOCOL"}}
+    step.policy = policy_for(db, run, case, step, decision)
+    if step.policy["decision"] == "ALLOW":
+        apply_control(db, run, case, step, decision, settings)
+    else:
+        step.status, step.error_code = "rejected", "POLICY_DENIED"
+        pause(run, "POLICY_DENIED")
+    return True
+
+
+def apply_post_write_progress(db, settings, run, case, step):
+    """Finish a verified write through fresh Preparation evidence, never replay it."""
+    if run.active_role != "coordinator" or not simulation_enabled(run):
+        return False
+    if any(t["result"].get("status") == "failed" for t in step.observation.get("tools", [])):
+        return False  # Keep existing bounded source retry / failure handoff handling.
+    proof = step.observation.get("simulation", {})
+    receipt = latest_tool(current_tools(db, run), "record_simulated_confirmation", "engagement")
+    if not receipt:
+        return False
+    if proof.get("complete_evidence_ids"):
+        decision = CompleteSimulationDecision(
+            request_id=step.id,
+            expected_case_version=case.case_version,
+            step_type="COMPLETE_SIMULATED_CONFIRMATION",
+            reason_code="SIMULATED_CONFIRMATION_ACKNOWLEDGED",
+            evidence_ids=proof["complete_evidence_ids"],
+        )
+    elif proof.get("ack_ready"):
+        decision = ToolDecision(
+            request_id=step.id,
+            expected_case_version=case.case_version,
+            step_type="TOOL",
+            reason_code="SEND_SIMULATED_ACKNOWLEDGEMENT",
+            tool_name="send_simulated_acknowledgement",
+        )
+    elif "preparation" not in run.checkpoint.get("returned_specialists", []):
+        decision = DelegateDecision(
+            request_id=step.id,
+            expected_case_version=case.case_version,
+            step_type="DELEGATE",
+            reason_code="PREPARATION_REVIEW_REQUIRED",
+            target="preparation",
+            goal="Refresh approved instructions and prerequisites against the successful appointment receipt before acknowledgement.",
+        )
+    else:
+        return False
+    step.origin = "rule"
+    step.decision = decision.model_dump()
+    step.observation = {
+        **step.observation,
+        "application_rule": {"name": "VERIFIED_WRITE_COMPLETION", "receipt_step_id": receipt.id},
+    }
+    step.policy = policy_for(db, run, case, step, decision)
+    if step.policy["decision"] != "ALLOW":
+        step.status, step.error_code = "rejected", "POLICY_DENIED"
+        pause(run, "POLICY_DENIED")
+    elif isinstance(decision, ToolDecision):
+        step.status = "tool_pending"
+    else:
+        apply_control(db, run, case, step, decision, settings)
+    return True
+
+
+def ask_dependency_date(db, run, reply, source_version, resume, *, attempt=1):
+    preference = resume.get("dependency_requested_month")
+    body = (
+        (f"I understand you'd prefer an appointment in {preference}. " if preference else "")
+        + "The clinic instruction says the appointment must be after your scan or prerequisite is completed. When is it scheduled to be completed? You can say, for example, '3 October 2026'. This helps us offer suitable dates. Your current appointment is unchanged."
+    )
+    db.add(
+        patient_message(
+            run,
+            clinic_id=run.clinic_id,
+            case_id=run.case_id,
+            run_id=run.id,
+            event_id=reply.id,
+            kind="dependency_date",
+            source_version=source_version,
+            body=body,
+            evidence={"resume_context": resume, "attempt": attempt},
+        )
+    )
+    run.checkpoint = {**run.checkpoint, "wait_reason": "AWAITING_PATIENT_REPLY"}
+    release(run, "waiting")
+
+
+def apply_resolved_dependency_progress(db, settings, run, case, step):
+    """Continue a policy-validated completion date; do not reinterpret its raw reply."""
+    reply = saved_reply(db, run)
+    if (
+        run.active_role != "coordinator"
+        or not simulation_enabled(run)
+        or not reply
+        or run.checkpoint.get("dependency_date_processed") != reply.id
+        or run.checkpoint.get("returned_specialists")
+        or run.checkpoint.get("barriers", {}).get("next_action") != "SEARCH_SLOTS"
+    ):
+        return False
+    resolutions = run.checkpoint.get("instruction_check_resolutions", [])
+    resolved = next(
+        (
+            r
+            for r in resolutions
+            if r.get("completion_date_reply_id") == reply.id
+            and not r.get("completion_date_pending")
+        ),
+        None,
+    )
+    if not resolved:
+        return False
+    evidence = db.get(AgentStep, resolved.get("completion_date_step_id"))
+    if (
+        not evidence
+        or evidence.run_id != run.id
+        or (evidence.policy or {}).get("decision") != "ALLOW"
+    ):
+        return False
+    decision = DelegateDecision(
+        request_id=step.id,
+        expected_case_version=case.case_version,
+        step_type="DELEGATE",
+        reason_code="PREPARATION_REVIEW_REQUIRED",
+        target="preparation",
+        goal="Review clinic instructions using the validated patient-reported scan completion date and retained appointment preferences. Do not ask the completed question again.",
+    )
+    step.origin = "rule"
+    step.observation = {
+        **step.observation,
+        "application_rule": {
+            "name": "VALIDATED_DEPENDENCY_CONTINUATION",
+            "evidence_step_id": evidence.id,
+        },
+    }
+    step.decision = decision.model_dump()
+    step.policy = policy_for(db, run, case, step, decision)
+    if step.policy["decision"] == "ALLOW":
+        apply_control(db, run, case, step, decision, settings)
+    else:
+        step.status, step.error_code = "rejected", "POLICY_DENIED"
+        pause(run, "POLICY_DENIED")
+    return True
+
+
+def apply_dependency_interpretation(db, settings, run, case, step, decision):
+    question = pending_dependency_question(db, run)
+    reply = saved_reply(db, run)
+    resume = dict(question.evidence["resume_context"])
+    barriers = {
+        **resume.get("barriers", {}),
+        **decision.model_dump(exclude_none=True),
+        "reply_event_id": reply.id,
+    }
+    resume["barriers"] = barriers
+    if decision.completion_date:
+        # A resolved question must not survive exclude_none merging from a prior turn.
+        barriers.update(
+            clarification_question=None, concern_quote=None, clarification_reason="NONE"
+        )
+        resolutions = [dict(r) for r in resume.get("instruction_check_resolutions", [])]
+        for resolution in resolutions:
+            if resolution.get("completion_date_pending"):
+                resolution.update(
+                    completion_date=decision.completion_date,
+                    completion_date_pending=False,
+                    completion_date_reply_id=reply.id,
+                    completion_date_question_id=question.id,
+                    completion_date_step_id=step.id,
+                    completion_quote=decision.completion_quote,
+                )
+        run.checkpoint = {
+            **resume,
+            "latest_event": run.checkpoint["latest_event"],
+            "needs_reviewed": reply.id,
+            "instruction_check_resolutions": resolutions,
+            "dependency_date_processed": reply.id,
+            "returned_specialists": [],
+            "turn_start_step": step.sequence,
+            "coordinator_resume_after": step.sequence,
+            "instruction_constraints_pending": None,
+            "barriers": {
+                **barriers,
+                "date_from": max(
+                    barriers.get("date_from") or "", dependency_date_floor(resolutions)
+                ),
+                "next_action": "SEARCH_SLOTS",
+            },
+        }
+        release(run, "queued", delay=settings.agent_step_delay_seconds)
+    elif decision.next_action == "REVIEW_PREPARATION":
+        run.checkpoint = {**run.checkpoint, "dependency_date_processed": reply.id}
+        request_handoff(db, run, "DOCTOR_INSTRUCTION_REVIEW_REQUIRED", risk="AMBER")
+    else:
+        body = (
+            decision.clarification_question
+            or "When is your scan or prerequisite expected to be completed? The clinic requires an appointment after that date."
+        )
+        db.add(
+            patient_message(
+                run,
+                clinic_id=run.clinic_id,
+                case_id=run.case_id,
+                run_id=run.id,
+                event_id=reply.id,
+                kind="dependency_date",
+                source_version=question.source_version,
+                body=body + " Your current appointment is unchanged.",
+                evidence={"resume_context": resume, "interpretation_step_id": step.id},
+            )
+        )
+        run.checkpoint = {**run.checkpoint, "wait_reason": "AWAITING_PATIENT_REPLY"}
+        release(run, "waiting")
+
+
+def apply_expired_appointment_review(db, settings, run, case, step):
+    """Do not offer a change when the original scheduled time has passed."""
+    if (
+        run.active_role != "coordinator"
+        or not (
+            run.checkpoint.get("appointment_intent") == "CHANGE"
+            or run.checkpoint.get("barriers", {}).get("next_action") == "SEARCH_SLOTS"
+        )
+        or not step.observation.get("simulation", {}).get("appointment_status_review_required")
+    ):
+        return False
+    decision = EscalateDecision(
+        request_id=step.id,
+        expected_case_version=case.case_version,
+        step_type="ESCALATE",
+        reason_code="CAPABILITY_UNAVAILABLE",
+    )
+    step.origin = "rule"
+    step.observation = {
+        **step.observation,
+        "application_rule": {
+            "name": "APPOINTMENT_STATUS_REVIEW_REQUIRED",
+            "explanation": "The scheduled appointment time has passed. Staff must verify its status before an automated appointment change; attendance or a no-show must not be assumed.",
+        },
+    }
+    step.decision = decision.model_dump()
+    step.policy = policy_for(db, run, case, step, decision)
+    if step.policy["decision"] == "ALLOW":
+        run.checkpoint = {**run.checkpoint, "appointment_status_review_required": True}
+        apply_control(db, run, case, step, decision, settings)
+    else:
+        step.status, step.error_code = "rejected", "POLICY_DENIED"
+        pause(run, "POLICY_DENIED")
+    return True
+
+
 def apply_ready_options(db, settings, run, case, step):
     """Deliver a source-reviewed offer without asking a model to choose the send tool."""
     if (
@@ -1022,7 +1328,16 @@ def prepare_step(factory, settings, run_id, token):
                     pause(run, "POLICY_DENIED")
                     return None
                 pending.status = "tool_pending"
+            elif apply_routine_start_or_attendance(db, settings, run, case, pending):
+                return None
+            elif apply_post_write_progress(db, settings, run, case, pending):
+                if pending.status != "tool_pending":
+                    return None
+            elif apply_expired_appointment_review(db, settings, run, case, pending):
+                return None
             elif apply_closed_instruction_answer(db, settings, run, case, pending):
+                return None
+            elif apply_resolved_dependency_progress(db, settings, run, case, pending):
                 return None
             elif apply_confirmed_intent_review(db, settings, run, case, pending):
                 return None
@@ -1301,6 +1616,9 @@ def apply_control(db, run, case, step, decision, settings):
             step.id,
         )
     if isinstance(decision, BarrierDecision):
+        if pending_dependency_question(db, run):
+            apply_dependency_interpretation(db, settings, run, case, step, decision)
+            return
         effective_action = decision.next_action
         if (
             effective_action == "CLARIFY_TIME"
@@ -1424,10 +1742,18 @@ def apply_control(db, run, case, step, decision, settings):
             run_id=run.id,
             event_id=reply.id,
             kind="clinical_acknowledgement",
+            reply_language=decision.reply_language,
             body=body,
             source_version="patient-report-v1",
-            evidence={"clinical_step_id": step.id, "reply_event_id": reply.id},
+            evidence={
+                "clinical_step_id": step.id,
+                "reply_event_id": reply.id,
+                "reply_language": decision.reply_language,
+            },
         )
+        from forget_lah.runtime.responses import localize_clinical_acknowledgement
+
+        localize_clinical_acknowledgement(message, decision)
         db.add(message)
         db.flush()
         run.checkpoint = {
@@ -1642,6 +1968,14 @@ def apply_control(db, run, case, step, decision, settings):
                 "barriers": resume_context.get("barriers", {}),
                 "instruction_constraints_pending": reply.id,
             }
+        if decision.outcome == "NOT_MET" and requires_completion_date(requirement):
+            updated = [dict(r) for r in run.checkpoint.get("instruction_check_resolutions", [])]
+            for item in updated:
+                if item.get("decision_step_id") == step.id:
+                    item["completion_date_pending"] = True
+            run.checkpoint = {**run.checkpoint, "instruction_check_resolutions": updated}
+            ask_dependency_date(db, run, reply, question.source_version, dict(run.checkpoint))
+            return
         release(run, "queued", delay=delay)
     elif isinstance(decision, SelectionDecision):
         if decision.option_number is None:
@@ -2064,7 +2398,11 @@ def apply_control(db, run, case, step, decision, settings):
                     run_id=run.id,
                     event_id=reply.id,
                     kind="acknowledgement",
-                    body="I've passed your request to the clinic team for help. Your request has not changed or cancelled the appointment.",
+                    body=(
+                        "Your original appointment time has passed. The clinic team needs to check its status before arranging a change. I've sent your request for staff review. No appointment change has been made."
+                        if run.checkpoint.get("appointment_status_review_required")
+                        else "I've passed your request to the clinic team for help. Your request has not changed or cancelled the appointment."
+                    ),
                     source_version="staff-handoff-v1",
                     evidence={"decision_step_id": step.id, "reason_code": decision.reason_code},
                 )
@@ -2240,6 +2578,22 @@ def execute_pending_tool(factory, settings, run_id, token, step_id, tools):
             "patient_id": case.patient_id,
             "source_episode_ref": case.source_episode_ref,
         }
+        # Validated, persisted patient constraints narrow the source read before its cap.
+        barriers = run.checkpoint.get("barriers") or {}
+        date_window = {k: barriers[k] for k in ("date_from", "date_to") if barriers.get(k)}
+        if barriers.get("requested_date"):
+            date_window = dict(
+                date_from=barriers["requested_date"], date_to=barriers["requested_date"]
+            )
+        dependency_floor = dependency_date_floor(
+            run.checkpoint.get("instruction_check_resolutions", [])
+        )
+        if dependency_floor:
+            date_window["date_from"] = max(
+                date_window.get("date_from", dependency_floor), dependency_floor
+            )
+        if date_window:
+            binding["slot_date_window"] = date_window
         tool_name, version = decision.tool_name, case.case_version
         simulation_action = tool_name in {
             "record_simulated_confirmation",
